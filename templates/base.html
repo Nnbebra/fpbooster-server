@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>FPBooster Admin</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0f1226; color:#fff; margin:0; }
+    header, footer { padding:12px 16px; background:#141a33; }
+    a { color:#66ccff; text-decoration:none; }
+    .container { padding:16px; }
+    .btn { background:#6a11cb; background-image:linear-gradient(90deg,#6a11cb,#2575fc); border:none; color:#fff; padding:8px 12px; border-radius:8px; cursor:pointer; }
+    .btn.warn { background:#ff5e62; background-image:linear-gradient(90deg,#ff5e62,#ff9966); }
+    input, select { padding:8px; border-radius:6px; border:1px solid #2b335c; background:#171c3a; color:#fff; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
+    th, td { border-bottom:1px solid #2b335c; padding:8px; text-align:left; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .right { margin-left:auto; }
+    .error { color:#ff9966; margin:8px 0; }
+  </style>
+</head>
+<body>
+  <header class="row">
+    <div><strong>FPBooster Admin</strong></div>
+    <div class="right"><a href="/admin/licenses">Лицензии</a> &nbsp;|&nbsp; <a href="/admin/logout">Выход</a></div>
+  </header>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+  <footer>© FPBooster</footer>
+</body>
+</html>
