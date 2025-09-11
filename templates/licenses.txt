@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row">
+    <h2>Лицензии</h2>
+    <div class="right">
+      <form method="get" action="/admin/licenses" class="row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Поиск по ключу/пользователю">
+        <button class="btn" type="submit">Искать</button>
+        <a class="btn" href="/admin/licenses/new">Добавить</a>
+      </form>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Ключ</th>
+        <th>Статус</th>
+        <th>Истекает</th>
+        <th>Пользователь</th>
+        <th>Создано</th>
+        <th>Последняя проверка</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.license_key }}</td>
+        <td>{{ r.status }}</td>
+        <td>{{ r.expires or "" }}</td>
+        <td>{{ r.user_name or "" }}</td>
+        <td>{{ r.created_at or "" }}</td>
+        <td>{{ r.last_check or "" }}</td>
+        <td class="row">
+          <a class="btn" href="/admin/licenses/edit?license_key={{ r.license_key }}">Редактировать</a>
+          <form method="post" action="/admin/licenses/delete" onsubmit="return confirm('Удалить {{ r.license_key }}?');">
+            <input type="hidden" name="license_key" value="{{ r.license_key }}">
+            <button class="btn warn" type="submit">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

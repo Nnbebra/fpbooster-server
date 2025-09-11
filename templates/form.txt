@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+  {% if mode == "create" %}
+    <h2>Новая лицензия</h2>
+    <form method="post" action="/admin/licenses/new">
+  {% else %}
+    <h2>Редактировать лицензию</h2>
+    <form method="post" action="/admin/licenses/edit">
+      <input type="hidden" name="original_key" value="{{ item.license_key }}">
+  {% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <div class="row">
+      <label>Ключ:</label>
+      <input type="text" name="license_key" required value="{{ item.license_key if item else '' }}">
+    </div>
+    <div class="row">
+      <label>Статус:</label>
+      <select name="status" required>
+        {% set st = item.status if item else 'active' %}
+        <option value="active" {{ 'selected' if st=='active' else '' }}>active</option>
+        <option value="expired" {{ 'selected' if st=='expired' else '' }}>expired</option>
+        <option value="banned" {{ 'selected' if st=='banned' else '' }}>banned</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>Истекает (YYYY-MM-DD):</label>
+      <input type="text" name="expires" placeholder="2025-12-31" value="{{ item.expires if item and item.expires else '' }}">
+    </div>
+    <div class="row">
+      <label>Пользователь:</label>
+      <input type="text" name="user" value="{{ item.user_name if item and item.user_name else '' }}">
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button class="btn" type="submit">{{ 'Сохранить' if mode=='edit' else 'Создать' }}</button>
+      <a class="btn" href="/admin/licenses">Отмена</a>
+    </div>
+  </form>
+{% endblock %}
