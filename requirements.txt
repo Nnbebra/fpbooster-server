@@ -4,4 +4,5 @@ fastapi
 uvicorn[standard]
 asyncpg
 gunicorn
-
+jinja2
+python-multipart
