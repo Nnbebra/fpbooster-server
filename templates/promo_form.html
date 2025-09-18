@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Создать промокод</h2>
+<form method="post">
+  <label>Код: <input type="text" name="code" required></label><br><br>
+  <label>Владелец: <input type="text" name="owner" required></label><br><br>
+  <label>Скидка (%): <input type="number" name="discount" value="14"></label><br><br>
+  <button type="submit">Создать</button>
+</form>
+{% endblock %}
