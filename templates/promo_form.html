@@ -1,10 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Создать промокод</h2>
-<form method="post">
-  <label>Код: <input type="text" name="code" required></label><br><br>
-  <label>Владелец: <input type="text" name="owner" required></label><br><br>
-  <label>Скидка (%): <input type="number" name="discount" value="14"></label><br><br>
-  <button type="submit">Создать</button>
-</form>
+<div class="container mt-4">
+  <h2>➕ Создать промокод</h2>
+  <form method="post" class="mt-3">
+    <div class="mb-3">
+      <label for="code" class="form-label">Код</label>
+      <input type="text" class="form-control" id="code" name="code" required>
+    </div>
+    <div class="mb-3">
+      <label for="owner" class="form-label">Владелец</label>
+      <input type="text" class="form-control" id="owner" name="owner" required>
+    </div>
+    <div class="mb-3">
+      <label for="discount" class="form-label">Скидка (%)</label>
+      <input type="number" class="form-control" id="discount" name="discount" value="14">
+    </div>
+    <button type="submit" class="btn btn-primary">Сохранить</button>
+    <a href="/admin/promocodes" class="btn btn-secondary">Отмена</a>
+  </form>
+</div>
 {% endblock %}
