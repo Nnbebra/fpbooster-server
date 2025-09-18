@@ -7,25 +7,29 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
-from referrals import router as referrals_router
-app.include_router(referrals_router)
-
 
 # ========= Конфигурация =========
 DB_URL = os.getenv("DATABASE_URL", "").strip()
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 
-# Автообновления (читать из Environment)
 UPDATE_VERSION = os.getenv("LATEST_VERSION", "").strip()
-UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()           # Прямая ссылка на файл (Google Drive uc?export=download&id=...)
-UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()       # SHA-256 файла
-UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip() # Свободный текст изменений
+UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
+UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
+UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
 
 if not DB_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
+# Сначала создаём приложение
 app = FastAPI(title="FPBooster License Server", version="1.1.0")
 templates = Jinja2Templates(directory="templates")
+
+# Теперь подключаем роутер промокодов
+from referrals import router as referrals_router
+app.include_router(referrals_router)
+
+# ========= Дальше идёт твой код =========
+# startup/shutdown, модели, API лицензий, админка и т.д.
 
 
 # ========= Модели =========
@@ -375,4 +379,5 @@ async def admin_delete(request: Request, license_key: str = Form(...)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
