@@ -1,23 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Промокоды</h2>
-<a href="/admin/promocodes/new">➕ Создать промокод</a>
-<table border="1" cellpadding="6" cellspacing="0">
-  <tr>
-    <th>Код</th>
-    <th>Владелец</th>
-    <th>Скидка (%)</th>
-    <th>Использований</th>
-    <th>Последнее использование</th>
-  </tr>
-  {% for row in rows %}
-  <tr>
-    <td>{{ row.code }}</td>
-    <td>{{ row.owner }}</td>
-    <td>{{ row.discount }}</td>
-    <td>{{ row.uses }}</td>
-    <td>{{ row.last_used or "-" }}</td>
-  </tr>
-  {% endfor %}
-</table>
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">📊 Промокоды</h2>
+    <a href="/admin/promocodes/new" class="btn btn-success">➕ Создать промокод</a>
+  </div>
+
+  <table class="table table-striped table-hover">
+    <thead class="table-dark">
+      <tr>
+        <th scope="col">Код</th>
+        <th scope="col">Владелец</th>
+        <th scope="col">Скидка (%)</th>
+        <th scope="col">Использований</th>
+        <th scope="col">Последнее использование</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><span class="badge bg-primary">{{ row.code }}</span></td>
+        <td>{{ row.owner }}</td>
+        <td>{{ row.discount }}</td>
+        <td>{{ row.uses }}</td>
+        <td>{{ row.last_used or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
