@@ -7,6 +7,9 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
+from referrals import router as referrals_router
+app.include_router(referrals_router)
+
 
 # ========= Конфигурация =========
 DB_URL = os.getenv("DATABASE_URL", "").strip()
@@ -372,3 +375,4 @@ async def admin_delete(request: Request, license_key: str = Form(...)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
