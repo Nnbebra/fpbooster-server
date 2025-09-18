@@ -1,32 +1,29 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
   <title>FPBooster Admin</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0f1226; color:#fff; margin:0; }
-    header, footer { padding:12px 16px; background:#141a33; }
-    a { color:#66ccff; text-decoration:none; }
-    .container { padding:16px; }
-    .btn { background:#6a11cb; background-image:linear-gradient(90deg,#6a11cb,#2575fc); border:none; color:#fff; padding:8px 12px; border-radius:8px; cursor:pointer; }
-    .btn.warn { background:#ff5e62; background-image:linear-gradient(90deg,#ff5e62,#ff9966); }
-    input, select { padding:8px; border-radius:6px; border:1px solid #2b335c; background:#171c3a; color:#fff; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; }
-    th, td { border-bottom:1px solid #2b335c; padding:8px; text-align:left; }
-    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .right { margin-left:auto; }
-    .error { color:#ff9966; margin:8px 0; }
-  </style>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
-  <header class="row">
-    <div><strong>FPBooster Admin</strong></div>
-    <div class="right"><a href="/admin/licenses">Лицензии</a> &nbsp;|&nbsp; <a href="/admin/logout">Выход</a></div>
-  </header>
-  <div class="container">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/admin/licenses">FPBooster Admin</a>
+      <div class="collapse navbar-collapse">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/licenses">Лицензии</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/promocodes">Промокоды</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container mt-4">
     {% block content %}{% endblock %}
   </div>
-  <footer>© FPBooster</footer>
 </body>
 </html>
