@@ -1,61 +1,34 @@
 import os
+from typing import Optional, Literal
+from datetime import date, datetime
+
 import asyncpg
-from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request, Depends, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, validator
 
 # ========= Конфигурация =========
 DB_URL = os.getenv("DATABASE_URL", "").strip()
 if not DB_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
+# Автообновления (читать из Environment)
+UPDATE_VERSION = os.getenv("LATEST_VERSION", "").strip()
+UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
+UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
+UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
+
 # Создаём приложение
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
 templates = Jinja2Templates(directory="templates")
 
 # ===== Админ токен =====
-# Можно хранить в Render Environment Variables, но пока жёстко прописываем
 app.state.ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "581a7489e276cdaa84e5d1b88128ffeb")
 
 # ===== Подключение роутов промокодов =====
 from referrals import router as referrals_router
 app.include_router(referrals_router)
-
-# ========= Подключение к БД =========
-@app.on_event("startup")
-async def startup():
-    app.state.pool = await asyncpg.create_pool(dsn=DB_URL)
-
-@app.on_event("shutdown")
-async def shutdown():
-    await app.state.pool.close()
-
-# ========= Пример API лицензий =========
-@app.get("/admin/licenses", response_class=HTMLResponse)
-async def admin_licenses(request: Request):
-    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
-        return RedirectResponse(url="/admin/login", status_code=302)
-
-    async with app.state.pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM licenses ORDER BY created_at DESC")
-
-    return templates.TemplateResponse(
-        "licenses.html",
-        {"request": request, "rows": rows},
-    )
-
-# ========= Логин в админку =========
-@app.get("/admin/login", response_class=HTMLResponse)
-async def login_form(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
-
-@app.post("/admin/login")
-async def login(request: Request, token: str = Form(...)):
-    if token == app.state.ADMIN_TOKEN:
-        response = RedirectResponse(url="/admin/licenses", status_code=302)
-        response.set_cookie("admin_auth", token, httponly=True)
-        return response
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный токен"})
 
 # ========= Модели =========
 class LicenseIn(BaseModel):
@@ -78,7 +51,6 @@ class LicenseAdmin(BaseModel):
         except Exception as e:
             raise ValueError(f"expires must be ISO date (YYYY-MM-DD), got {v!r}: {e}")
 
-
 # ========= База данных =========
 @app.on_event("startup")
 async def startup():
@@ -95,22 +67,20 @@ async def shutdown():
     if pool:
         await pool.close()
 
-
 # ========= Защита =========
 def admin_guard_api(request: Request):
     token = request.headers.get("x-admin-token")
-    if not ADMIN_TOKEN:
+    if not app.state.ADMIN_TOKEN:
         raise HTTPException(status_code=500, detail="ADMIN_TOKEN is not configured")
-    if token != ADMIN_TOKEN:
+    if token != app.state.ADMIN_TOKEN:
         raise HTTPException(status_code=403, detail="Forbidden: invalid admin token")
     return True
 
 def admin_guard_ui(request: Request):
-    if not ADMIN_TOKEN:
+    if not app.state.ADMIN_TOKEN:
         return False
     cookie = request.cookies.get("admin_auth")
-    return cookie == ADMIN_TOKEN
-
+    return cookie == app.state.ADMIN_TOKEN
 
 # ========= Health =========
 @app.get("/api/health")
@@ -121,7 +91,6 @@ async def health():
         return {"ok": True, "time": datetime.utcnow().isoformat() + "Z"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
-
 
 # ========= Публичный API для клиента =========
 @app.get("/api/license")
@@ -155,6 +124,12 @@ async def check_license(license: str):
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
 
+# ========= Остальной код =========
+# Здесь остаются твои эндпоинты:
+# - /api/admin/license/create, delete, get
+# - /api/update
+# - /admin (login, logout, licenses CRUD)
+# Они у тебя уже рабочие, их можно оставить без изменений.
 
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
@@ -404,6 +379,4 @@ async def admin_delete(request: Request, license_key: str = Form(...)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
-
-
 
