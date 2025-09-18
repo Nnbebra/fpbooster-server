@@ -1,46 +1,56 @@
 {% extends "base.html" %}
 {% block content %}
-  <div class="row">
-    <h2>Лицензии</h2>
-    <div class="right">
-      <form method="get" action="/admin/licenses" class="row">
-        <input type="text" name="q" value="{{ q }}" placeholder="Поиск по ключу/пользователю">
-        <button class="btn" type="submit">Искать</button>
-        <a class="btn" href="/admin/licenses/new">Добавить</a>
-      </form>
-    </div>
-  </div>
+<h2 class="mb-4">Лицензии</h2>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Ключ</th>
-        <th>Статус</th>
-        <th>Истекает</th>
-        <th>Пользователь</th>
-        <th>Создано</th>
-        <th>Последняя проверка</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      <tr>
-        <td>{{ r.license_key }}</td>
-        <td>{{ r.status }}</td>
-        <td>{{ r.expires or "" }}</td>
-        <td>{{ r.user_name or "" }}</td>
-        <td>{{ r.created_at or "" }}</td>
-        <td>{{ r.last_check or "" }}</td>
-        <td class="row">
-          <a class="btn" href="/admin/licenses/edit?license_key={{ r.license_key }}">Редактировать</a>
-          <form method="post" action="/admin/licenses/delete" onsubmit="return confirm('Удалить {{ r.license_key }}?');">
-            <input type="hidden" name="license_key" value="{{ r.license_key }}">
-            <button class="btn warn" type="submit">Удалить</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<!-- Поисковая панель -->
+<div class="card-dark mb-4">
+  <form method="get" action="/admin/licenses" class="d-flex">
+    <input type="text" class="form-control me-2" name="q" placeholder="Поиск по ключу/пользователю" value="{{ request.query_params.get('q', '') }}">
+    <button type="submit" class="btn btn-purple">Искать</button>
+  </form>
+</div>
+
+<!-- Таблица лицензий -->
+<table class="table table-dark table-striped table-hover rounded shadow-lg overflow-hidden">
+  <thead>
+    <tr>
+      <th scope="col">Ключ</th>
+      <th scope="col">Статус / Истекает</th>
+      <th scope="col">Пользователь</th>
+      <th scope="col">Создано</th>
+      <th scope="col">Последняя проверка</th>
+      <th scope="col">Действия</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><span class="badge bg-gradient-purple">{{ row.license_key }}</span></td>
+      <td>
+        {% if row.status == "active" %}
+          <span class="text-success fw-bold">Активна</span>
+        {% elif row.status == "expired" %}
+          <span class="text-warning fw-bold">Истекла</span>
+        {% else %}
+          <span class="text-danger fw-bold">Заблокирована</span>
+        {% endif %}
+        {% if row.expires %}
+          <br><small class="text-muted">до {{ row.expires }}</small>
+        {% endif %}
+      </td>
+      <td>{{ row.user_name or "—" }}</td>
+      <td>{{ row.created_at.strftime("%Y-%m-%d %H:%M:%S") if row.created_at else "—" }}</td>
+      <td>{{ row.last_check.strftime("%Y-%m-%d %H:%M:%S") if row.last_check else "—" }}</td>
+      <td>
+        <a href="/admin/licenses/edit/{{ row.license_key }}" class="btn btn-sm btn-purple">
+          <i class="fas fa-edit"></i> Редактировать
+        </a>
+        <a href="/admin/licenses/delete/{{ row.license_key }}" class="btn btn-sm btn-danger" onclick="return confirm('Удалить лицензию?')">
+          <i class="fas fa-trash"></i> Удалить
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}
