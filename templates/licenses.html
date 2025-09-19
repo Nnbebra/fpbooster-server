@@ -2,55 +2,60 @@
 {% block content %}
 <h2 class="mb-4">Лицензии</h2>
 
-<!-- Поисковая панель -->
-<div class="card-dark mb-4">
-  <form method="get" action="/admin/licenses" class="d-flex">
+<!-- Панель действий -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <form method="get" action="/admin/licenses" class="d-flex w-50">
     <input type="text" class="form-control me-2" name="q" placeholder="Поиск по ключу/пользователю" value="{{ request.query_params.get('q', '') }}">
     <button type="submit" class="btn btn-purple">Искать</button>
   </form>
+  <a href="/admin/licenses/new" class="btn btn-purple">
+    <i class="fas fa-plus"></i> Создать лицензию
+  </a>
 </div>
 
 <!-- Таблица лицензий -->
-<table class="table table-dark table-striped table-hover rounded shadow-lg overflow-hidden">
-  <thead>
-    <tr>
-      <th scope="col">Ключ</th>
-      <th scope="col">Статус / Истекает</th>
-      <th scope="col">Пользователь</th>
-      <th scope="col">Создано</th>
-      <th scope="col">Последняя проверка</th>
-      <th scope="col">Действия</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    <tr>
-      <td><span class="badge bg-gradient-purple">{{ row.license_key }}</span></td>
-      <td>
-        {% if row.status == "active" %}
-          <span class="text-success fw-bold">Активна</span>
-        {% elif row.status == "expired" %}
-          <span class="text-warning fw-bold">Истекла</span>
-        {% else %}
-          <span class="text-danger fw-bold">Заблокирована</span>
-        {% endif %}
-        {% if row.expires %}
-          <br><small class="text-muted">до {{ row.expires }}</small>
-        {% endif %}
-      </td>
-      <td>{{ row.user_name or "—" }}</td>
-      <td>{{ row.created_at.strftime("%Y-%m-%d %H:%M:%S") if row.created_at else "—" }}</td>
-      <td>{{ row.last_check.strftime("%Y-%m-%d %H:%M:%S") if row.last_check else "—" }}</td>
-      <td>
-        <a href="/admin/licenses/edit/{{ row.license_key }}" class="btn btn-sm btn-purple">
-          <i class="fas fa-edit"></i> Редактировать
-        </a>
-        <a href="/admin/licenses/delete/{{ row.license_key }}" class="btn btn-sm btn-danger" onclick="return confirm('Удалить лицензию?')">
-          <i class="fas fa-trash"></i> Удалить
-        </a>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="card-dark">
+  <table class="table table-dark table-striped table-hover rounded overflow-hidden mb-0">
+    <thead>
+      <tr>
+        <th scope="col">Ключ</th>
+        <th scope="col">Статус / Истекает</th>
+        <th scope="col">Пользователь</th>
+        <th scope="col">Создано</th>
+        <th scope="col">Последняя проверка</th>
+        <th scope="col">Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><span class="badge bg-gradient-purple">{{ row.license_key }}</span></td>
+        <td>
+          {% if row.status == "active" %}
+            <span class="text-success fw-bold">Активна</span>
+          {% elif row.status == "expired" %}
+            <span class="text-warning fw-bold">Истекла</span>
+          {% else %}
+            <span class="text-danger fw-bold">Заблокирована</span>
+          {% endif %}
+          {% if row.expires %}
+            <br><small class="text-muted">до {{ row.expires }}</small>
+          {% endif %}
+        </td>
+        <td>{{ row.user_name or "—" }}</td>
+        <td>{{ row.created_at.strftime("%Y-%m-%d %H:%M:%S") if row.created_at else "—" }}</td>
+        <td>{{ row.last_check.strftime("%Y-%m-%d %H:%M:%S") if row.last_check else "—" }}</td>
+        <td>
+          <a href="/admin/licenses/edit/{{ row.license_key }}" class="btn btn-sm btn-purple">
+            <i class="fas fa-edit"></i> Изменить
+          </a>
+          <a href="/admin/licenses/delete/{{ row.license_key }}" class="btn btn-sm btn-danger" onclick="return confirm('Удалить лицензию?')">
+            <i class="fas fa-trash"></i> Удалить
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
