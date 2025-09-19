@@ -408,4 +408,29 @@ async def delete_license(request: Request, license_key: str):
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
 
+@app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
+async def edit_license_form(request: Request, license_key: str):
+    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    async with app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", license_key)
+    return templates.TemplateResponse("license_form.html", {"request": request, "row": row})
+
+@app.post("/admin/licenses/edit/{license_key}")
+async def edit_license(request: Request, license_key: str,
+                       status: str = Form(...),
+                       expires: str = Form(None),
+                       user: str = Form(None)):
+    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    async with app.state.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4",
+            status, expires if expires else None, user, license_key
+        )
+    return RedirectResponse(url="/admin/licenses", status_code=302)
+
+
+
+
 
