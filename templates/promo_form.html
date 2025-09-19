@@ -1,22 +1,60 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-4">
-  <h2>➕ Создать промокод</h2>
-  <form method="post" class="mt-3">
+<h2 class="mb-4">
+  {% if row %}
+    Редактировать промокод
+  {% else %}
+    Создать промокод
+  {% endif %}
+</h2>
+
+<div class="card-dark w-75 mx-auto">
+  <form method="post"
+        {% if row %}
+          action="/admin/promocodes/edit/{{ row.code }}"
+        {% else %}
+          action="/admin/promocodes/new"
+        {% endif %}>
+
+    <!-- Код -->
     <div class="mb-3">
       <label for="code" class="form-label">Код</label>
-      <input type="text" class="form-control" id="code" name="code" required>
+      <input type="text" class="form-control" id="code" name="code"
+             value="{{ row.code if row else '' }}" {% if row %}readonly{% endif %} required>
     </div>
+
+    <!-- Владелец -->
     <div class="mb-3">
       <label for="owner" class="form-label">Владелец</label>
-      <input type="text" class="form-control" id="owner" name="owner" required>
+      <input type="text" class="form-control" id="owner" name="owner"
+             value="{{ row.owner if row else '' }}" required>
     </div>
+
+    <!-- Скидка -->
     <div class="mb-3">
       <label for="discount" class="form-label">Скидка (%)</label>
-      <input type="number" class="form-control" id="discount" name="discount" value="14">
+      <input type="number" class="form-control" id="discount" name="discount"
+             value="{{ row.discount if row else '' }}" min="0" max="100" required>
     </div>
-    <button type="submit" class="btn btn-primary">Сохранить</button>
-    <a href="/admin/promocodes" class="btn btn-secondary">Отмена</a>
+
+    <!-- Ошибка -->
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <!-- Кнопки -->
+    <div class="d-flex justify-content-between mt-4">
+      <a href="/admin/promocodes" class="btn btn-secondary-custom">
+        <i class="fas fa-arrow-left"></i> Отмена
+      </a>
+      <button type="submit" class="btn btn-purple">
+        {% if row %}
+          <i class="fas fa-save"></i> Сохранить изменения
+        {% else %}
+          <i class="fas fa-plus"></i> Создать промокод
+        {% endif %}
+      </button>
+    </div>
   </form>
 </div>
 {% endblock %}
