@@ -202,7 +202,6 @@ async def admin_login_page(request: Request):
 
 @app.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...)):
-    # Всегда используем app.state.ADMIN_TOKEN
     if not app.state.ADMIN_TOKEN:
         return templates.TemplateResponse(
             "login.html",
@@ -302,7 +301,7 @@ async def admin_create(
 
 # ========= Редактирование =========
 @app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
-async def admin_edit_form_rest(request: Request, license_key: str):
+async def admin_edit_form(request: Request, license_key: str):
     if not admin_guard_ui(request):
         return RedirectResponse(url="/admin/login", status_code=302)
     async with app.state.pool.acquire() as conn:
@@ -318,7 +317,7 @@ async def admin_edit_form_rest(request: Request, license_key: str):
     )
 
 @app.post("/admin/licenses/edit/{license_key}")
-async def admin_update_rest(
+async def admin_update(
     request: Request,
     license_key: str,
     status: str = Form(...),
@@ -357,7 +356,7 @@ async def admin_update_rest(
 
 # ========= Удаление =========
 @app.get("/admin/licenses/delete/{license_key}")
-async def admin_delete_rest(request: Request, license_key: str):
+async def admin_delete(request: Request, license_key: str):
     if not admin_guard_ui(request):
         return RedirectResponse(url="/admin/login", status_code=302)
     async with app.state.pool.acquire() as conn:
