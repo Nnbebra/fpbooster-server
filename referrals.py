@@ -1,100 +1,90 @@
-from datetime import datetime
-from typing import Optional
-
-from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi import APIRouter, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-import asyncpg
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-
-# ===== API для проверки промокода (клиент) =====
-@router.get("/api/promocode")
-async def check_promocode(code: str, request: Request):
-    async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT code, owner, discount, uses, last_used
-            FROM promocodes
-            WHERE code = $1
-            """,
-            code.strip().upper(),
-        )
-        if not row:
-            return {"valid": False}
-
-        # Обновляем uses и last_used
-        await conn.execute(
-            """
-            UPDATE promocodes
-            SET uses = uses + 1, last_used = NOW()
-            WHERE code = $1
-            """,
-            code.strip().upper(),
-        )
-
-        return {
-            "valid": True,
-            "code": row["code"],
-            "owner": row["owner"],
-            "discount": row["discount"],
-            "uses": row["uses"] + 1,
-            "last_used": datetime.utcnow().isoformat(),
-        }
-
-
-# ===== Админка: список промокодов =====
+# ====== Список промокодов ======
 @router.get("/admin/promocodes", response_class=HTMLResponse)
-async def admin_promocodes(request: Request):
-    if not request.cookies.get("admin_auth") == request.app.state.ADMIN_TOKEN:
-        return RedirectResponse(url="/admin/login", status_code=302)
-
+async def list_promocodes(request: Request):
+    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
+        return RedirectResponse("/admin/login")
     async with request.app.state.pool.acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT code, owner, discount, uses, last_used
             FROM promocodes
-            ORDER BY uses DESC
+            ORDER BY created_at DESC
             """
         )
     return templates.TemplateResponse(
         "promocodes.html",
-        {"request": request, "rows": rows},
+        {"request": request, "rows": rows}
     )
 
-
-# ===== Админка: форма создания =====
+# ====== Создание ======
 @router.get("/admin/promocodes/new", response_class=HTMLResponse)
 async def new_promocode_form(request: Request):
-    if not request.cookies.get("admin_auth") == request.app.state.ADMIN_TOKEN:
-        return RedirectResponse(url="/admin/login", status_code=302)
+    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
+        return RedirectResponse("/admin/login")
     return templates.TemplateResponse(
         "promo_form.html",
-        {"request": request, "error": None},
+        {"request": request, "row": None, "error": None}
     )
 
-
 @router.post("/admin/promocodes/new")
-async def create_promocode(
-    request: Request,
-    code: str = Form(...),
-    owner: str = Form(...),
-    discount: int = Form(14),
-):
-    if not request.cookies.get("admin_auth") == request.app.state.ADMIN_TOKEN:
-        return RedirectResponse(url="/admin/login", status_code=302)
-
+async def create_promocode(request: Request,
+                           code: str = Form(...),
+                           owner: str = Form(...),
+                           discount: int = Form(...)):
+    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
+        return RedirectResponse("/admin/login")
     async with request.app.state.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO promocodes (code, owner, discount, uses)
-            VALUES ($1, $2, $3, 0)
-            ON CONFLICT (code) DO NOTHING
+            INSERT INTO promocodes (code, owner, discount)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (code) DO UPDATE
+            SET owner=EXCLUDED.owner,
+                discount=EXCLUDED.discount
             """,
-            code.strip().upper(),
-            owner.strip(),
-            discount,
+            code.strip(), owner.strip(), discount
         )
-    return RedirectResponse(url="/admin/promocodes", status_code=302)
+    return RedirectResponse("/admin/promocodes", status_code=302)
+
+# ====== Редактирование ======
+@router.get("/admin/promocodes/edit/{code}", response_class=HTMLResponse)
+async def edit_promocode_form(request: Request, code: str):
+    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
+        return RedirectResponse("/admin/login")
+    async with request.app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM promocodes WHERE code=$1", code)
+    if not row:
+        return RedirectResponse("/admin/promocodes")
+    return templates.TemplateResponse(
+        "promo_form.html",
+        {"request": request, "row": row, "error": None}
+    )
+
+@router.post("/admin/promocodes/edit/{code}")
+async def edit_promocode(request: Request, code: str,
+                         owner: str = Form(...),
+                         discount: int = Form(...)):
+    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
+        return RedirectResponse("/admin/login")
+    async with request.app.state.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE promocodes SET owner=$1, discount=$2 WHERE code=$3",
+            owner.strip(), discount, code
+        )
+    return RedirectResponse("/admin/promocodes", status_code=302)
+
+# ====== Удаление ======
+@router.get("/admin/promocodes/delete/{code}")
+async def delete_promocode(request: Request, code: str):
+    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
+        return RedirectResponse("/admin/login")
+    async with request.app.state.pool.acquire() as conn:
+        await conn.execute("DELETE FROM promocodes WHERE code=$1", code)
+    return RedirectResponse("/admin/promocodes", status_code=302)
