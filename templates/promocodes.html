@@ -2,22 +2,25 @@
 {% block content %}
 <h2 class="mb-4">Промокоды</h2>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<!-- Кнопка создания -->
+<div class="d-flex justify-content-end mb-3">
   <a href="/admin/promocodes/new" class="btn btn-purple">
     <i class="fas fa-plus"></i> Создать промокод
   </a>
 </div>
 
+<!-- Таблица промокодов -->
 <div class="card-dark">
   <table class="table table-dark table-striped table-hover rounded overflow-hidden mb-0">
     <thead>
       <tr>
-        <th scope="col">Код</th>
-        <th scope="col">Владелец</th>
-        <th scope="col">Скидка / Дни</th>
-        <th scope="col">Использований</th>
-        <th scope="col">Последнее использование</th>
-        <th scope="col">Действия</th>
+        <th>Код</th>
+        <th>Владелец</th>
+        <th>Скидка (%)</th>
+        <th>Бонусные дни</th>
+        <th>Использований</th>
+        <th>Последнее использование</th>
+        <th>Действия</th>
       </tr>
     </thead>
     <tbody>
@@ -25,7 +28,8 @@
       <tr>
         <td><span class="badge bg-gradient-purple">{{ row.code }}</span></td>
         <td>{{ row.owner or "—" }}</td>
-        <td>{{ row.discount }}</td>
+        <td><span class="text-info fw-bold">{{ row.discount or 0 }}%</span></td>
+        <td><span class="text-warning fw-bold">{{ row.bonus_days or 0 }}</span></td>
         <td>{{ row.uses or 0 }}</td>
         <td>{{ row.last_used.strftime("%Y-%m-%d %H:%M:%S") if row.last_used else "—" }}</td>
         <td>
