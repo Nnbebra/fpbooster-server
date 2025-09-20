@@ -3,9 +3,16 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 import bcrypt
+from fastapi import Depends
+from guards import admin_guard_ui
+
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+
+def guard(request: Request):
+    return admin_guard_ui(request, request.app.state.ADMIN_TOKEN)
+
 
 @router.get("/creators/login", response_class=HTMLResponse)
 async def creator_login_form(request: Request):
@@ -46,3 +53,13 @@ async def creator_dashboard(request: Request):
     if not data:
         return RedirectResponse("/creators/logout")
     return templates.TemplateResponse("creator_dashboard.html", {"request": request, "data": data})
+
+
+
+@router.get("/admin/creators", response_class=HTMLResponse)
+async def list_creators(request: Request, _=Depends(guard)):
+    async with request.app.state.pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM content_creators ORDER BY created_at DESC")
+    return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
+
+
