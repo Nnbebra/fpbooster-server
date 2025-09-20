@@ -23,8 +23,11 @@ async def list_promocodes(request: Request):
             FROM promocodes
             ORDER BY code ASC
             """
+        )
+    return templates.TemplateResponse(
+        "promocodes.html",
+        {"request": request, "rows": rows}
     )
-
 
 # ====== Создание ======
 @router.get("/admin/promocodes/new", response_class=HTMLResponse)
