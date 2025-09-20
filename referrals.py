@@ -209,3 +209,16 @@ async def api_use_promocode(
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
+
+
+
+from fastapi import Depends
+from server import admin_guard_ui  # импортируем guard
+
+@router.get("/admin/creators", response_class=HTMLResponse)
+async def list_creators(request: Request, _=Depends(admin_guard_ui)):
+    async with request.app.state.pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM content_creators ORDER BY created_at DESC")
+    return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
+
+
