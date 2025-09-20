@@ -13,9 +13,12 @@ async def list_promocodes(request: Request):
     async with request.app.state.pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT code, owner, discount, uses, last_used
+            SELECT
+              code,
+              owner,
+              discount
             FROM promocodes
-            ORDER BY created_at DESC
+            ORDER BY code ASC
             """
         )
     return templates.TemplateResponse(
