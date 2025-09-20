@@ -235,3 +235,13 @@ async def list_creators(request: Request, _=Depends(admin_guard_ui)):
 
 
 
+@router.get("/admin/creators", response_class=HTMLResponse)
+async def list_creators(request: Request, _=Depends(guard)):
+    async with request.app.state.pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM content_creators ORDER BY created_at DESC")
+    return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
+
+
+
+
+
