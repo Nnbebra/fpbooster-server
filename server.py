@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
+from guards import admin_guard_ui
 
 # ========= Создаём приложение =========
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
@@ -437,6 +438,7 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
