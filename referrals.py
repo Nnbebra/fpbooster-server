@@ -6,6 +6,10 @@ from fastapi.templating import Jinja2Templates
 
 from guards import admin_guard_ui  # общий guard без циклических импортов
 
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
@@ -155,18 +159,29 @@ async def api_use_promocode(
 ):
     try:
         async with request.app.state.pool.acquire() as conn:
-            # Лицензия
+            # 1) Загрузка данных лицензии
             lic = await conn.fetchrow(
-                "SELECT license_key, expires, promocode_used FROM licenses WHERE license_key=$1",
+                "SELECT license_key, expires, promocode_used, last_promocode_date "
+                "FROM licenses WHERE license_key=$1",
                 license_key
             )
             if not lic:
                 return JSONResponse({"ok": False, "error": "Лицензия не найдена"})
 
+            # 2) Лимит — не чаще 1 раза в месяц
+            last_date = lic.get("last_promocode_date")
+            cutoff = datetime.utcnow().date() - relativedelta(months=1)
+            if last_date and last_date >= cutoff:
+                return JSONResponse({
+                    "ok": False,
+                    "error": "Вы уже вводили промокод в этом месяце"
+                })
+
+            # 3) Проверяем, не применялся ли уже промокод для этой лицензии
             if lic["promocode_used"]:
                 return JSONResponse({"ok": False, "error": "Промокод уже был использован"})
 
-            # Промокод
+            # 4) Загружаем сам промокод
             promo = await conn.fetchrow(
                 "SELECT code, discount, bonus_days FROM promocodes WHERE code=$1",
                 code
@@ -174,9 +189,9 @@ async def api_use_promocode(
             if not promo:
                 return JSONResponse({"ok": False, "error": "Промокод не найден"})
 
-            # Продление на bonus_days (если 0 — только зафиксировать использование)
             days_to_add = int(promo["bonus_days"] or 0)
 
+            # 5) Обновляем лицензию и фиксируем дату ввода
             if days_to_add > 0:
                 await conn.execute(
                     """
@@ -185,6 +200,7 @@ async def api_use_promocode(
                       expires = (
                         COALESCE((expires)::timestamp, NOW()) + ($1 || ' days')::interval
                       )::date,
+                      last_promocode_date = CURRENT_DATE,
                       promocode_used = $2
                     WHERE license_key = $3
                     """,
@@ -192,28 +208,33 @@ async def api_use_promocode(
                 )
             else:
                 await conn.execute(
-                    "UPDATE licenses SET promocode_used=$1 WHERE license_key=$2",
+                    """
+                    UPDATE licenses
+                    SET
+                      last_promocode_date = CURRENT_DATE,
+                      promocode_used = $1
+                    WHERE license_key = $2
+                    """,
                     code, license_key
                 )
 
-            # Статистика промокода
+            # 6) Обновляем статистику промокода
             await conn.execute(
-                """
-                UPDATE promocodes
-                SET uses = COALESCE(uses, 0) + 1,
-                    last_used = NOW()
-                WHERE code=$1
-                """,
+                "UPDATE promocodes "
+                "SET uses = COALESCE(uses, 0) + 1, last_used = NOW() "
+                "WHERE code = $1",
                 code
             )
 
+        # 7) Формируем сообщение клиенту
         msg = "Промокод применён"
         if days_to_add > 0:
             msg += f". Лицензия продлена на {days_to_add} дней"
         return JSONResponse({"ok": True, "message": msg})
 
     except Exception as e:
-        return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
+        return JSONResponse({"ok": False, "error": f"Ошибка сервера: {e}"})
+
 
 
 @router.get("/api/promocode/info")
@@ -251,5 +272,6 @@ async def api_promocode_info(code: str):
             "commission_percent": row["commission_percent"],
         }
     })
+
 
 
