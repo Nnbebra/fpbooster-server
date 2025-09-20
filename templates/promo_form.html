@@ -16,33 +16,30 @@
           action="/admin/promocodes/new"
         {% endif %}>
 
-    <!-- Код -->
     <div class="mb-3">
       <label for="code" class="form-label">Код</label>
       <input type="text" class="form-control" id="code" name="code"
              value="{{ row.code if row else '' }}" {% if row %}readonly{% endif %} required>
     </div>
 
-    <!-- Владелец -->
     <div class="mb-3">
       <label for="owner" class="form-label">Владелец</label>
       <input type="text" class="form-control" id="owner" name="owner"
-             value="{{ row.owner if row else '' }}" required>
+             value="{{ row.owner if row else '' }}">
     </div>
 
-    <!-- Скидка -->
     <div class="mb-3">
       <label for="discount" class="form-label">Скидка (%)</label>
       <input type="number" class="form-control" id="discount" name="discount"
-             value="{{ row.discount if row else '' }}" min="0" max="100" required>
+             value="{{ row.discount if row else 0 }}" min="0" max="100">
     </div>
 
-    <!-- Ошибка -->
-    {% if error %}
-      <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
+    <div class="mb-3">
+      <label for="bonus_days" class="form-label">Бонусные дни</label>
+      <input type="number" class="form-control" id="bonus_days" name="bonus_days"
+             value="{{ row.bonus_days if row else 0 }}" min="0">
+    </div>
 
-    <!-- Кнопки -->
     <div class="d-flex justify-content-between mt-4">
       <a href="/admin/promocodes" class="btn btn-secondary-custom">
         <i class="fas fa-arrow-left"></i> Отмена
