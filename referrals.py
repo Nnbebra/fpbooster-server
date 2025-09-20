@@ -1,29 +1,22 @@
 # referrals.py — Part 1/3
 
-from fastapi import APIRouter, Request, Form, status
+from fastapi import APIRouter, Request, Form, status, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from fastapi import Depends
-from guards import admin_guard_ui
 
+from guards import admin_guard_ui  # общий guard без циклических импортов
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-
+# Обёртка для Depends: берём токен из app.state, а не из query
 def guard(request: Request):
     return admin_guard_ui(request, request.app.state.ADMIN_TOKEN)
 
+
+# ===== Список промокодов =====
 @router.get("/admin/promocodes", response_class=HTMLResponse)
 async def list_promocodes(request: Request, _=Depends(guard)):
-    ...
-
-
-
-@router.get("/admin/promocodes", response_class=HTMLResponse)
-async def list_promocodes(request: Request):
-    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
-        return RedirectResponse("/admin/login")
     async with request.app.state.pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -43,16 +36,16 @@ async def list_promocodes(request: Request):
     )
 
 
+# ===== Создание промокода (форма) =====
 @router.get("/admin/promocodes/new", response_class=HTMLResponse)
-async def new_promocode_form(request: Request):
-    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
-        return RedirectResponse("/admin/login")
+async def new_promocode_form(request: Request, _=Depends(guard)):
     return templates.TemplateResponse(
         "promo_form.html",
         {"request": request, "row": None, "error": None}
     )
 
 
+# ===== Создание промокода (обработка) =====
 @router.post("/admin/promocodes/new")
 async def create_promocode(
     request: Request,
@@ -60,21 +53,20 @@ async def create_promocode(
     owner: str      = Form(...),
     discount: int   = Form(...),
     bonus_days: int = Form(0),
+    _=Depends(guard),
 ):
-    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
-        return RedirectResponse("/admin/login")
-    code = code.strip()
-    owner = owner.strip()
+    code = (code or "").strip()
+    owner = (owner or "").strip()
+
     if not code:
         return templates.TemplateResponse(
             "promo_form.html",
             {"request": request, "row": None, "error": "Код не может быть пустым"},
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
     async with request.app.state.pool.acquire() as conn:
-        exists = await conn.fetchval(
-            "SELECT 1 FROM promocodes WHERE code=$1", code
-        )
+        exists = await conn.fetchval("SELECT 1 FROM promocodes WHERE code=$1", code)
         if exists:
             return templates.TemplateResponse(
                 "promo_form.html",
@@ -87,15 +79,15 @@ async def create_promocode(
                 (code, owner, discount, bonus_days, uses, last_used)
             VALUES ($1, $2, $3, $4, 0, NULL)
             """,
-            code, owner, discount, bonus_days
+            code, owner or None, int(discount), int(bonus_days)
         )
+
     return RedirectResponse("/admin/promocodes", status_code=status.HTTP_303_SEE_OTHER)
 # referrals.py — Part 2/3
 
+# ===== Редактирование промокода (форма) =====
 @router.get("/admin/promocodes/edit/{code}", response_class=HTMLResponse)
-async def edit_promocode_form(request: Request, code: str):
-    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
-        return RedirectResponse("/admin/login")
+async def edit_promocode_form(request: Request, code: str, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -112,12 +104,14 @@ async def edit_promocode_form(request: Request, code: str):
         )
     if not row:
         return RedirectResponse("/admin/promocodes", status_code=status.HTTP_303_SEE_OTHER)
+
     return templates.TemplateResponse(
         "promo_form.html",
         {"request": request, "row": row, "error": None}
     )
 
 
+# ===== Редактирование промокода (обработка) =====
 @router.post("/admin/promocodes/edit/{code}")
 async def edit_promocode(
     request: Request,
@@ -125,10 +119,10 @@ async def edit_promocode(
     owner: str      = Form(...),
     discount: int   = Form(...),
     bonus_days: int = Form(0),
+    _=Depends(guard),
 ):
-    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
-        return RedirectResponse("/admin/login")
-    owner = owner.strip()
+    owner = (owner or "").strip()
+
     async with request.app.state.pool.acquire() as conn:
         await conn.execute(
             """
@@ -138,20 +132,21 @@ async def edit_promocode(
                 bonus_days=$3
             WHERE code=$4
             """,
-            owner, discount, bonus_days, code
+            owner or None, int(discount), int(bonus_days), code
         )
+
     return RedirectResponse("/admin/promocodes", status_code=status.HTTP_303_SEE_OTHER)
 
 
+# ===== Удаление промокода =====
 @router.get("/admin/promocodes/delete/{code}")
-async def delete_promocode(request: Request, code: str):
-    if request.cookies.get("admin_auth") != request.app.state.ADMIN_TOKEN:
-        return RedirectResponse("/admin/login")
+async def delete_promocode(request: Request, code: str, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM promocodes WHERE code=$1", code)
     return RedirectResponse("/admin/promocodes", status_code=status.HTTP_303_SEE_OTHER)
 # referrals.py — Part 3/3
 
+# ===== Публичный API: применение промокода =====
 @router.post("/api/promocode/use")
 async def api_use_promocode(
     request: Request,
@@ -160,7 +155,7 @@ async def api_use_promocode(
 ):
     try:
         async with request.app.state.pool.acquire() as conn:
-            # 1) Проверяем лицензию
+            # Лицензия
             lic = await conn.fetchrow(
                 "SELECT license_key, expires, promocode_used FROM licenses WHERE license_key=$1",
                 license_key
@@ -171,7 +166,7 @@ async def api_use_promocode(
             if lic["promocode_used"]:
                 return JSONResponse({"ok": False, "error": "Промокод уже был использован"})
 
-            # 2) Проверяем промокод
+            # Промокод
             promo = await conn.fetchrow(
                 "SELECT code, discount, bonus_days FROM promocodes WHERE code=$1",
                 code
@@ -179,10 +174,9 @@ async def api_use_promocode(
             if not promo:
                 return JSONResponse({"ok": False, "error": "Промокод не найден"})
 
-            # 3) Берём bonus_days для продления
+            # Продление на bonus_days (если 0 — только зафиксировать использование)
             days_to_add = int(promo["bonus_days"] or 0)
 
-            # 4) Обновляем лицензию: если есть дни — прибавляем, иначе только помечаем usage
             if days_to_add > 0:
                 await conn.execute(
                     """
@@ -202,13 +196,12 @@ async def api_use_promocode(
                     code, license_key
                 )
 
-            # 5) Обновляем статистику промокода
+            # Статистика промокода
             await conn.execute(
                 """
                 UPDATE promocodes
-                SET
-                  uses = COALESCE(uses, 0) + 1,
-                  last_used = NOW()
+                SET uses = COALESCE(uses, 0) + 1,
+                    last_used = NOW()
                 WHERE code=$1
                 """,
                 code
@@ -221,27 +214,3 @@ async def api_use_promocode(
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
-
-
-
-from fastapi import Depends
-from server import admin_guard_ui  # импортируем guard
-
-@router.get("/admin/creators", response_class=HTMLResponse)
-async def list_creators(request: Request, _=Depends(admin_guard_ui)):
-    async with request.app.state.pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM content_creators ORDER BY created_at DESC")
-    return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
-
-
-
-@router.get("/admin/creators", response_class=HTMLResponse)
-async def list_creators(request: Request, _=Depends(guard)):
-    async with request.app.state.pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM content_creators ORDER BY created_at DESC")
-    return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
-
-
-
-
-
