@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Личный кабинет: {{ data.nickname }}</h2>
+
+<div class="card-dark p-3">
+  <p><strong>Промокод:</strong> {{ data.promo_code or "—" }}</p>
+  <p><strong>Скидка:</strong> {{ data.discount or 0 }}%</p>
+  <p><strong>Бонусные дни:</strong> {{ data.bonus_days or 0 }}</p>
+  <p><strong>Использований:</strong> {{ data.uses or 0 }}</p>
+  <p><strong>Последнее использование:</strong> {{ data.last_used.strftime("%Y-%m-%d %H:%M:%S") if data.last_used else "—" }}</p>
+  <p><strong>Комиссия:</strong> {{ data.commission_percent }}%</p>
+</div>
+
+<a href="/creators/logout" class="btn btn-secondary mt-3">Выйти</a>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Вход для контент‑мейкеров</h2>
+
+<form method="post" class="card-dark p-3">
+  <div class="mb-3">
+    <label class="form-label">Никнейм</label>
+    <input type="text" name="nickname" class="form-control" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Пароль</label>
+    <input type="password" name="password" class="form-control" required>
+  </div>
+  <button type="submit" class="btn btn-purple">Войти</button>
+</form>
+
+{% if error %}<div class="alert alert-danger mt-3">{{ error }}</div>{% endif %}
+{% endblock %}
