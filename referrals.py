@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
@@ -129,11 +130,6 @@ async def use_promocode(request: Request,
 
 
 
-from fastapi import APIRouter, Request, Form
-from fastapi.responses import JSONResponse
-
-router = APIRouter()
-
 @router.post("/api/promocode/use")
 async def api_use_promocode(request: Request,
                             license_key: str = Form(...),
@@ -192,6 +188,7 @@ async def api_use_promocode(request: Request,
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
+
 
 
 
