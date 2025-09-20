@@ -3,9 +3,21 @@
 from fastapi import APIRouter, Request, Form, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from fastapi import Depends
+from guards import admin_guard_ui
+
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+
+
+def guard(request: Request):
+    return admin_guard_ui(request, request.app.state.ADMIN_TOKEN)
+
+@router.get("/admin/promocodes", response_class=HTMLResponse)
+async def list_promocodes(request: Request, _=Depends(guard)):
+    ...
+
 
 
 @router.get("/admin/promocodes", response_class=HTMLResponse)
@@ -220,5 +232,6 @@ async def list_creators(request: Request, _=Depends(admin_guard_ui)):
     async with request.app.state.pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM content_creators ORDER BY created_at DESC")
     return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
+
 
 
