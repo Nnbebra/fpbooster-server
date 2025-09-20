@@ -25,7 +25,7 @@
       <tr>
         <td><span class="badge bg-gradient-purple">{{ row.code }}</span></td>
         <td>{{ row.owner or "—" }}</td>
-        <td>{{ row.discount }}%</td>
+        <td>{{ row.discount }}</td>
         <td>{{ row.uses or 0 }}</td>
         <td>{{ row.last_used.strftime("%Y-%m-%d %H:%M:%S") if row.last_used else "—" }}</td>
         <td>
