@@ -91,3 +91,39 @@ async def delete_promocode(request: Request, code: str):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM promocodes WHERE code=$1", code)
     return RedirectResponse("/admin/promocodes", status_code=302)
+
+
+@router.post("/api/promocode/use")
+async def use_promocode(request: Request,
+                        license_key: str = Form(...),
+                        code: str = Form(...)):
+    async with request.app.state.pool.acquire() as conn:
+        # Проверяем лицензию
+        lic = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", license_key)
+        if not lic:
+            return {"ok": False, "error": "Лицензия не найдена"}
+
+        # Проверяем, не использовался ли уже промокод
+        if lic.get("promocode_used"):
+            return {"ok": False, "error": "Промокод уже был использован"}
+
+        # Проверяем промокод
+        promo = await conn.fetchrow("SELECT * FROM promocodes WHERE code=$1", code)
+        if not promo:
+            return {"ok": False, "error": "Промокод не найден"}
+
+        # Применяем бонус (например, +30 дней)
+        await conn.execute(
+            "UPDATE licenses SET expires = COALESCE(expires, CURRENT_DATE) + interval '30 days', promocode_used=$1 WHERE license_key=$2",
+            code, license_key
+        )
+
+        # Обновляем статистику промокода
+        await conn.execute(
+            "UPDATE promocodes SET uses = COALESCE(uses,0)+1, last_used=NOW() WHERE code=$1",
+            code
+        )
+
+    return {"ok": True, "message": "Промокод успешно применён"}
+
+
