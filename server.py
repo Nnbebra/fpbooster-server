@@ -1,5 +1,3 @@
-# server.py — Part 1/3
-
 import os
 from typing import Optional, Literal
 from datetime import date, datetime
@@ -15,21 +13,21 @@ DB_URL = os.getenv("DATABASE_URL", "").strip()
 if not DB_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
-# Автообновления (из Environment)
+# Автообновления (читать из Environment)
 UPDATE_VERSION = os.getenv("LATEST_VERSION", "").strip()
 UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
 UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
 UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
 
-# Создаём приложение и шаблонизатор
+# Создаём приложение
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
 templates = Jinja2Templates(directory="templates")
 
-# Админ токен
+# ===== Админ токен =====
 app.state.ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "581a7489e276cdaa84e5d1b88128ffeb")
 
-# Подключение роутера промокодов (CRUD + /api/promocode/use)
-from referrals import router as referrals_router  # содержит админку промокодов и API
+# ===== Подключение роутов промокодов =====
+from referrals import router as referrals_router
 app.include_router(referrals_router)
 
 # ========= Модели =========
@@ -53,7 +51,7 @@ class LicenseAdmin(BaseModel):
         except Exception as e:
             raise ValueError(f"expires must be ISO date (YYYY-MM-DD), got {v!r}: {e}")
 
-# ========= База данных / startup =========
+# ========= База данных =========
 @app.on_event("startup")
 async def startup():
     app.state.pool = await asyncpg.create_pool(
@@ -62,8 +60,6 @@ async def startup():
         max_size=5,
         command_timeout=10
     )
-    # Делаем шаблон доступным для роутера промокодов (использует request.app.state.templates)
-    app.state.templates = templates
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -85,7 +81,6 @@ def admin_guard_ui(request: Request):
         return False
     cookie = request.cookies.get("admin_auth")
     return cookie == app.state.ADMIN_TOKEN
-# server.py — Part 2/3
 
 # ========= Health =========
 @app.get("/api/health")
@@ -129,7 +124,14 @@ async def check_license(license: str):
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
 
-# ========= Админ API (JSON) =========
+# ========= Остальной код =========
+# Здесь остаются твои эндпоинты:
+# - /api/admin/license/create, delete, get
+# - /api/update
+# - /admin (login, logout, licenses CRUD)
+# Они у тебя уже рабочие, их можно оставить без изменений.
+
+# ========= Админ API =========
 @app.post("/api/admin/license/create")
 async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
     async with app.state.pool.acquire() as conn:
@@ -181,10 +183,11 @@ async def get_license_api(license: str, _guard: bool = Depends(admin_guard_api))
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
 
+
 # ========= Автообновления =========
 @app.get("/api/update")
 async def update_meta():
-    # Жёсткая проверка, чтобы не отдавать пустые значения
+    # Жёсткая проверка, чтобы не отдавать заглушки и пустые значения
     if not UPDATE_VERSION or not UPDATE_URL or not UPDATE_SHA256:
         raise HTTPException(
             status_code=500,
@@ -196,7 +199,7 @@ async def update_meta():
         "sha256": UPDATE_SHA256,
         "changelog": UPDATE_CHANGELOG or "Без описания изменений",
     }
-# server.py — Part 3/3
+
 
 # ========= Веб-админка =========
 @app.get("/admin", response_class=HTMLResponse)
@@ -211,20 +214,20 @@ async def admin_login_page(request: Request):
 
 @app.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...)):
-    if not app.state.ADMIN_TOKEN:
+    if not ADMIN_TOKEN:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "ADMIN_TOKEN не настроен"},
             status_code=500,
         )
-    if password != app.state.ADMIN_TOKEN:
+    if password != ADMIN_TOKEN:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "Неверный пароль"},
             status_code=401,
         )
     resp = RedirectResponse(url="/admin/licenses", status_code=302)
-    resp.set_cookie("admin_auth", app.state.ADMIN_TOKEN, max_age=7 * 24 * 3600, httponly=True, samesite="lax")
+    resp.set_cookie("admin_auth", ADMIN_TOKEN, max_age=7 * 24 * 3600, httponly=True, samesite="lax")
     return resp
 
 @app.get("/admin/logout")
@@ -233,7 +236,6 @@ async def admin_logout():
     resp.delete_cookie("admin_auth")
     return resp
 
-# ===== Лицензии: список =====
 @app.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_list(request: Request, q: Optional[str] = None):
     if not admin_guard_ui(request):
@@ -262,7 +264,6 @@ async def admin_list(request: Request, q: Optional[str] = None):
         {"request": request, "rows": rows, "q": q or ""},
     )
 
-# ===== Лицензии: создать =====
 @app.get("/admin/licenses/new", response_class=HTMLResponse)
 async def admin_new_form(request: Request):
     if not admin_guard_ui(request):
@@ -309,7 +310,6 @@ async def admin_create(
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-# ===== Лицензии: редактировать =====
 @app.get("/admin/licenses/edit", response_class=HTMLResponse)
 async def admin_edit_form(request: Request, license_key: str):
     if not admin_guard_ui(request):
@@ -378,4 +378,54 @@ async def admin_delete(request: Request, license_key: str = Form(...)):
         return RedirectResponse(url="/admin/login", status_code=302)
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
+    return RedirectResponse(url="/admin/licenses", status_code=302)
+
+@app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
+async def edit_license_form(request: Request, license_key: str):
+    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    async with app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", license_key)
+    return templates.TemplateResponse("license_form.html", {"request": request, "row": row})
+
+@app.post("/admin/licenses/edit/{license_key}")
+async def edit_license(request: Request, license_key: str, status: str = Form(...), expires: str = Form(None), user: str = Form(None)):
+    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    async with app.state.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4",
+            status, expires if expires else None, user, license_key
+        )
+    return RedirectResponse(url="/admin/licenses", status_code=302)
+
+@app.get("/admin/licenses/delete/{license_key}")
+async def delete_license(request: Request, license_key: str):
+    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    async with app.state.pool.acquire() as conn:
+        await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
+    return RedirectResponse(url="/admin/licenses", status_code=302)
+
+
+@app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
+async def edit_license_form(request: Request, license_key: str):
+    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    async with app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", license_key)
+    return templates.TemplateResponse("license_form.html", {"request": request, "row": row})
+
+@app.post("/admin/licenses/edit/{license_key}")
+async def edit_license(request: Request, license_key: str,
+                       status: str = Form(...),
+                       expires: str = Form(None),
+                       user: str = Form(None)):
+    if not request.cookies.get("admin_auth") == app.state.ADMIN_TOKEN:
+        return RedirectResponse(url="/admin/login", status_code=302)
+    async with app.state.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4",
+            status, expires if expires else None, user, license_key
+        )
     return RedirectResponse(url="/admin/licenses", status_code=302)
