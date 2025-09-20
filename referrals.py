@@ -214,3 +214,42 @@ async def api_use_promocode(
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
+
+
+@router.get("/api/promocode/info")
+async def api_promocode_info(code: str):
+    """
+    Возвращает данные по промокоду:
+    • владелец (nickname)
+    • ссылки автора (social_links)
+    • discount, bonus_days
+    • процент комиссии автора
+    """
+    async with request.app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT
+              p.code,
+              p.discount,
+              p.bonus_days,
+              c.nickname   AS owner,
+              c.social_links,
+              c.commission_percent
+            FROM promocodes p
+            LEFT JOIN content_creators c ON c.promo_code = p.code
+            WHERE p.code = $1
+        """, code)
+    if not row:
+        return JSONResponse({"ok": False, "error": "Промокод не найден"}, status_code=404)
+    return JSONResponse({
+        "ok": True,
+        "data": {
+            "code": row["code"],
+            "discount": row["discount"],
+            "bonus_days": row["bonus_days"],
+            "owner": row["owner"],
+            "social_links": row["social_links"],
+            "commission_percent": row["commission_percent"],
+        }
+    })
+
+
