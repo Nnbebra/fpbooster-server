@@ -15,6 +15,11 @@ templates = Jinja2Templates(directory="templates")
 # ===== Админ токен =====
 app.state.ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "581a7489e276cdaa84e5d1b88128ffeb")
 
+
+from creators import router as creators_router
+app.include_router(creators_router)
+
+
 # ===== Подключение роутеров =====
 from referrals import router as referrals_router
 from admin_creators import router as creators_router
@@ -431,5 +436,6 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
