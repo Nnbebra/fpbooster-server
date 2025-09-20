@@ -9,7 +9,6 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 
-
 def admin_guard_ui(request: Request):
     """
     Проверяет cookie admin_auth против ADMIN_TOKEN.
@@ -158,16 +157,3 @@ async def delete_creator(request: Request, id: int):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
-
-
-
-from fastapi import Depends
-from server import admin_guard_ui  # импортируем guard
-
-@router.get("/admin/creators", response_class=HTMLResponse)
-async def list_creators(request: Request, _=Depends(admin_guard_ui)):
-    async with request.app.state.pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM content_creators ORDER BY created_at DESC")
-    return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
-
-
