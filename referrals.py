@@ -18,12 +18,14 @@ async def list_promocodes(request: Request):
               code,
               owner,
               discount,
+              bonus_days,
               uses,
               last_used
             FROM promocodes
             ORDER BY code ASC
             """
         )
+
     return templates.TemplateResponse(
         "promocodes.html",
         {"request": request, "rows": rows}
@@ -190,6 +192,7 @@ async def api_use_promocode(request: Request,
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
+
 
 
 
