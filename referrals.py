@@ -17,15 +17,14 @@ async def list_promocodes(request: Request):
             SELECT
               code,
               owner,
-              discount
+              discount,
+              uses,
+              last_used
             FROM promocodes
             ORDER BY code ASC
             """
-        )
-    return templates.TemplateResponse(
-        "promocodes.html",
-        {"request": request, "rows": rows}
     )
+
 
 # ====== Создание ======
 @router.get("/admin/promocodes/new", response_class=HTMLResponse)
@@ -188,6 +187,7 @@ async def api_use_promocode(request: Request,
 
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
+
 
 
 
