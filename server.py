@@ -37,6 +37,15 @@ UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
 UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
 UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
 
+from fastapi import Depends
+
+def admin_guard_ui(request: Request):
+    if request.cookies.get("admin_auth") != app.state.ADMIN_TOKEN:
+        # Принудительный редирект на логин
+        raise HTTPException(status_code=302, detail="Redirect", headers={"Location": "/admin/login"})
+    return True
+
+
 # ========= Модели =========
 class LicenseIn(BaseModel):
     license: str
@@ -437,6 +446,7 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
