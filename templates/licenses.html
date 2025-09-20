@@ -5,7 +5,7 @@
 <!-- Панель действий -->
 <div class="d-flex justify-content-between align-items-center mb-4">
   <form method="get" action="/admin/licenses" class="d-flex w-50">
-    <input type="text" class="form-control me-2" name="q" placeholder="Поиск по ключу/пользователю" value="{{ request.query_params.get('q', '') }}">
+    <input type="text" class="form-control me-2" name="q" placeholder="Поиск по ключу/пользователю" value="{{ q }}">
     <button type="submit" class="btn btn-purple">Искать</button>
   </form>
   <a href="/admin/licenses/new" class="btn btn-purple">
@@ -32,14 +32,14 @@
         <td><span class="badge bg-gradient-purple">{{ row.license_key }}</span></td>
         <td>
           {% if row.status == "active" %}
-            <span class="text-success fw-bold">Активна</span>
+            <span class="badge bg-success">Активна</span>
           {% elif row.status == "expired" %}
-            <span class="text-warning fw-bold">Истекла</span>
+            <span class="badge bg-warning text-dark">Истекла</span>
           {% else %}
-            <span class="text-danger fw-bold">Заблокирована</span>
+            <span class="badge bg-danger">Заблокирована</span>
           {% endif %}
           {% if row.expires %}
-            <br><small class="text-muted">до {{ row.expires }}</small>
+            <div class="mt-1"><span class="badge bg-info text-dark">до {{ row.expires }}</span></div>
           {% endif %}
         </td>
         <td>{{ row.user_name or "—" }}</td>
@@ -49,7 +49,8 @@
           <a href="/admin/licenses/edit/{{ row.license_key }}" class="btn btn-sm btn-purple">
             <i class="fas fa-edit"></i> Изменить
           </a>
-          <a href="/admin/licenses/delete/{{ row.license_key }}" class="btn btn-sm btn-danger" onclick="return confirm('Удалить лицензию?')">
+          <a href="/admin/licenses/delete/{{ row.license_key }}" class="btn btn-sm btn-danger"
+             onclick="return confirm('Удалить лицензию?')">
             <i class="fas fa-trash"></i> Удалить
           </a>
         </td>
