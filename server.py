@@ -221,21 +221,22 @@ async def admin_login_page(request: Request):
 
 @app.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...)):
-    if not ADMIN_TOKEN:
+    if not app.state.ADMIN_TOKEN:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": "ADMIN_TOKEN не настроен"},
             status_code=500,
         )
-    if password != ADMIN_TOKEN:
+    if password != app.state.ADMIN_TOKEN:
         return templates.TemplateResponse(
             "login.html",
-            {"request": request, "error": "Неверный пароль"},
+            {"request": request, "error": "Неверный токен"},
             status_code=401,
         )
     resp = RedirectResponse(url="/admin/licenses", status_code=302)
-    resp.set_cookie("admin_auth", ADMIN_TOKEN, max_age=7 * 24 * 3600, httponly=True, samesite="lax")
+    resp.set_cookie("admin_auth", app.state.ADMIN_TOKEN, httponly=True, samesite="lax", max_age=7*24*3600)
     return resp
+
 
 @app.get("/admin/logout")
 async def admin_logout():
@@ -436,6 +437,7 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
