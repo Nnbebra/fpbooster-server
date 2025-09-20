@@ -127,3 +127,72 @@ async def use_promocode(request: Request,
     return {"ok": True, "message": "Промокод успешно применён"}
 
 
+
+
+from fastapi import APIRouter, Request, Form
+from fastapi.responses import JSONResponse
+
+router = APIRouter()
+
+@router.post("/api/promocode/use")
+async def api_use_promocode(request: Request,
+                            license_key: str = Form(...),
+                            code: str = Form(...)):
+    try:
+        async with request.app.state.pool.acquire() as conn:
+            # 1) Проверяем лицензию
+            lic = await conn.fetchrow("""
+                SELECT license_key, expires, promocode_used
+                FROM licenses
+                WHERE license_key = $1
+            """, license_key)
+            if not lic:
+                return JSONResponse({"ok": False, "error": "Лицензия не найдена"})
+
+            if lic["promocode_used"]:
+                return JSONResponse({"ok": False, "error": "Промокод уже был использован для этой лицензии"})
+
+            # 2) Проверяем промокод
+            promo = await conn.fetchrow("""
+                SELECT code, owner, discount
+                FROM promocodes
+                WHERE code = $1
+            """, code)
+            if not promo:
+                return JSONResponse({"ok": False, "error": "Промокод не найден"})
+
+            # 3) Дни продления (discount трактуем как дни; если пусто/0 — ставим 30)
+            try:
+                days_to_add = int(promo["discount"] or 30)
+            except Exception:
+                days_to_add = 30
+            if days_to_add <= 0:
+                days_to_add = 30
+
+            # 4) Обновляем лицензию: expires типа DATE → приводим к timestamp и назад к date
+            await conn.execute("""
+                UPDATE licenses
+                SET
+                  expires = (
+                      COALESCE((expires)::timestamp, NOW()) + ($1 || ' days')::interval
+                  )::date,
+                  promocode_used = $2
+                WHERE license_key = $3
+            """, str(days_to_add), code, license_key)
+
+            # 5) Обновляем статистику промокода
+            await conn.execute("""
+                UPDATE promocodes
+                SET uses = COALESCE(uses, 0) + 1,
+                    last_used = NOW()
+                WHERE code = $1
+            """, code)
+
+        return JSONResponse({"ok": True, "message": f"Промокод применён. Лицензия продлена на {days_to_add} дней."})
+
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"Ошибка сервера при применении промокода: {e}"})
+
+
+
+
