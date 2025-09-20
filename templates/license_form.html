@@ -9,21 +9,19 @@
 </h2>
 
 <div class="card-dark w-75 mx-auto">
-  <form method="post" 
+  <form method="post"
         {% if row %}
           action="/admin/licenses/edit/{{ row.license_key }}"
         {% else %}
           action="/admin/licenses/new"
         {% endif %}>
 
-    <!-- Ключ -->
     <div class="mb-3">
       <label for="license_key" class="form-label">Ключ</label>
       <input type="text" class="form-control" id="license_key" name="license_key"
              value="{{ row.license_key if row else '' }}" {% if row %}readonly{% endif %} required>
     </div>
 
-    <!-- Статус -->
     <div class="mb-3">
       <label for="status" class="form-label">Статус</label>
       <select class="form-select" id="status" name="status" required>
@@ -33,26 +31,22 @@
       </select>
     </div>
 
-    <!-- Дата окончания -->
     <div class="mb-3">
       <label for="expires" class="form-label">Дата окончания</label>
       <input type="date" class="form-control" id="expires" name="expires"
              value="{{ row.expires if row and row.expires else '' }}">
     </div>
 
-    <!-- Пользователь -->
     <div class="mb-3">
       <label for="user" class="form-label">Пользователь</label>
       <input type="text" class="form-control" id="user" name="user"
              value="{{ row.user_name if row else '' }}">
     </div>
 
-    <!-- Ошибка -->
     {% if error %}
       <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
 
-    <!-- Кнопки -->
     <div class="d-flex justify-content-between mt-4">
       <a href="/admin/licenses" class="btn btn-secondary-custom">
         <i class="fas fa-arrow-left"></i> Отмена
