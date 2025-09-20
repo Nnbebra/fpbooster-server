@@ -7,31 +7,30 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
-from admin_creators import router as creators_router
-app.include_router(creators_router)
 
-
-# ========= Конфигурация =========
-DB_URL = os.getenv("DATABASE_URL", "").strip()
-if not DB_URL:
-    raise RuntimeError("DATABASE_URL is not set")
-
-# Автообновления (читать из Environment)
-UPDATE_VERSION = os.getenv("LATEST_VERSION", "").strip()
-UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
-UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
-UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
-
-# Создаём приложение
+# ========= Создаём приложение =========
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
 templates = Jinja2Templates(directory="templates")
 
 # ===== Админ токен =====
 app.state.ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "581a7489e276cdaa84e5d1b88128ffeb")
 
-# ===== Подключение роутов промокодов =====
+# ===== Подключение роутеров =====
 from referrals import router as referrals_router
+from admin_creators import router as creators_router
+
 app.include_router(referrals_router)
+app.include_router(creators_router)
+
+# ========= Конфигурация =========
+DB_URL = os.getenv("DATABASE_URL", "").strip()
+if not DB_URL:
+    raise RuntimeError("DATABASE_URL is not set")
+
+UPDATE_VERSION = os.getenv("LATEST_VERSION", "").strip()
+UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
+UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
+UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
 
 # ========= Модели =========
 class LicenseIn(BaseModel):
@@ -432,4 +431,5 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
