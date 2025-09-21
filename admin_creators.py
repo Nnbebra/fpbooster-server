@@ -148,20 +148,91 @@ async def create_creator(
 
 # ================= Админка: редактирование и удаление =================
 
-@router.get("/admin/creators/edit/{id}", response_class=HTMLResponse)
-async def edit_creator_form(request: Request, id: int, _=Depends(guard)):
+@router.post("/admin/creators/edit/{id}")
+async def edit_creator(
+    request: Request,
+    id: int,
+    nickname: str = Form(...),
+    password: str = Form(None),
+    promo_code: str = Form(None),
+    commission_percent: int = Form(0),
+    youtube: str = Form(""),
+    tiktok: str = Form(""),
+    telegram: str = Form(""),
+    _=Depends(guard),
+):
+    nickname = (nickname or "").strip()
+    promo_code_clean = (promo_code or "").strip() or None
+    commission_percent = int(commission_percent or 0)
+
     async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT id, nickname, promo_code, commission_percent
-            FROM content_creators
-            WHERE id=$1
-            """,
-            id,
-        )
-    if not row:
-        return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse("creator_form.html", {"request": request, "creator": row, "error": None})
+        # Проверка промокода, если он указан
+        if promo_code_clean:
+            exists = await conn.fetchval("SELECT 1 FROM promocodes WHERE code=$1", promo_code_clean)
+            if not exists:
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, nickname, promo_code, commission_percent,
+                           youtube, tiktok, telegram
+                    FROM content_creators
+                    WHERE id=$1
+                    """,
+                    id,
+                )
+                return templates.TemplateResponse(
+                    "creator_form.html",
+                    {"request": request, "creator": row, "error": "Такого промокода не существует"},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Если пароль введён — обновляем и его
+        if password:
+            pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+            await conn.execute(
+                """
+                UPDATE content_creators
+                SET nickname=$1,
+                    password_hash=$2,
+                    promo_code=$3,
+                    commission_percent=$4,
+                    youtube=$5,
+                    tiktok=$6,
+                    telegram=$7
+                WHERE id=$8
+                """,
+                nickname,
+                pw_hash,
+                promo_code_clean,
+                commission_percent,
+                (youtube or "").strip() or None,
+                (tiktok or "").strip() or None,
+                (telegram or "").strip() or None,
+                id,
+            )
+        else:
+            # Если пароль пустой — не трогаем password_hash
+            await conn.execute(
+                """
+                UPDATE content_creators
+                SET nickname=$1,
+                    promo_code=$2,
+                    commission_percent=$3,
+                    youtube=$4,
+                    tiktok=$5,
+                    telegram=$6
+                WHERE id=$7
+                """,
+                nickname,
+                promo_code_clean,
+                commission_percent,
+                (youtube or "").strip() or None,
+                (tiktok or "").strip() or None,
+                (telegram or "").strip() or None,
+                id,
+            )
+
+    return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 
 @router.post("/admin/creators/edit/{id}")
 async def edit_creator(
@@ -217,6 +288,7 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 
 
 
