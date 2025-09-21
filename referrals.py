@@ -221,36 +221,51 @@ async def api_use_promocode(
 
 @router.get("/api/promocode/info")
 async def api_promocode_info(request: Request, license_key: str):
-    async with request.app.state.pool.acquire() as conn:
-        lic = await conn.fetchrow(
-            "SELECT promocode_used FROM licenses WHERE license_key=$1",
-            license_key
-        )
-        if not lic or not lic["promocode_used"]:
-            return JSONResponse({"ok": False, "error": "За лицензией не закреплён промокод"})
+    try:
+        async with request.app.state.pool.acquire() as conn:
+            lic = await conn.fetchrow(
+                "SELECT promocode_used, last_promocode_date FROM licenses WHERE license_key=$1",
+                license_key
+            )
+            if not lic or not lic["promocode_used"]:
+                return JSONResponse({"ok": False, "error": "За лицензией не закреплён промокод"})
 
-        row = await conn.fetchrow("""
-            SELECT p.code, p.discount, p.bonus_days,
-                   c.nickname AS owner, c.social_links, c.commission_percent
-            FROM promocodes p
-            LEFT JOIN content_creators c ON c.promo_code = p.code
-            WHERE p.code = $1
-        """, lic["promocode_used"])
+            row = await conn.fetchrow("""
+                SELECT p.code,
+                       p.discount,
+                       p.bonus_days,
+                       c.nickname         AS owner,
+                       c.social_links     AS social_links,
+                       c.commission_percent
+                FROM promocodes p
+                LEFT JOIN content_creators c ON c.promo_code = p.code
+                WHERE p.code = $1
+            """, lic["promocode_used"])
 
-    if not row:
-        return JSONResponse({"ok": False, "error": "Промокод не найден"}, status_code=404)
+        if not row:
+            return JSONResponse({"ok": False, "error": "Промокод не найден"}, status_code=404)
 
-    return JSONResponse({
-    "ok": True,
-    "data": {
-        "code": row["code"],
-        "discount": row["discount"],
-        "bonus_days": row["bonus_days"],
-        "owner": row["owner"],
-        "social_links": row["social_links"],
-        "last_promocode_date": lic["last_promocode_date"].isoformat() if lic["last_promocode_date"] else None
-    }
-})
+        # Безопасно формируем дату (может отсутствовать или быть NULL)
+        last_date = lic.get("last_promocode_date") if hasattr(lic, "get") else lic["last_promocode_date"]
+        last_date_iso = last_date.isoformat() if last_date else None
+
+        # Возвращаем старые поля + новое, но новое — опционально
+        data = {
+            "code": row["code"],
+            "discount": row["discount"],
+            "bonus_days": row["bonus_days"],
+            "owner": row["owner"],
+            "social_links": row["social_links"],
+            "commission_percent": row["commission_percent"],  # для совместимости
+            "last_promocode_date": last_date_iso,            # новое поле, может быть None
+        }
+        return JSONResponse({"ok": True, "data": data})
+
+    except Exception as e:
+        # Никогда не роняем сервер наружу — вернём читаемую ошибку
+        return JSONResponse({"ok": False, "error": f"Ошибка сервера: {e}"}, status_code=500)
+
+
 
 
 
