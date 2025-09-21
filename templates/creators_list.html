@@ -1,37 +1,31 @@
 {% extends "base.html" %}
+
 {% block content %}
-<h2 class="mb-4">Контент‑мейкеры</h2>
-
-<a href="/admin/creators/new" class="btn btn-purple mb-3">+ Создать</a>
-
-<div class="card-dark">
-  <table class="table table-dark table-striped">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Никнейм</th>
-        <th>Промокод</th>
-        <th>Комиссия (%)</th>
-        <th>Создан</th>
-        <th>Действия</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for c in rows %}
-      <tr>
-        <td>{{ c.id }}</td>
-        <td>{{ c.nickname }}</td>
-        <td>{{ c.promo_code or "—" }}</td>
-        <td>{{ c.commission_percent }}%</td>
-        <td>{{ c.created_at.strftime("%Y-%m-%d") }}</td>
-        <td>
-          <a href="/admin/creators/edit/{{ c.id }}" class="btn btn-sm btn-purple">✎</a>
-          <a href="/admin/creators/delete/{{ c.id }}" class="btn btn-sm btn-danger"
-             onclick="return confirm('Удалить?')">🗑</a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<h2>Авторы</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Ник</th>
+      <th>Соцсети</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in creators %}
+    <tr>
+      <td>{{ c.id }}</td>
+      <td>{{ c.nickname }}</td>
+      <td>
+        {% if c.social_links %}
+          {{ c.social_links }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td><a href="/admin/creators/{{ c.id }}">Редактировать</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}
