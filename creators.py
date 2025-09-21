@@ -46,3 +46,49 @@ async def creator_dashboard(request: Request):
     if not data:
         return RedirectResponse("/creators/logout")
     return templates.TemplateResponse("creator_dashboard.html", {"request": request, "data": data})
+
+
+@router.get("/creators/profile", response_class=HTMLResponse)
+async def creator_profile_form(request: Request):
+    cid = request.cookies.get("creator_auth")
+    if not cid:
+        return RedirectResponse("/creators/login")
+    async with request.app.state.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT nickname, youtube, tiktok, telegram
+            FROM content_creators
+            WHERE id=$1
+            """,
+            int(cid),
+        )
+    if not row:
+        return RedirectResponse("/creators/logout")
+    return templates.TemplateResponse("creator_profile.html", {"request": request, "row": row, "error": None})
+
+
+@router.post("/creators/profile")
+async def creator_profile_update(
+    request: Request,
+    youtube: str = Form(""),
+    tiktok: str = Form(""),
+    telegram: str = Form(""),
+):
+    cid = request.cookies.get("creator_auth")
+    if not cid:
+        return RedirectResponse("/creators/login")
+    async with request.app.state.pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE content_creators
+            SET youtube=$1, tiktok=$2, telegram=$3
+            WHERE id=$4
+            """,
+            (youtube or "").strip() or None,
+            (tiktok or "").strip() or None,
+            (telegram or "").strip() or None,
+            int(cid),
+        )
+    return RedirectResponse("/creators/dashboard", status_code=303)
+
+
