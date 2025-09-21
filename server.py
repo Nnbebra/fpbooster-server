@@ -20,6 +20,10 @@ app.state.ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "581a7489e276cdaa84e5d1b88128ff
 from creators import router as creators_router
 app.include_router(creators_router)
 
+from admin_creators import router as admin_creators_router
+app.include_router(admin_creators_router)
+
+
 
 # ===== Подключение роутеров =====
 from referrals import router as referrals_router
@@ -438,6 +442,7 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
