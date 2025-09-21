@@ -4,6 +4,8 @@ from fastapi import APIRouter, Request, Form, Depends, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 import bcrypt
+import random
+import string
 
 from guards import admin_guard_ui  # общий guard, читает куку admin_auth
 
@@ -89,6 +91,12 @@ async def list_creators(request: Request, _=Depends(guard)):
 async def new_creator_form(request: Request, _=Depends(guard)):
     return templates.TemplateResponse("creator_form.html", {"request": request, "creator": None})
 
+
+def generate_promo_code(length=8):
+    """Генерация случайного промокода из букв и цифр"""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+
 @router.post("/admin/creators/new")
 async def create_creator(
     request: Request,
@@ -104,7 +112,6 @@ async def create_creator(
     nickname = (nickname or "").strip()
     promo_code_clean = (promo_code or "").strip() or None
 
-    # Проверка обязательных полей
     if not nickname or not password:
         return templates.TemplateResponse(
             "creator_form.html",
@@ -112,12 +119,24 @@ async def create_creator(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Хэшируем пароль
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     async with request.app.state.pool.acquire() as conn:
-        # Проверка существования промокода, если он указан
-        if promo_code_clean:
+        # Если промокод не указан — генерируем новый
+        if not promo_code_clean:
+            while True:
+                new_code = generate_promo_code()
+                exists = await conn.fetchval("SELECT 1 FROM promocodes WHERE code=$1", new_code)
+                if not exists:
+                    promo_code_clean = new_code
+                    # создаём промокод в таблице promocodes
+                    await conn.execute(
+                        "INSERT INTO promocodes (code, active) VALUES ($1, TRUE)",
+                        promo_code_clean,
+                    )
+                    break
+        else:
+            # Если промокод указан — проверяем, что он существует
             exists = await conn.fetchval("SELECT 1 FROM promocodes WHERE code=$1", promo_code_clean)
             if not exists:
                 return templates.TemplateResponse(
@@ -126,7 +145,7 @@ async def create_creator(
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-        # Вставка нового автора
+        # Создаём автора
         await conn.execute(
             """
             INSERT INTO content_creators
@@ -142,8 +161,8 @@ async def create_creator(
             (telegram or "").strip() or None,
         )
 
-    # После успешного создания — редирект на список авторов
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 # admin_creators.py — Part 3/3
 
 # ================= Админка: редактирование и удаление =================
@@ -288,6 +307,7 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 
 
 
