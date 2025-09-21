@@ -74,14 +74,15 @@ async def creator_dashboard(request: Request):
 @router.get("/admin/creators", response_class=HTMLResponse)
 async def list_creators(request: Request, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
+        rows = await conn.fetch(
             """
-            SELECT id, nickname, promo_code, commission_percent
+            SELECT id, nickname, promo_code, commission_percent, created_at
             FROM content_creators
-            WHERE id=$1
-            """,
-            id,
+            ORDER BY created_at DESC
+            """
         )
+    return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
+
 
     return templates.TemplateResponse("creators_list.html", {"request": request, "rows": rows})
 
@@ -194,3 +195,4 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
