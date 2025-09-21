@@ -3,18 +3,44 @@
 {% block content %}
 <h2>{% if creator.id %}Редактирование автора{% else %}Новый автор{% endif %}</h2>
 <form method="post">
-  <label for="nickname">Ник:</label><br>
-  <input type="text" id="nickname" name="nickname" value="{{ creator.nickname }}"><br><br>
+  <div class="mb-3">
+    <label class="form-label">Ник</label>
+    <input type="text" name="nickname" class="form-control"
+           value="{{ creator.nickname if creator else '' }}">
+  </div>
 
-  <label for="youtube">YouTube:</label><br>
-  <input type="text" id="youtube" name="youtube" value="{{ creator.youtube }}"><br><br>
+  <div class="mb-3">
+    <label class="form-label">Промокод</label>
+    <input type="text" name="promo_code" class="form-control"
+           value="{{ creator.promo_code if creator else '' }}">
+  </div>
 
-  <label for="tiktok">TikTok:</label><br>
-  <input type="text" id="tiktok" name="tiktok" value="{{ creator.tiktok }}"><br><br>
+  <div class="mb-3">
+    <label class="form-label">Комиссия (%)</label>
+    <input type="number" name="commission_percent" class="form-control"
+           value="{{ creator.commission_percent if creator else 0 }}">
+  </div>
 
-  <label for="telegram">Telegram:</label><br>
-  <input type="text" id="telegram" name="telegram" value="{{ creator.telegram }}"><br><br>
+  <!-- 🔥 Новые поля соцсетей -->
+  <div class="mb-3">
+    <label class="form-label">YouTube</label>
+    <input type="text" name="youtube" class="form-control"
+           value="{{ creator.youtube if creator else '' }}">
+  </div>
 
-  <button type="submit">Сохранить</button>
+  <div class="mb-3">
+    <label class="form-label">TikTok</label>
+    <input type="text" name="tiktok" class="form-control"
+           value="{{ creator.tiktok if creator else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Telegram</label>
+    <input type="text" name="telegram" class="form-control"
+           value="{{ creator.telegram if creator else '' }}">
+  </div>
+  <!-- 🔥 конец новых полей -->
+
+  <button type="submit" class="btn btn-primary">Сохранить</button>
 </form>
 {% endblock %}
