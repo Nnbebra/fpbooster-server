@@ -235,8 +235,13 @@ async def api_promocode_info(request: Request, license_key: str):
                        p.discount,
                        p.bonus_days,
                        c.nickname         AS owner,
-                       c.social_links     AS social_links,
-                       c.commission_percent
+                        json_build_object(
+                          'youtube',  c.youtube,
+                          'tiktok',   c.tiktok,
+                          'telegram', c.telegram
+                        ) AS social_links,
+                        c.commission_percent
+
                 FROM promocodes p
                 LEFT JOIN content_creators c ON c.promo_code = p.code
                 WHERE p.code = $1
@@ -264,6 +269,7 @@ async def api_promocode_info(request: Request, license_key: str):
     except Exception as e:
         # Никогда не роняем сервер наружу — вернём читаемую ошибку
         return JSONResponse({"ok": False, "error": f"Ошибка сервера: {e}"}, status_code=500)
+
 
 
 
