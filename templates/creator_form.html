@@ -1,54 +1,61 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>{% if creator and creator.id %}Редактирование автора{% else %}Новый автор{% endif %}</h2>
-<form method="post">
-  <div class="mb-3">
-    <label class="form-label">Ник</label>
-    <input type="text" name="nickname" class="form-control"
-           value="{{ creator.nickname if creator else '' }}">
-  </div>
+<div class="card-dark">
+  <h2 class="mb-4">
+    {% if row and row.id %}Редактировать контент‑мейкера{% else %}Новый контент‑мейкер{% endif %}
+  </h2>
 
-  <div class="mb-3">
-    <label class="form-label">Пароль</label>
-    <input type="password" name="password" class="form-control">
-    {% if creator and creator.id %}
-      <small class="form-text text-muted">Оставьте пустым, если не хотите менять пароль</small>
-    {% endif %}
-  </div>
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Никнейм</label>
+      <input type="text" name="nickname" class="form-control"
+             value="{{ row.nickname if row else '' }}" required>
+    </div>
 
-  <div class="mb-3">
-    <label class="form-label">Промокод</label>
-    <input type="text" name="promo_code" class="form-control"
-           value="{{ creator.promo_code if creator else '' }}">
-  </div>
+    <div class="mb-3">
+      <label class="form-label">Пароль</label>
+      <input type="password" name="password" class="form-control" {% if not row %}required{% endif %}>
+      {% if row %}
+        <small class="text-muted">Оставьте пустым, чтобы не менять</small>
+      {% endif %}
+    </div>
 
-  <div class="mb-3">
-    <label class="form-label">Комиссия (%)</label>
-    <input type="number" name="commission_percent" class="form-control"
-           value="{{ creator.commission_percent if creator else 0 }}">
-  </div>
+    <div class="mb-3">
+      <label class="form-label">Промокод</label>
+      <input type="text" name="promo_code" class="form-control"
+             value="{{ row.promo_code if row else '' }}">
+    </div>
 
-  <!-- 🔥 Новые поля соцсетей -->
-  <div class="mb-3">
-    <label class="form-label">YouTube</label>
-    <input type="text" name="youtube" class="form-control"
-           value="{{ creator.youtube if creator else '' }}">
-  </div>
+    <div class="mb-3">
+      <label class="form-label">Комиссия (%)</label>
+      <input type="number" name="commission_percent" class="form-control"
+             value="{{ row.commission_percent if row else 0 }}" min="0" max="100">
+    </div>
 
-  <div class="mb-3">
-    <label class="form-label">TikTok</label>
-    <input type="text" name="tiktok" class="form-control"
-           value="{{ creator.tiktok if creator else '' }}">
-  </div>
+    <div class="mb-3">
+      <label class="form-label">YouTube</label>
+      <input type="text" name="youtube" class="form-control"
+             value="{{ row.youtube if row else '' }}">
+    </div>
 
-  <div class="mb-3">
-    <label class="form-label">Telegram</label>
-    <input type="text" name="telegram" class="form-control"
-           value="{{ creator.telegram if creator else '' }}">
-  </div>
-  <!-- 🔥 конец новых полей -->
+    <div class="mb-3">
+      <label class="form-label">TikTok</label>
+      <input type="text" name="tiktok" class="form-control"
+             value="{{ row.tiktok if row else '' }}">
+    </div>
 
-  <button type="submit" class="btn btn-primary">Сохранить</button>
-</form>
+    <div class="mb-3">
+      <label class="form-label">Telegram</label>
+      <input type="text" name="telegram" class="form-control"
+             value="{{ row.telegram if row else '' }}">
+    </div>
+
+    <button type="submit" class="btn btn-purple w-100">💾 Сохранить</button>
+  </form>
+
+  {% if error %}
+    <div class="alert alert-danger mt-3">{{ error }}</div>
+  {% endif %}
+</div>
 {% endblock %}
