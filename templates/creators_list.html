@@ -2,15 +2,19 @@
 
 {% block content %}
 <h2>Авторы</h2>
-<table>
+<table class="table">
   <thead>
     <tr>
       <th>ID</th>
       <th>Ник</th>
+      <th>Промокод</th>
+      <th>Комиссия</th>
+      <!-- 🔥 Новые колонки -->
       <th>YouTube</th>
       <th>TikTok</th>
       <th>Telegram</th>
-      <th></th>
+      <!-- 🔥 конец новых колонок -->
+      <th>Действия</th>
     </tr>
   </thead>
   <tbody>
@@ -18,6 +22,10 @@
     <tr>
       <td>{{ c.id }}</td>
       <td>{{ c.nickname }}</td>
+      <td>{{ c.promo_code }}</td>
+      <td>{{ c.commission_percent }}%</td>
+
+      <!-- 🔥 Новые ячейки -->
       <td>
         {% if c.youtube %}
           <a href="{{ c.youtube }}" target="_blank">YouTube</a>
@@ -33,14 +41,17 @@
           <a href="{{ c.telegram }}" target="_blank">Telegram</a>
         {% else %} — {% endif %}
       </td>
+      <!-- 🔥 конец новых ячеек -->
+
       <td>
-        <a href="/admin/creators/{{ c.id }}">Редактировать</a> |
-        <a href="/admin/creators/{{ c.id }}/delete" onclick="return confirm('Удалить автора?')">Удалить</a>
+        <a href="/admin/creators/{{ c.id }}" class="btn btn-sm btn-secondary">Редактировать</a>
+        <a href="/admin/creators/{{ c.id }}/delete" class="btn btn-sm btn-danger"
+           onclick="return confirm('Удалить автора?')">Удалить</a>
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 
-<p><a href="/admin/creators/new">➕ Добавить нового автора</a></p>
+<p><a href="/admin/creators/new" class="btn btn-success">➕ Добавить нового автора</a></p>
 {% endblock %}
