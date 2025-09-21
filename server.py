@@ -441,17 +441,8 @@ async def edit_license(request: Request, license_key: str,
 
 
 
-@app.get("/admin/creators", response_class=HTMLResponse)
-async def list_creators(request: Request):
-    async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT id, nickname, promo_code, commission_percent
-            FROM content_creators
-            WHERE id=$1
-            """,
-            id,
-        )
+
+
 
 
 
