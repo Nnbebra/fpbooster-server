@@ -120,7 +120,7 @@ async def create_creator(
             int(commission_percent or 0),
         )
 
-    return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+    return templates.TemplateResponse("creator_form.html", {"request": request, "creator": None, "error": None})
 # admin_creators.py — Part 3/3
 
 # ================= Админка: редактирование и удаление =================
@@ -138,7 +138,7 @@ async def edit_creator_form(request: Request, id: int, _=Depends(guard)):
         )
     if not row:
         return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse("creator_form.html", {"request": request, "row": row, "error": None})
+    return templates.TemplateResponse("creator_form.html", {"request": request, "creator": row, "error": None})
 
 @router.post("/admin/creators/edit/{id}")
 async def edit_creator(
@@ -194,6 +194,7 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 
 
 
