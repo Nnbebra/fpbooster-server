@@ -1,12 +1,20 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>{% if creator.id %}Редактирование автора{% else %}Новый автор{% endif %}</h2>
+<h2>{% if creator and creator.id %}Редактирование автора{% else %}Новый автор{% endif %}</h2>
 <form method="post">
   <div class="mb-3">
     <label class="form-label">Ник</label>
     <input type="text" name="nickname" class="form-control"
            value="{{ creator.nickname if creator else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Пароль</label>
+    <input type="password" name="password" class="form-control">
+    {% if creator and creator.id %}
+      <small class="form-text text-muted">Оставьте пустым, если не хотите менять пароль</small>
+    {% endif %}
   </div>
 
   <div class="mb-3">
