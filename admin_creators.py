@@ -96,31 +96,54 @@ async def create_creator(
     password: str = Form(...),
     promo_code: str = Form(None),
     commission_percent: int = Form(0),
+    youtube: str = Form(""),
+    tiktok: str = Form(""),
+    telegram: str = Form(""),
     _=Depends(guard),
 ):
     nickname = (nickname or "").strip()
+    promo_code_clean = (promo_code or "").strip() or None
+
+    # Проверка обязательных полей
     if not nickname or not password:
         return templates.TemplateResponse(
             "creator_form.html",
-            {"request": request, "row": None, "error": "Никнейм и пароль обязательны"},
+            {"request": request, "creator": None, "error": "Никнейм и пароль обязательны"},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Хэшируем пароль
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     async with request.app.state.pool.acquire() as conn:
+        # Проверка существования промокода, если он указан
+        if promo_code_clean:
+            exists = await conn.fetchval("SELECT 1 FROM promocodes WHERE code=$1", promo_code_clean)
+            if not exists:
+                return templates.TemplateResponse(
+                    "creator_form.html",
+                    {"request": request, "creator": None, "error": "Такого промокода не существует"},
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Вставка нового автора
         await conn.execute(
             """
-            INSERT INTO content_creators (nickname, password_hash, promo_code, commission_percent)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO content_creators
+                (nickname, password_hash, promo_code, commission_percent, youtube, tiktok, telegram)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
             nickname,
             pw_hash,
-            (promo_code or "").strip() or None,
+            promo_code_clean,
             int(commission_percent or 0),
+            (youtube or "").strip() or None,
+            (tiktok or "").strip() or None,
+            (telegram or "").strip() or None,
         )
 
-    return templates.TemplateResponse("creator_form.html", {"request": request, "creator": None, "error": None})
+    # После успешного создания — редирект на список авторов
+    return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
 # admin_creators.py — Part 3/3
 
 # ================= Админка: редактирование и удаление =================
@@ -194,6 +217,7 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 
 
 
