@@ -1,55 +1,71 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>Авторы</h2>
-<table class="table">
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>Ник</th>
-      <th>Промокод</th>
-      <th>Комиссия</th>
-      <th>Дата создания</th>
-      <th>YouTube</th>
-      <th>TikTok</th>
-      <th>Telegram</th>
-      <th>Действия</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for c in rows %}
-    <tr>
-      <td>{{ c.id }}</td>
-      <td>{{ c.nickname }}</td>
-      <td>{{ c.promo_code or "—" }}</td>
-      <td>{{ c.commission_percent }}%</td>
-      <td>{{ c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else "—" }}</td>
+<div class="card-dark">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Контент‑мейкеры</h2>
+    <a href="/admin/creators/new" class="btn btn-purple">
+      <i class="fas fa-plus"></i> Добавить
+    </a>
+  </div>
 
-      <td>
-        {% if c.youtube %}
-          <a href="{{ c.youtube }}" target="_blank">YouTube</a>
-        {% else %} — {% endif %}
-      </td>
-      <td>
-        {% if c.tiktok %}
-          <a href="{{ c.tiktok }}" target="_blank">TikTok</a>
-        {% else %} — {% endif %}
-      </td>
-      <td>
-        {% if c.telegram %}
-          <a href="{{ c.telegram }}" target="_blank">Telegram</a>
-        {% else %} — {% endif %}
-      </td>
+  <table class="table table-dark table-striped align-middle text-center">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Ник</th>
+        <th>Промокод</th>
+        <th>Комиссия</th>
+        <th>Дата создания</th>
+        <th>YouTube</th>
+        <th>TikTok</th>
+        <th>Telegram</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in rows %}
+      <tr>
+        <td><span class="badge bg-gradient-purple">{{ c.id }}</span></td>
+        <td><strong>{{ c.nickname }}</strong></td>
+        <td>{{ c.promo_code or "—" }}</td>
+        <td>{{ c.commission_percent }}%</td>
+        <td>{{ c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else "—" }}</td>
 
-      <td>
-        <a href="/admin/creators/edit/{{ c.id }}" class="btn btn-sm btn-secondary">Редактировать</a>
-        <a href="/admin/creators/delete/{{ c.id }}" class="btn btn-sm btn-danger"
-           onclick="return confirm('Удалить автора?')">Удалить</a>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+        <td>
+          {% if c.youtube %}
+            <a href="{{ c.youtube }}" target="_blank" class="btn btn-sm btn-secondary-custom">
+              <i class="fab fa-youtube"></i>
+            </a>
+          {% else %} — {% endif %}
+        </td>
+        <td>
+          {% if c.tiktok %}
+            <a href="{{ c.tiktok }}" target="_blank" class="btn btn-sm btn-secondary-custom">
+              <i class="fab fa-tiktok"></i>
+            </a>
+          {% else %} — {% endif %}
+        </td>
+        <td>
+          {% if c.telegram %}
+            <a href="{{ c.telegram }}" target="_blank" class="btn btn-sm btn-secondary-custom">
+              <i class="fab fa-telegram"></i>
+            </a>
+          {% else %} — {% endif %}
+        </td>
 
-<p><a href="/admin/creators/new" class="btn btn-success">➕ Добавить нового автора</a></p>
+        <td>
+          <a href="/admin/creators/edit/{{ c.id }}" class="btn btn-sm btn-purple">
+            <i class="fas fa-edit"></i>
+          </a>
+          <a href="/admin/creators/delete/{{ c.id }}" class="btn btn-sm btn-danger"
+             onclick="return confirm('Удалить автора?')">
+            <i class="fas fa-trash-alt"></i>
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}
