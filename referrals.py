@@ -241,16 +241,18 @@ async def api_promocode_info(request: Request, license_key: str):
         return JSONResponse({"ok": False, "error": "Промокод не найден"}, status_code=404)
 
     return JSONResponse({
-        "ok": True,
-        "data": {
-            "code": row["code"],
-            "discount": row["discount"],
-            "bonus_days": row["bonus_days"],
-            "owner": row["owner"],
-            "social_links": row["social_links"],
-            "commission_percent": row["commission_percent"],
-        }
-    })
+    "ok": True,
+    "data": {
+        "code": row["code"],
+        "discount": row["discount"],
+        "bonus_days": row["bonus_days"],
+        "owner": row["owner"],
+        "social_links": row["social_links"],
+        "last_promocode_date": lic["last_promocode_date"].isoformat() if lic["last_promocode_date"] else None
+    }
+})
+
+
 
 
 
