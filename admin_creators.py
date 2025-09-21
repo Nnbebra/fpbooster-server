@@ -88,7 +88,7 @@ async def list_creators(request: Request, _=Depends(guard)):
 
 @router.get("/admin/creators/new", response_class=HTMLResponse)
 async def new_creator_form(request: Request, _=Depends(guard)):
-    return templates.TemplateResponse("creator_form.html", {"request": request, "row": None, "error": None})
+    return templates.TemplateResponse("creator_form.html", {"request": request, "creator": None})
 
 @router.post("/admin/creators/new")
 async def create_creator(
@@ -195,4 +195,5 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 
