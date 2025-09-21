@@ -159,7 +159,6 @@ async def api_use_promocode(
 ):
     try:
         async with request.app.state.pool.acquire() as conn:
-            # 1) Загрузка данных лицензии
             lic = await conn.fetchrow(
                 "SELECT license_key, expires, promocode_used, last_promocode_date "
                 "FROM licenses WHERE license_key=$1",
@@ -168,20 +167,11 @@ async def api_use_promocode(
             if not lic:
                 return JSONResponse({"ok": False, "error": "Лицензия не найдена"})
 
-            # 2) Лимит — не чаще 1 раза в месяц
-            last_date = lic.get("last_promocode_date")
+            # Лимит: 1 раз в месяц
             cutoff = datetime.utcnow().date() - relativedelta(months=1)
-            if last_date and last_date >= cutoff:
-                return JSONResponse({
-                    "ok": False,
-                    "error": "Вы уже вводили промокод в этом месяце"
-                })
+            if lic["last_promocode_date"] and lic["last_promocode_date"] >= cutoff:
+                return JSONResponse({"ok": False, "error": "Вы уже вводили промокод в этом месяце"})
 
-            # 3) Проверяем, не применялся ли уже промокод для этой лицензии
-            if lic["promocode_used"]:
-                return JSONResponse({"ok": False, "error": "Промокод уже был использован"})
-
-            # 4) Загружаем сам промокод
             promo = await conn.fetchrow(
                 "SELECT code, discount, bonus_days FROM promocodes WHERE code=$1",
                 code
@@ -191,17 +181,13 @@ async def api_use_promocode(
 
             days_to_add = int(promo["bonus_days"] or 0)
 
-            # 5) Обновляем лицензию и фиксируем дату ввода
             if days_to_add > 0:
                 await conn.execute(
                     """
                     UPDATE licenses
-                    SET
-                      expires = (
-                        COALESCE((expires)::timestamp, NOW()) + ($1 || ' days')::interval
-                      )::date,
-                      last_promocode_date = CURRENT_DATE,
-                      promocode_used = $2
+                    SET expires = (COALESCE((expires)::timestamp, NOW()) + ($1 || ' days')::interval)::date,
+                        promocode_used = $2,
+                        last_promocode_date = CURRENT_DATE
                     WHERE license_key = $3
                     """,
                     str(days_to_add), code, license_key
@@ -210,23 +196,18 @@ async def api_use_promocode(
                 await conn.execute(
                     """
                     UPDATE licenses
-                    SET
-                      last_promocode_date = CURRENT_DATE,
-                      promocode_used = $1
+                    SET promocode_used = $1,
+                        last_promocode_date = CURRENT_DATE
                     WHERE license_key = $2
                     """,
                     code, license_key
                 )
 
-            # 6) Обновляем статистику промокода
             await conn.execute(
-                "UPDATE promocodes "
-                "SET uses = COALESCE(uses, 0) + 1, last_used = NOW() "
-                "WHERE code = $1",
+                "UPDATE promocodes SET uses=COALESCE(uses,0)+1,last_used=NOW() WHERE code=$1",
                 code
             )
 
-        # 7) Формируем сообщение клиенту
         msg = "Промокод применён"
         if days_to_add > 0:
             msg += f". Лицензия продлена на {days_to_add} дней"
@@ -237,30 +218,28 @@ async def api_use_promocode(
 
 
 
+
 @router.get("/api/promocode/info")
-async def api_promocode_info(code: str):
-    """
-    Возвращает данные по промокоду:
-    • владелец (nickname)
-    • ссылки автора (social_links)
-    • discount, bonus_days
-    • процент комиссии автора
-    """
+async def api_promocode_info(request: Request, license_key: str):
     async with request.app.state.pool.acquire() as conn:
+        lic = await conn.fetchrow(
+            "SELECT promocode_used FROM licenses WHERE license_key=$1",
+            license_key
+        )
+        if not lic or not lic["promocode_used"]:
+            return JSONResponse({"ok": False, "error": "За лицензией не закреплён промокод"})
+
         row = await conn.fetchrow("""
-            SELECT
-              p.code,
-              p.discount,
-              p.bonus_days,
-              c.nickname   AS owner,
-              c.social_links,
-              c.commission_percent
+            SELECT p.code, p.discount, p.bonus_days,
+                   c.nickname AS owner, c.social_links, c.commission_percent
             FROM promocodes p
             LEFT JOIN content_creators c ON c.promo_code = p.code
             WHERE p.code = $1
-        """, code)
+        """, lic["promocode_used"])
+
     if not row:
         return JSONResponse({"ok": False, "error": "Промокод не найден"}, status_code=404)
+
     return JSONResponse({
         "ok": True,
         "data": {
@@ -272,6 +251,8 @@ async def api_promocode_info(code: str):
             "commission_percent": row["commission_percent"],
         }
     })
+
+
 
 
 
