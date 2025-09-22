@@ -16,7 +16,7 @@ async def creator_login(request: Request, nickname: str = Form(...), password: s
     async with request.app.state.pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT id, nickname, password_hash FROM content_creators WHERE nickname=$1",
-            nickname
+            (nickname or "").strip()
         )
     if not row or not bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
         return templates.TemplateResponse("creator_login.html", {"request": request, "error": "Неверные данные"})
@@ -37,8 +37,16 @@ async def creator_dashboard(request: Request):
         return RedirectResponse("/creators/login")
     async with request.app.state.pool.acquire() as conn:
         data = await conn.fetchrow("""
-            SELECT c.nickname, c.promo_code, c.commission_percent,
-                   p.uses, p.last_used, p.discount, p.bonus_days
+            SELECT c.nickname,
+                   c.promo_code,
+                   c.commission_percent,
+                   c.youtube,
+                   c.tiktok,
+                   c.telegram,
+                   p.uses,
+                   p.last_used,
+                   p.discount,
+                   p.bonus_days
             FROM content_creators c
             LEFT JOIN promocodes p ON p.code = c.promo_code
             WHERE c.id = $1
@@ -47,28 +55,9 @@ async def creator_dashboard(request: Request):
         return RedirectResponse("/creators/logout")
     return templates.TemplateResponse("creator_dashboard.html", {"request": request, "data": data})
 
-
-@router.get("/creators/profile", response_class=HTMLResponse)
-async def creator_profile_form(request: Request):
-    cid = request.cookies.get("creator_auth")
-    if not cid:
-        return RedirectResponse("/creators/login")
-    async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT nickname, youtube, tiktok, telegram
-            FROM content_creators
-            WHERE id=$1
-            """,
-            int(cid),
-        )
-    if not row:
-        return RedirectResponse("/creators/logout")
-    return templates.TemplateResponse("creator_profile.html", {"request": request, "row": row, "error": None})
-
-
-@router.post("/creators/profile")
-async def creator_profile_update(
+# Обновление соцсетей прямо с дашборда
+@router.post("/creators/dashboard")
+async def update_creator_dashboard(
     request: Request,
     youtube: str = Form(""),
     tiktok: str = Form(""),
@@ -77,6 +66,7 @@ async def creator_profile_update(
     cid = request.cookies.get("creator_auth")
     if not cid:
         return RedirectResponse("/creators/login")
+
     async with request.app.state.pool.acquire() as conn:
         await conn.execute(
             """
@@ -89,6 +79,5 @@ async def creator_profile_update(
             (telegram or "").strip() or None,
             int(cid),
         )
+
     return RedirectResponse("/creators/dashboard", status_code=303)
-
-
