@@ -2,14 +2,39 @@
 {% block content %}
 <h2>Личный кабинет: {{ data.nickname }}</h2>
 
-<div class="card-dark p-3">
-  <p><strong>Промокод:</strong> {{ data.promo_code or "—" }}</p>
-  <p><strong>Скидка:</strong> {{ data.discount or 0 }}%</p>
-  <p><strong>Бонусные дни:</strong> {{ data.bonus_days or 0 }}</p>
-  <p><strong>Использований:</strong> {{ data.uses or 0 }}</p>
-  <p><strong>Последнее использование:</strong> {{ data.last_used.strftime("%Y-%m-%d %H:%M:%S") if data.last_used else "—" }}</p>
-  <p><strong>Комиссия:</strong> {{ data.commission_percent }}%</p>
+<div class="card-dark p-3 mb-4">
+  <div class="row">
+    <div class="col-md-6">
+      <p><strong>Промокод:</strong> {{ data.promo_code or "—" }}</p>
+      <p><strong>Скидка:</strong> {{ data.discount or 0 }}%</p>
+      <p><strong>Бонусные дни:</strong> {{ data.bonus_days or 0 }}</p>
+    </div>
+    <div class="col-md-6">
+      <p><strong>Использований:</strong> {{ data.uses or 0 }}</p>
+      <p><strong>Последнее использование:</strong> {{ data.last_used.strftime("%Y-%m-%d %H:%M:%S") if data.last_used else "—" }}</p>
+      <p><strong>Комиссия:</strong> {{ data.commission_percent }}%</p>
+    </div>
+  </div>
 </div>
 
-<a href="/creators/logout" class="btn btn-secondary mt-3">Выйти</a>
+<div class="card-dark p-3">
+  <h4 class="mb-3">Мои соцсети</h4>
+  <form method="post" action="/creators/dashboard">
+    <div class="mb-3">
+      <label class="form-label">YouTube</label>
+      <input type="text" name="youtube" class="form-control" value="{{ data.youtube or '' }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">TikTok</label>
+      <input type="text" name="tiktok" class="form-control" value="{{ data.tiktok or '' }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Telegram</label>
+      <input type="text" name="telegram" class="form-control" value="{{ data.telegram or '' }}">
+    </div>
+    <button type="submit" class="btn btn-purple w-100">💾 Сохранить соцсети</button>
+  </form>
+</div>
+
+<a href="/creators/logout" class="btn btn-secondary-custom mt-3">Выйти</a>
 {% endblock %}
