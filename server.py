@@ -1,5 +1,4 @@
 import os
-import ssl
 from typing import Optional, Literal
 from datetime import date, datetime
 
@@ -66,26 +65,48 @@ class LicenseAdmin(BaseModel):
             raise ValueError(f"expires must be ISO date (YYYY-MM-DD), got {v!r}: {e}")
 
 # ========= База данных =========
+import ssl
+import asyncio
+
 @app.on_event("startup")
 async def startup():
+    # 1) Гарантируем sslmode=require в URL, если забыли в переменной среды
+    global DB_URL
+    if "sslmode=" not in DB_URL:
+        sep = "&" if "?" in DB_URL else "?"
+        DB_URL = f"{DB_URL}{sep}sslmode=require"
+
+    # 2) Явный SSL-контекст для asyncpg
+    ssl_ctx = ssl.create_default_context()
+    # Если у провайдера самоподписанный сертификат — отключаем проверку хоста/цепочки
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    # 3) Создаём пул с небольшим размером
     try:
         app.state.pool = await asyncpg.create_pool(
             dsn=DB_URL,
             min_size=1,
-            max_size=2,
+            max_size=2,          # важно: маленький пул для Render
             command_timeout=10,
             ssl=ssl_ctx
         )
+        print("✅ БД-пул создан")
     except Exception as e:
-        print("⚠ Ошибка подключения к БД:", e)
+        # Не роняем приложение: веб будет жить, API к БД вернут 503
         app.state.pool = None
-
+        print(f"⚠ Ошибка подключения к БД: {e}")
 
 @app.on_event("shutdown")
 async def shutdown():
-    pool = app.state.pool
+    pool = getattr(app.state, "pool", None)
     if pool:
-        await pool.close()
+        try:
+            await pool.close()
+            print("✅ БД-пул закрыт")
+        except Exception as e:
+            print(f"⚠ Ошибка закрытия пула: {e}")
+
 
 # ========= Защита =========
 def admin_guard_api(request: Request):
@@ -105,12 +126,51 @@ def admin_guard_ui(request: Request):
 # ========= Health =========
 @app.get("/api/health")
 async def health():
+    pool = getattr(app.state, "pool", None)
+    if not pool:
+        # БД недоступна — вернём понятный статус
+        return {"ok": False, "db": "unavailable", "time": datetime.utcnow().isoformat() + "Z"}
     try:
-        async with app.state.pool.acquire() as conn:
+        async with pool.acquire() as conn:
             await conn.execute("SELECT 1;")
         return {"ok": True, "time": datetime.utcnow().isoformat() + "Z"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
+
+@app.get("/admin/licenses", response_class=HTMLResponse)
+async def admin_list(request: Request, q: Optional[str] = None):
+    if not admin_guard_ui(request):
+        return RedirectResponse(url="/admin/login", status_code=302)
+
+    pool = getattr(app.state, "pool", None)
+    if not pool:
+        # Рендерим страницу с понятной ошибкой, не падаем
+        return templates.TemplateResponse(
+            "licenses.html",
+            {"request": request, "rows": [], "q": q or "", "error": "База данных недоступна"},
+            status_code=503,
+        )
+
+    async with pool.acquire() as conn:
+        if q:
+            rows = await conn.fetch(
+                """
+                SELECT license_key, status, expires, user_name, created_at, last_check
+                FROM licenses
+                WHERE license_key ILIKE $1 OR COALESCE(user_name,'') ILIKE $1
+                ORDER BY created_at DESC
+                """,
+                f"%{q}%"
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT license_key, status, expires, user_name, created_at, last_check
+                FROM licenses
+                ORDER BY created_at DESC
+                """
+            )
+    return templates.TemplateResponse("licenses.html", {"request": request, "rows": rows, "q": q or ""})
 
 # ========= Публичный API для клиента =========
 @app.get("/api/license")
@@ -450,6 +510,7 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
