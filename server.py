@@ -1,4 +1,5 @@
 import os
+import ssl
 from typing import Optional, Literal
 from datetime import date, datetime
 
@@ -67,11 +68,16 @@ class LicenseAdmin(BaseModel):
 # ========= База данных =========
 @app.on_event("startup")
 async def startup():
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
     app.state.pool = await asyncpg.create_pool(
         dsn=DB_URL,
         min_size=1,
-        max_size=5,
-        command_timeout=10
+        max_size=2,          # уменьшаем пул, чтобы Render не рвал соединения
+        command_timeout=10,
+        ssl=ssl_ctx          # ЯВНО указываем SSL
     )
 
 @app.on_event("shutdown")
@@ -443,6 +449,7 @@ async def edit_license(request: Request, license_key: str,
             status, expires if expires else None, user, license_key
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
