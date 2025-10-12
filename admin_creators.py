@@ -1,5 +1,3 @@
-# admin_creators.py — Part 1/3
-
 from fastapi import APIRouter, Request, Form, Depends, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -16,9 +14,6 @@ templates = Jinja2Templates(directory="templates")
 def guard(request: Request):
     return admin_guard_ui(request, request.app.state.ADMIN_TOKEN)
 
-# ================= Портал контент‑мейкера =================
-
-# admin_creators.py — Part 2/3
 
 # ================= Админка: список и создание =================
 
@@ -112,7 +107,6 @@ async def create_creator(
 
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
 
-# admin_creators.py — Part 3/3
 
 # ================= Админка: редактирование и удаление =================
 
@@ -131,7 +125,6 @@ async def edit_creator_form(request: Request, id: int, _=Depends(guard)):
     if not row:
         return RedirectResponse("/admin/creators", status_code=303)
     return templates.TemplateResponse("creator_form.html", {"request": request, "row": row, "error": None})
-
 
 
 @router.post("/admin/creators/edit/{id}")
@@ -199,13 +192,3 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
-
-
-
-
-
-
-
-
-
-
