@@ -18,57 +18,6 @@ def guard(request: Request):
 
 # ================= Портал контент‑мейкера =================
 
-@router.get("/creators/login", response_class=HTMLResponse)
-async def creator_login_form(request: Request):
-    return templates.TemplateResponse("creator_login.html", {"request": request, "error": None})
-
-@router.post("/creators/login")
-async def creator_login(request: Request, nickname: str = Form(...), password: str = Form(...)):
-    async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, nickname, password_hash FROM content_creators WHERE nickname=$1",
-            nickname.strip(),
-        )
-    if not row or not bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
-        return templates.TemplateResponse(
-            "creator_login.html",
-            {"request": request, "error": "Неверные данные"},
-            status_code=status.HTTP_401_UNAUTHORIZED,
-        )
-    resp = RedirectResponse(url="/creators/dashboard", status_code=302)
-    resp.set_cookie("creator_auth", str(row["id"]), httponly=True, samesite="lax")
-    return resp
-
-@router.get("/creators/logout")
-async def creator_logout():
-    resp = RedirectResponse(url="/creators/login", status_code=302)
-    resp.delete_cookie("creator_auth")
-    return resp
-
-@router.get("/creators/dashboard", response_class=HTMLResponse)
-async def creator_dashboard(request: Request):
-    cid = request.cookies.get("creator_auth")
-    if not cid:
-        return RedirectResponse("/creators/login")
-    async with request.app.state.pool.acquire() as conn:
-        data = await conn.fetchrow(
-            """
-            SELECT c.nickname,
-                   c.promo_code,
-                   c.commission_percent,
-                   p.uses,
-                   p.last_used,
-                   p.discount,
-                   p.bonus_days
-            FROM content_creators c
-            LEFT JOIN promocodes p ON p.code = c.promo_code
-            WHERE c.id = $1
-            """,
-            int(cid),
-        )
-    if not data:
-        return RedirectResponse("/creators/logout")
-    return templates.TemplateResponse("creator_dashboard.html", {"request": request, "data": data})
 # admin_creators.py — Part 2/3
 
 # ================= Админка: список и создание =================
@@ -250,6 +199,7 @@ async def delete_creator(request: Request, id: int, _=Depends(guard)):
     async with request.app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM content_creators WHERE id=$1", id)
     return RedirectResponse("/admin/creators", status_code=status.HTTP_303_SEE_OTHER)
+
 
 
 
