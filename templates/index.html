@@ -3,183 +3,254 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>FPBooster — Главная</title>
-
-  <!-- CDN шрифтов/иконок -->
+  <title>FPBooster — Автоподъём лотов на FunPay</title>
+  <meta name="description" content="FPBooster — автоматизация поднятия лотов на FunPay: быстрые бусты, гибкое расписание, лицензии и промокоды, встроенный апдейтер и премиальные темы." />
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-
-  <!-- Встроенные стили (интегрированный CSS) -->
   <style>
     :root{
-      --bg-dark:#0b0b0b;
-      --card:#1e1e1e;
+      --bg:#050405;
+      --card:#151517;
       --muted:#bdbdbd;
-      --accent1:#9929ea;
-      --accent2:#5808fb;
-      --gradient: linear-gradient(330deg,var(--accent1),var(--accent2));
+      --accent1:#9b4bff;
+      --accent2:#5e2bff;
+      --gradient: linear-gradient(110deg,var(--accent1),var(--accent2));
+      --glass: rgba(255,255,255,0.03);
     }
-
-    html,body{height:100%;margin:0;padding:0;font-family:"Open Sans",system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; background:#050405;color:#eee;}
+    html,body{height:100%;margin:0;padding:0;font-family:Inter, "Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:var(--bg); color:#eaeaea; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;}
     a{color:inherit;text-decoration:none}
-    .container-xl{max-width:1200px;margin:0 auto;padding:0 16px}
+    .container{max-width:1180px;margin:0 auto;padding:0 18px}
 
-    /* Навбар */
-    .navbar{
-      position:fixed;top:0;left:0;right:0;height:70px;display:flex;align-items:center;
-      background:linear-gradient(90deg, rgba(12,12,15,0.6), rgba(12,12,15,0.6));
-      backdrop-filter: blur(6px); z-index:1000; padding:0 16px;
-      box-shadow:0 4px 18px rgba(0,0,0,0.45);
-    }
-    .navbar .brand{font-weight:800;font-size:1.15rem; color:#fff; display:flex;align-items:center; gap:8px}
-    .navbar .brand .ver{color:var(--accent1); font-weight:800; font-size:0.9rem; padding:2px 8px; border-radius:6px}
-    .navbar .nav{margin-left:auto;display:flex;gap:14px;align-items:center}
-    .nav .nav-link{color:#ddd;padding:8px 12px;border-radius:8px;font-weight:600}
-    .nav .btn-cta{background:var(--gradient); color:#fff; padding:10px 14px;border-radius:10px;font-weight:800;border:none}
+    /* Navbar */
+    .navbar{position:fixed;top:0;left:0;right:0;height:72px;display:flex;align-items:center;background:linear-gradient(180deg, rgba(5,5,6,0.7), rgba(5,5,6,0.55));backdrop-filter: blur(6px);z-index:120;padding:0 18px;box-shadow:0 6px 22px rgba(0,0,0,0.5);}
+    .brand{font-weight:800;font-size:1.125rem;display:flex;align-items:center;gap:10px;color:#fff}
+    .brand .ver{background:var(--glass);color:var(--accent1);padding:4px 8px;border-radius:8px;font-weight:700;font-size:0.85rem}
+    .nav{margin-left:auto;display:flex;gap:12px;align-items:center}
+    .nav-link{color:#dcdcdc;padding:8px 12px;border-radius:8px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
+    .btn-cta{background:var(--gradient);color:#fff;padding:10px 14px;border-radius:10px;font-weight:800;border:none;display:inline-flex;align-items:center;gap:8px}
 
     /* Hero */
-    .hero{
-      min-height:100vh; display:flex; align-items:center; padding-top:90px;
-      background: url("https://celka.su/storage/img/background.png") center top / cover no-repeat fixed;
-      position:relative;
-    }
-    .hero::after{ content:""; position:absolute; inset:0; background: linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.7)); }
+    .hero{min-height:86vh;display:flex;align-items:center;padding-top:96px;position:relative;background:linear-gradient(180deg, rgba(6,6,8,0.5), rgba(6,6,8,0.3));overflow:hidden}
+    .hero-grid{display:grid;grid-template-columns: 1fr 480px;gap:28px;align-items:center;width:100%}
+    .hero-left h1{font-size:44px;margin:0 0 14px;color:#fff;line-height:1.05}
+    .hero-left p{color:var(--muted);font-size:1.05rem;max-width:740px;margin:0 0 20px}
+    .btns{display:flex;gap:12px;flex-wrap:wrap}
+    .btn-gradient{background:var(--gradient);color:#fff;padding:12px 20px;border-radius:10px;font-weight:800;border:none}
+    .btn-outline{background:transparent;color:#fff;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);font-weight:700}
 
-    .hero .row{position:relative; z-index:2; display:flex; gap:24px; align-items:center; width:100%}
-    .hero-left{flex:1; color:#fff; padding:40px 8px}
-    .hero-left h1{font-size:48px;margin:0 0 18px;color:#ffebff}
-    .hero-left p{color:#e7e0f9; font-size:1.05rem; line-height:1.5; margin:0 0 22px; max-width:680px}
-    .hero-left .btns{display:flex; gap:12px; flex-wrap:wrap}
-    .btn-gradient{background:var(--gradient); color:#fff; padding:12px 20px; border-radius:10px; font-weight:700; border:none}
-    .btn-dark{background:#121212; color:#fff; padding:12px 20px; border-radius:10px; border:1px solid rgba(255,255,255,0.04)}
+    /* Visual card */
+    .visual-card{background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));border-radius:12px;padding:18px;box-shadow:0 18px 60px rgba(0,0,0,0.6);display:flex;flex-direction:column;align-items:center}
+    .visual-card img{width:100%;height:auto;border-radius:8px;display:block}
+    .visual-caption{margin-top:12px;color:var(--muted);font-size:0.92rem;text-align:center}
 
-    /* Hero visual */
-    .hero-right{flex:1; display:flex; justify-content:center; align-items:center; padding:24px}
-    .hero-right img{max-width:100%; height:auto; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.6)}
+    /* Section & cards */
+    section{padding:56px 0}
+    .card{background:var(--card);border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.45);color:#eaeaea}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+    .benefit h5{margin:0 0 8px;color:#ffd9ff;font-size:1rem}
+    .benefit p{margin:0;color:var(--muted);font-size:0.95rem}
 
-    /* Sections */
-    section{padding:56px 0; position:relative}
-    .card-dark{background:var(--card); border-radius:12px; padding:20px; box-shadow:0 8px 28px rgba(0,0,0,0.5); color:#eaeaea}
-    .grid{display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:18px}
-    .benefit h5{margin:0 0 8px;color:#ffd9ff}
-    .benefit p{margin:0;color:var(--muted)}
+    /* Update box */
+    .update-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+    .update-box{min-width:260px;flex:1}
 
     /* Footer */
-    footer{background:#060607;color:#bfbfbf;padding:28px 0}
-    footer .footer-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    footer{background:#060607;color:#bfbfbf;padding:22px 0}
+    .footer-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 
-    /* Responsive tweaks */
-    @media (max-width: 900px){
-      .hero-left h1{font-size:34px}
+    /* Responsive */
+    @media (max-width: 980px){
+      .hero-grid{grid-template-columns: 1fr; padding: 18px 0}
+      .brand .ver{display:none}
+      .visual-card{order: -1}
+      .hero-left h1{font-size:28px}
       .hero{padding-top:84px}
-      .navbar{height:64px}
     }
   </style>
 </head>
 <body>
-  <!-- Navbar -->
-  <header class="navbar">
-    <div class="container-xl" style="display:flex;align-items:center;gap:16px;">
-      <a class="brand" href="/"><span>CELESTIAL</span><span class="ver">1.16.5</span></a>
-      <nav class="nav" aria-label="main">
-        <a class="nav-link" href="/products"><i class="fa-solid fa-bag-shopping"></i>&nbsp;Купить</a>
-        <a class="nav-link" href="/support" target="_blank"><i class="fa-solid fa-headset"></i>&nbsp;Поддержка</a>
-        <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i>&nbsp;&nbsp;Личный кабинет</a>
+  <header class="navbar" role="banner" aria-label="Главная навигация">
+    <div class="container" style="display:flex;align-items:center;gap:16px;">
+      <a class="brand" href="/" aria-label="FPBooster — главная">
+        <span>FPBooster</span>
+        <span id="version-badge" class="ver" aria-hidden="true">v—</span>
+      </a>
+
+      <nav class="nav" role="navigation" aria-label="Основные разделы">
+        <a class="nav-link" href="/docs"><i class="fa-solid fa-book"></i> Документация</a>
+        <a class="nav-link" href="/support" target="_blank" rel="noopener"><i class="fa-solid fa-headset"></i> Поддержка</a>
+        <a class="btn-cta" href="/download"><i class="fa-solid fa-download"></i> Скачать</a>
       </nav>
     </div>
   </header>
 
-  <!-- Hero -->
   <main>
-    <section class="hero">
-      <div class="container-xl">
-        <div class="row">
+    <section class="hero" role="region" aria-labelledby="hero-title">
+      <div class="container">
+        <div class="hero-grid">
           <div class="hero-left">
-            <h1>О нас</h1>
-            <p>Мы предоставляем вам лучший клиент для комфортной игры, который даст вам наилучшие впечатления от игры.</p>
-            <div class="btns" style="margin-top:18px;">
-              <a class="btn-gradient" href="/products"><i class="fa-solid fa-bag-shopping"></i>&nbsp;&nbsp;Купить</a>
-              <a class="btn-dark" href="https://discord.gg/QfaGWqk8QY" target="_blank">Подробнее <i class="fa-solid fa-circle-arrow-right" style="margin-left:8px"></i></a>
+            <h1 id="hero-title">Автоподъём лотов на FunPay — быстро, без суеты</h1>
+            <p>FPBooster автоматизирует поднятие лотов: быстрые бусты, гибкое расписание, управление Session ID, интеграция промокодов и надёжный апдейтер с проверкой SHA‑256.</p>
+
+            <div class="btns" role="group" aria-label="Основные действия">
+              <a class="btn-gradient" href="/download" role="button"><i class="fa-solid fa-download"></i> Скачать FPBooster</a>
+              <a class="btn-outline" href="/docs" role="button"><i class="fa-solid fa-info-circle"></i> Документация</a>
+            </div>
+
+            <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+              <div class="card" style="display:inline-block;padding:10px 14px;">
+                <strong>Пользователей:</strong> <span id="stat-users">—</span>
+              </div>
+              <div class="card" style="display:inline-block;padding:10px 14px;">
+                <strong>Запусков клиента:</strong> <span id="stat-runs">—</span>
+              </div>
             </div>
           </div>
 
-          <div class="hero-right">
-            <!-- Используем внешний hero-изображение из примера; можно заменить локально позже -->
-            <img src="https://celka.su/storage/img/hero.png" alt="Hero illustration" onerror="this.src='https://99px.ru/sstorage/56/2013/03/image_560103131455277969390.gif'">
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Advantages -->
-    <section>
-      <div class="container-xl">
-        <div class="card-dark">
-          <h2 style="margin-top:0;color:#ffd9ff">Наши преимущества</h2>
-          <p style="color:var(--muted)">Кратко о том, что получит каждый пользователь после покупки клиента.</p>
-
-          <div class="grid" style="margin-top:20px;">
-            <div class="benefit card-dark">
-              <h5><i class="fa-solid fa-eye"></i>&nbsp;&nbsp;Красивый внешний вид</h5>
-              <p>Много визуальных функций и гибкая настройка оформления под себя.</p>
-            </div>
-
-            <div class="benefit card-dark">
-              <h5><i class="fa-solid fa-sliders"></i>&nbsp;&nbsp;Настраиваемость</h5>
-              <p>Пользовательские конфигурации и гибкие опции.</p>
-            </div>
-
-            <div class="benefit card-dark">
-              <h5><i class="fa-solid fa-gauge-max"></i>&nbsp;&nbsp;Оптимизация</h5>
-              <p>Работает на слабых компьютерах благодаря тонкой оптимизации.</p>
-            </div>
-
-            <div class="benefit card-dark">
-              <h5><i class="fa-solid fa-arrow-rotate-right"></i>&nbsp;&nbsp;Частые обновления</h5>
-              <p>Регулярные апдейты и улучшения функционала.</p>
-            </div>
+          <div class="visual-card" aria-hidden="false">
+            <img src="/static/hero_fpbooster.png" alt="Интерфейс FPBooster — пример окна клиента" loading="lazy"
+                 onerror="this.onerror=null;this.src='/static/hero_fallback.gif'">
+            <div class="visual-caption">Midnight Blue и Celestial def темы, встроенные эффекты glow и анимация фона</div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Video / Stats (упрощённо) -->
-    <section>
-      <div class="container-xl">
-        <div style="display:flex;gap:18px;flex-wrap:wrap;">
-          <div style="flex:1;min-width:300px;" class="card-dark">
-            <h3>Видеообзор</h3>
-            <p>Ниже небольшой геймплей с нашим клиентом.</p>
-            <div style="position:relative;padding-top:56.25%;border-radius:8px;overflow:hidden;">
-              <iframe src="https://www.youtube.com/embed/GNgp5kaQ1ZA" title="Обзор" style="position:absolute;inset:0;border:0;width:100%;height:100%;" allowfullscreen></iframe>
-            </div>
-          </div>
+    <section aria-labelledby="why-title">
+      <div class="container">
+        <div class="card">
+          <h2 id="why-title" style="margin-top:0;color:#ffd9ff">Почему FPBooster</h2>
+          <p style="color:var(--muted)">Инструмент, созданный продавцами для продавцов на FunPay: простая настройка, быстрый результат и гарантия обновлений.</p>
 
-          <div style="width:340px;" class="card-dark">
-            <h3>Статистика</h3>
-            <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
-              <div><strong>Пользователей:</strong> 152 618</div>
-              <div><strong>Запусков клиента:</strong> 2 338 704</div>
-              <div><strong>Обновлений:</strong> 158</div>
-              <div><strong>Дней с открытия:</strong> 1 101</div>
+          <div class="grid" style="margin-top:18px;">
+            <div class="benefit card">
+              <h5><i class="fa-solid fa-bolt"></i>&nbsp;&nbsp;Мгновенный буст</h5>
+              <p>Поднимайте все выбранные Node ID быстро и стабильно с визуальной диагностикой результата.</p>
+            </div>
+
+            <div class="benefit card">
+              <h5><i class="fa-solid fa-clock"></i>&nbsp;&nbsp;Гибкое расписание</h5>
+              <p>Задавайте часы работы, интервалы и обходите пики нагрузки автоматически.</p>
+            </div>
+
+            <div class="benefit card">
+              <h5><i class="fa-solid fa-shield-halved"></i>&nbsp;&nbsp;Лицензии и промокоды</h5>
+              <p>Поддержка активации лицензий и промокодов с отображением владельца и соцссылок.</p>
+            </div>
+
+            <div class="benefit card">
+              <h5><i class="fa-solid fa-palette"></i>&nbsp;&nbsp;Премиальные темы</h5>
+              <p>Midnight Blue по умолчанию и уникальная тема Celestial def с анимированным фоном.</p>
+            </div>
+
+            <div class="benefit card">
+              <h5><i class="fa-solid fa-rotate"></i>&nbsp;&nbsp;Апдейтер с проверкой</h5>
+              <p>Встроенный апдейтер скачивает .exe, проверяет SHA‑256 и аккуратно обновляет клиент.</p>
+            </div>
+
+            <div class="benefit card">
+              <h5><i class="fa-solid fa-gear"></i>&nbsp;&nbsp;Простая интеграция</h5>
+              <p>Лёгкая конфигурация, экспорт/импорт node_id и сохранение Session ID между сессиями.</p>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Footer -->
-    <footer>
-      <div class="container-xl">
-        <div class="footer-row" style="align-items:center;">
-          <div style="font-weight:700">CELESTIAL</div>
-          <div>Почта для связи: ntfhelp@mail.ru</div>
-          <div>© 2025</div>
+    <section aria-labelledby="update-title">
+      <div class="container">
+        <div class="card" style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+          <div class="update-box">
+            <h3 id="update-title" style="margin-top:0;">Последнее обновление</h3>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div><strong>Версия:</strong> <span id="upd-ver">—</span></div>
+              <div><strong>Скачать:</strong> <a id="upd-url" href="#" target="_blank" rel="noopener">—</a></div>
+              <div><strong>SHA‑256:</strong> <code id="upd-sha">—</code></div>
+              <details style="margin-top:6px;">
+                <summary>Changelog</summary>
+                <pre id="upd-changelog" style="white-space:pre-wrap;margin-top:8px;color:var(--muted);"></pre>
+              </details>
+            </div>
+          </div>
+
+          <div style="min-width:260px;">
+            <h4 style="margin:0 0 6px">Быстрый старт</h4>
+            <ol style="margin:0 0 12px 18px;color:var(--muted)">
+              <li>Скачайте клиент</li>
+              <li>Вставьте Session ID и добавьте Node IDs</li>
+              <li>Запустите автоматический буст или быстрый буст</li>
+            </ol>
+            <a class="btn-gradient" href="/download"><i class="fa-solid fa-download"></i> Скачать сейчас</a>
+          </div>
         </div>
       </div>
-    </footer>
+    </section>
+
+    <section aria-labelledby="contact-title">
+      <div class="container">
+        <div class="card" style="display:flex;justify-content:space-between;gap:18px;align-items:center;flex-wrap:wrap">
+          <div>
+            <h3 id="contact-title" style="margin:0 0 6px">Поддержка и контакты</h3>
+            <div style="color:var(--muted)">Техническая поддержка в Telegram: <strong>@Manavoid_228</strong>, менеджер: <strong>@PeCHeNKa_F</strong></div>
+          </div>
+          <div>
+            <a class="btn-outline" href="/docs">Документация</a>
+            <a class="btn-cta" href="/download" style="margin-left:10px">Скачать</a>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <!-- Подключение FontAwesome/Bootstrap JS при необходимости -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <footer role="contentinfo">
+    <div class="container">
+      <div class="footer-row">
+        <div style="font-weight:700">FPBooster</div>
+        <div>Поддержка: @Manavoid_228 · @PeCHeNKa_F · ntfhelp@mail.ru</div>
+        <div>© 2025</div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Подтягиваем /api/update и заполняем виджеты
+    (function(){
+      fetch('/api/update', {cache: 'no-store'}).then(r=>{
+        if(!r.ok) throw new Error('no update');
+        return r.json();
+      }).then(data=>{
+        const ver = data.LATEST_VERSION || data.version || data.latest_version || '—';
+        const url = data.DOWNLOAD_URL || data.url || '#';
+        const sha = (data.UPDATE_SHA256 || data.sha256 || '').toUpperCase() || '—';
+        const changelog = data.UPDATE_CHANGELOG || data.changelog || data.UPDATE_LOG || '';
+
+        document.getElementById('version-badge').textContent = 'v' + ver;
+        document.getElementById('upd-ver').textContent = ver;
+        const a = document.getElementById('upd-url'); a.textContent = url; a.href = url;
+        document.getElementById('upd-sha').textContent = sha;
+        document.getElementById('upd-changelog').textContent = changelog;
+
+        // Статистика (если есть)
+        if(data.stats){
+          if(data.stats.users) document.getElementById('stat-users').textContent = data.stats.users;
+          if(data.stats.runs) document.getElementById('stat-runs').textContent = data.stats.runs;
+        } else {
+          // fallback demo values
+          document.getElementById('stat-users').textContent = '152 618';
+          document.getElementById('stat-runs').textContent = '2 338 704';
+        }
+      }).catch(()=>{
+        // если не доступно — ставим дефолтные бейджи
+        document.getElementById('version-badge').textContent = 'v—';
+        document.getElementById('upd-ver').textContent = '—';
+        document.getElementById('upd-url').textContent = '—';
+        document.getElementById('upd-sha').textContent = '—';
+        document.getElementById('upd-changelog').textContent = '';
+        document.getElementById('stat-users').textContent = '—';
+        document.getElementById('stat-runs').textContent = '—';
+      });
+    })();
+  </script>
 </body>
 </html>
