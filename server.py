@@ -8,33 +8,28 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
 from guards import admin_guard_ui
+
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
     return admin_guard_ui(request, app.state.ADMIN_TOKEN)
 
-
 # ========= Создаём приложение =========
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
 templates = Jinja2Templates(directory="templates")
-
 
 # Публичная главная страница
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-
 # ===== Админ токен =====
-app.state.ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "581a7489e276cdaa84e5d1b88128ffeb")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
+if not ADMIN_TOKEN:
+    # В продакшне лучше требовать наличия переменной окружения
+    raise RuntimeError("ADMIN_TOKEN is not set")
+app.state.ADMIN_TOKEN = ADMIN_TOKEN
 
-
-from creators import router as creators_router
-app.include_router(creators_router)
-
-
-
-
-# ===== Подключение роутеров =====
+# ===== Подключение роутеров (один раз) =====
 from creators import router as creators_router
 from admin_creators import router as admin_creators_router
 from referrals import router as referrals_router
@@ -42,8 +37,6 @@ from referrals import router as referrals_router
 app.include_router(creators_router)
 app.include_router(admin_creators_router)
 app.include_router(referrals_router)
-
-
 
 # ========= Конфигурация =========
 DB_URL = os.getenv("DATABASE_URL", "").strip()
@@ -143,13 +136,6 @@ async def check_license(license: str):
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
 
-# ========= Остальной код =========
-# Здесь остаются твои эндпоинты:
-# - /api/admin/license/create, delete, get
-# - /api/update
-# - /admin (login, logout, licenses CRUD)
-# Они у тебя уже рабочие, их можно оставить без изменений.
-
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
 async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
@@ -202,11 +188,9 @@ async def get_license_api(license: str, _guard: bool = Depends(admin_guard_api))
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
 
-
 # ========= Автообновления =========
 @app.get("/api/update")
 async def update_meta():
-    # Жёсткая проверка, чтобы не отдавать заглушки и пустые значения
     if not UPDATE_VERSION or not UPDATE_URL or not UPDATE_SHA256:
         raise HTTPException(
             status_code=500,
@@ -218,7 +202,6 @@ async def update_meta():
         "sha256": UPDATE_SHA256,
         "changelog": UPDATE_CHANGELOG or "Без описания изменений",
     }
-
 
 # ========= Веб-админка =========
 @app.get("/admin", response_class=HTMLResponse)
@@ -245,15 +228,14 @@ async def admin_login(request: Request, password: str = Form(...)):
         )
     resp = RedirectResponse(url="/admin/licenses", status_code=302)
     resp.set_cookie(
-    "admin_auth",
-    app.state.ADMIN_TOKEN,
-    httponly=True,
-    samesite="lax",
-    secure=True,
-    max_age=7*24*3600
+        "admin_auth",
+        app.state.ADMIN_TOKEN,
+        httponly=True,
+        samesite="lax",
+        secure=True,
+        max_age=7*24*3600
     )
     return resp
-
 
 @app.get("/admin/logout")
 async def admin_logout():
@@ -261,7 +243,7 @@ async def admin_logout():
     resp.delete_cookie("admin_auth")
     return resp
 
-# /admin/licenses — список (уже использует ui_guard в текущем файле)
+# /admin/licenses — список
 @app.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
@@ -285,14 +267,12 @@ async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_gua
             )
     return templates.TemplateResponse("licenses.html", {"request": request, "rows": rows, "q": q or ""})
 
-
 # GET /admin/licenses/new — форма создания
 @app.get("/admin/licenses/new", response_class=HTMLResponse)
 async def admin_new_form(request: Request, _=Depends(ui_guard)):
     return templates.TemplateResponse("license_form.html", {"request": request, "row": None, "error": None})
 
-
-# POST /admin/licenses/new — обработка создания
+# POST /admin/licenses/new — создание
 @app.post("/admin/licenses/new")
 async def admin_create(
     request: Request,
@@ -329,8 +309,7 @@ async def admin_create(
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
-# GET /admin/licenses/edit (вариант с query form) — форма редактирования по ?license_key=...
+# GET /admin/licenses/edit (по query ?license_key=...)
 @app.get("/admin/licenses/edit", response_class=HTMLResponse)
 async def admin_edit_form(request: Request, license_key: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
@@ -346,8 +325,7 @@ async def admin_edit_form(request: Request, license_key: str, _=Depends(ui_guard
         return Response("License not found", status_code=404)
     return templates.TemplateResponse("license_form.html", {"request": request, "row": row, "error": None})
 
-
-# POST /admin/licenses/edit (вариант form submit с original_key)
+# POST /admin/licenses/edit (form с original_key)
 @app.post("/admin/licenses/edit")
 async def admin_update(
     request: Request,
@@ -389,8 +367,7 @@ async def admin_update(
                 )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
-# GET /admin/licenses/edit/{license_key} — прямая форма редактирования
+# GET /admin/licenses/edit/{license_key}
 @app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
 async def edit_license_form(request: Request, license_key: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
@@ -399,8 +376,7 @@ async def edit_license_form(request: Request, license_key: str, _=Depends(ui_gua
         return Response("License not found", status_code=404)
     return templates.TemplateResponse("license_form.html", {"request": request, "row": row, "error": None})
 
-
-# POST /admin/licenses/edit/{license_key} — сохранить изменения (прямая)
+# POST /admin/licenses/edit/{license_key}
 @app.post("/admin/licenses/edit/{license_key}")
 async def edit_license(
     request: Request,
@@ -413,7 +389,6 @@ async def edit_license(
     try:
         exp = date.fromisoformat(expires) if expires else None
     except Exception:
-        # можно вернуть форму с ошибкой; для простоты — редиректим назад
         return RedirectResponse(url=f"/admin/licenses/edit/{license_key}", status_code=303)
 
     async with app.state.pool.acquire() as conn:
@@ -426,31 +401,16 @@ async def edit_license(
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
-# POST /admin/licenses/delete — удаление через форму (csrf-подход)
+# POST /admin/licenses/delete (через форму)
 @app.post("/admin/licenses/delete")
 async def admin_delete(request: Request, license_key: str = Form(...), _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
-# GET /admin/licenses/delete/{license_key} — быстрый GET-удалитель (подтверждение в JS)
+# GET /admin/licenses/delete/{license_key} (быстрое удаление, подтверждение в JS)
 @app.get("/admin/licenses/delete/{license_key}")
 async def delete_license_get(request: Request, license_key: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
-
-
-
-
-
-
-
-
-
-
-
-
-
