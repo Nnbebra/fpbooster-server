@@ -21,7 +21,7 @@ async def creator_login(request: Request, nickname: str = Form(...), password: s
     if not row or not bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
         return templates.TemplateResponse("creator_login.html", {"request": request, "error": "Неверные данные"})
     resp = RedirectResponse(url="/creators/dashboard", status_code=302)
-    resp.set_cookie("creator_auth", str(row["id"]), httponly=True, samesite="lax")
+    resp.set_cookie("creator_auth", str(row["id"]), httponly=True, samesite="lax", secure=True)
     return resp
 
 @router.get("/creators/logout")
@@ -81,3 +81,4 @@ async def update_creator_dashboard(
         )
 
     return RedirectResponse("/creators/dashboard", status_code=303)
+
