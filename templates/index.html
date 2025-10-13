@@ -12,19 +12,47 @@
       --bg:#050405;
       --card:#151517;
       --muted:#bdbdbd;
+      --muted-2:#9fa0a6;
       --accent1:#9b4bff;
       --accent2:#5e2bff;
       --gradient: linear-gradient(110deg,var(--accent1),var(--accent2));
-      --glass: rgba(255,255,255,0.03);
-      --soft-shadow: 0 24px 80px rgba(10,6,30,0.7);
+      --glass: rgba(255,255,255,0.04);
+      --glass-strong: rgba(0,0,0,0.45);
       --radius: 14px;
+      --max-width:1180px;
+      --content-padding:18px;
+      --soft-shadow: 0 24px 80px rgba(10,6,30,0.7);
     }
-    html,body{height:100%;margin:0;padding:0;font-family:Inter, "Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:var(--bg); color:#eaeaea; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;}
+
+    html,body{
+      height:100%;
+      margin:0;
+      padding:0;
+      font-family:Inter, "Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      background:var(--bg);
+      color:#eaeaea;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+
     a{color:inherit;text-decoration:none}
-    .container{max-width:1180px;margin:0 auto;padding:0 18px}
+    .container{max-width:var(--max-width);margin:0 auto;padding:0 var(--content-padding)}
 
     /* Navbar */
-    .navbar{position:fixed;top:0;left:0;right:0;height:72px;display:flex;align-items:center;background:linear-gradient(180deg, rgba(5,5,6,0.78), rgba(5,5,6,0.62));backdrop-filter: blur(6px);z-index:120;padding:0 18px;box-shadow:0 6px 26px rgba(0,0,0,0.55);}
+    .navbar{
+      position:fixed;
+      top:0;
+      left:0;
+      right:0;
+      height:72px;
+      display:flex;
+      align-items:center;
+      background:linear-gradient(180deg, rgba(5,5,6,0.78), rgba(5,5,6,0.62));
+      backdrop-filter: blur(6px);
+      z-index:120;
+      padding:0 var(--content-padding);
+      box-shadow:0 6px 26px rgba(0,0,0,0.55);
+    }
     .header-inner{display:flex;align-items:center;gap:16px;width:100%;justify-content:space-between}
     .left-group{display:flex;align-items:center;gap:10px}
     .right-group{display:flex;align-items:center;gap:12px}
@@ -33,78 +61,139 @@
     .nav-link{color:#dcdcdc;padding:8px 12px;border-radius:8px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
     .btn-cta{background:var(--gradient);color:#fff;padding:10px 14px;border-radius:10px;font-weight:800;border:none;display:inline-flex;align-items:center;gap:8px}
 
-    /* Hero and background image — full-bleed, extended and fade */
-    .hero{min-height:86vh; display:flex; align-items:center; padding-top:96px; position:relative; overflow:hidden;}
-    .hero-bg {
+    /* Hero and background (extended, cover + soft fade) */
+    .hero{
+      position:relative;
+      min-height:92vh;
+      display:flex;
+      align-items:flex-start;
+      padding-top:110px; /* leave space for fixed navbar */
+      overflow:hidden;
+    }
+
+    /* Large background that extends past hero into "why" section and softly fades */
+    .hero-bg{
       position:absolute;
-      top:0;
+      top:-40px;
       left:50%;
       transform:translateX(-50%);
-      width:1600px;
-      max-width:180%;
-      height:calc(100vh + 360px); /* covers hero and a portion below to the Why section */
-      background-image: url('/static/Bakground.png');
-      background-position: center top;
-      background-repeat: no-repeat;
-      background-size: cover; /* cover ensures it fills while keeping aspect */
-      opacity:0.96;
-      filter: saturate(1.04) contrast(1.03);
+      width:1800px;
+      max-width:220%;
+      height:calc(100vh + 560px); /* covers hero and space below to create fade into Why */
+      background-image:url('/static/Bakground.png');
+      background-position:center 8%;
+      background-repeat:no-repeat;
+      background-size:cover;
+      opacity:0.98;
+      filter:saturate(1.04) contrast(1.02) blur(0.2px);
       z-index:0;
       pointer-events:none;
       transition:opacity .35s ease;
     }
+    /* bottom gradient to dissolve into black */
     .hero-bg::after{
       content:"";
       position:absolute;
       left:0;
       right:0;
       bottom:0;
-      height:420px;
+      height:520px;
       background:linear-gradient(180deg, rgba(5,5,6,0.0), rgba(5,5,6,1));
     }
 
-    .hero-grid{position:relative; z-index:2; display:grid; grid-template-columns: 1fr 520px; gap:28px; align-items:center; width:100%}
-    .hero-left h1{font-size:48px;margin:0 0 14px;color:#fff;line-height:1.02}
-    .hero-left p{color:var(--muted);font-size:1.05rem;max-width:740px;margin:0 0 20px}
+    /* Semi-transparent panel that holds headline and paragraph to ensure readability */
+    .hero-panel{
+      position:relative;
+      z-index:2;
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+      border:1px solid rgba(255,255,255,0.03);
+      border-radius:18px;
+      padding:26px;
+      max-width:840px;
+      backdrop-filter: blur(8px) saturate(1.05);
+      box-shadow:0 30px 80px rgba(0,0,0,0.6);
+    }
+
+    .hero-grid{
+      position:relative;
+      z-index:2;
+      display:grid;
+      grid-template-columns: 1fr 520px;
+      gap:28px;
+      align-items:center;
+      width:100%;
+      padding:28px 0;
+    }
+
+    .hero-left h1{
+      font-size:48px;
+      margin:0 0 14px;
+      color:#fff;
+      line-height:1.02;
+      letter-spacing:-0.6px;
+    }
+    .hero-left p{
+      color:var(--muted);
+      font-size:1.05rem;
+      max-width:740px;
+      margin:0 0 20px;
+    }
+
     .btns{display:flex;gap:12px;flex-wrap:wrap}
     .btn-gradient{background:var(--gradient);color:#fff;padding:12px 20px;border-radius:10px;font-weight:800;border:none}
     .btn-outline{background:transparent;color:#fff;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);font-weight:700}
 
-    /* Visual card — enlarge UI image and keep aspect */
-    .visual-card{background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));border-radius:var(--radius);padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:var(--soft-shadow);border:1px solid rgba(255,255,255,0.02);max-width:560px}
-    .visual-frame{width:100%;border-radius:12px;overflow:hidden;background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));display:block;position:relative}
+    /* Visual card — make UI image large, centered, with elegant frame */
+    .visual-card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));
+      border-radius:18px;
+      padding:14px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:flex-start;
+      box-shadow:var(--soft-shadow);
+      border:1px solid rgba(255,255,255,0.02);
+      width:100%;
+      max-width:560px;
+    }
+    .visual-frame{
+      width:100%;
+      border-radius:12px;
+      overflow:hidden;
+      background:linear-gradient(180deg, rgba(0,0,0,0.2), rgba(255,255,255,0.01));
+      position:relative;
+      display:block;
+    }
     .visual-frame img{
       display:block;
       width:100%;
       height:auto;
-      max-height:520px;           /* allow large UI image */
+      max-height:680px; /* allow bigger UI */
       object-fit:contain;
       object-position:center;
-      transform:translateZ(0);
       transition:transform .25s ease;
+      background-color:#070708;
     }
-    .visual-frame img.small-fallback{
-      max-height:420px;
-    }
-    .visual-frame img:hover{ transform:scale(1.02); }
+    .visual-frame img:hover{ transform:scale(1.01); }
     .visual-caption{margin-top:12px;color:var(--muted);font-size:0.92rem;text-align:center}
 
     /* Section & cards */
-    section{padding:56px 0}
-    .card{background:var(--card);border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.45);color:#eaeaea}
+    section{padding:64px 0}
+    .card{background:var(--card);border-radius:12px;padding:22px;box-shadow:0 10px 30px rgba(0,0,0,0.45);color:#eaeaea}
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
     .benefit h5{margin:0 0 8px;color:#ffd9ff;font-size:1rem}
     .benefit p{margin:0;color:var(--muted);font-size:0.95rem}
 
-    /* Update card spacing and CTA margin increase */
-    .update-card{background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:14px; padding:18px; box-shadow: 0 22px 60px rgba(9,6,20,0.7); border: 1px solid rgba(255,255,255,0.02); display:flex;flex-direction:column; gap:10px}
+    /* Update card tweaks */
+    .update-card{background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:14px; padding:18px; box-shadow: 0 22px 60px rgba(9,6,20,0.7); border: 1px solid rgba(255,255,255,0.02); display:flex;flex-direction:column; gap:12px}
     .update-title{font-size:1.05rem;color:#ffd9ff;margin-bottom:0}
-    .update-meta{display:flex;flex-direction:column;gap:8px;color:var(--muted)}
+    .update-meta{display:flex;flex-direction:column;gap:6px;color:var(--muted)}
     .update-cta{margin-top:22px} /* increased margin between text and button */
 
-    /* Footer improvements */
+    /* Footer */
     .footer{background: linear-gradient(180deg, rgba(10,8,14,1), rgba(5,5,6,1)); padding:34px 0; color:var(--muted); border-top:1px solid rgba(255,255,255,0.02)}
-    .footer-inner{max-width:1180px;margin:0 auto;padding:0 18px;display:flex;flex-direction:column;gap:18px}
+    .footer-inner{max-width:var(--max-width);margin:0 auto;padding:0 var(--content-padding);display:flex;flex-direction:column;gap:18px}
     .footer-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .footer-brand{font-weight:800;color:#fff;display:flex;flex-direction:column;gap:6px}
     .footer-links{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
@@ -113,19 +202,24 @@
     .footer-bottom{font-size:0.92rem;color:#9a9a9a;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 
     /* Responsive */
-    @media (max-width: 1200px){
-      .hero-grid{grid-template-columns: 1fr 440px}
+    @media (max-width: 1280px){
+      .hero-grid{grid-template-columns: 1fr 460px}
       .visual-card{max-width:480px}
+      .hero-left h1{font-size:42px}
     }
     @media (max-width: 980px){
-      .hero-grid{grid-template-columns: 1fr; padding: 18px 0}
+      .hero-grid{grid-template-columns: 1fr; padding:22px 0}
       .brand .ver{display:none}
-      .visual-card{order: -1;width:100%}
+      .visual-card{order:-1;width:100%}
       .hero-left h1{font-size:28px}
-      .hero{padding-top:84px}
-      .hero-bg{height:calc(80vh + 260px); left:50%; transform:translateX(-50%); background-position:center 10%;}
+      .hero{padding-top:94px}
+      .hero-bg{height:calc(80vh + 420px); left:50%; transform:translateX(-50%); background-position:center 12%;}
       .visual-frame img{max-height:420px}
+      .hero-panel{padding:18px;border-radius:12px}
     }
+
+    /* Small visual polish for image load */
+    .img-center{display:block;margin:0 auto;max-width:100%}
   </style>
 </head>
 <body>
@@ -150,32 +244,42 @@
     <section class="hero" role="region" aria-labelledby="hero-title">
       <div class="hero-bg" aria-hidden="true"></div>
 
-      <div class="container">
-        <div class="hero-grid">
-          <div class="hero-left">
-            <h1 id="hero-title">Лучший софт для сайта Фанпэй</h1>
-            <p>FPBooster включает в себя обширный функционал: автоподъём лотов, гибкое расписание, управление Session ID, поддержку промокодов, встроенный апдейтер и расширяемую систему тем — всё, что нужно продавцу для стабильной и эффективной работы. Дополнительно идут инструменты для аналитики и удобной диагностики работы.</p>
+      <div class="container" style="position:relative;z-index:2;">
+        <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="flex:1;min-width:320px;">
+            <div class="hero-panel" role="article" aria-labelledby="hero-title">
+              <div class="hero-grid" style="grid-template-columns:1fr;">
+                <div class="hero-left">
+                  <h1 id="hero-title">Лучший софт для сайта Фанпэй</h1>
+                  <p>FPBooster включает автоподъём лотов, гибкое расписание, управление Session ID, поддержку промокодов, встроенный апдейтер и премиальные темы. Инструменты аналитики и диагностики помогут увеличить эффективность работы продавца.</p>
 
-            <div class="btns" role="group" aria-label="Основные действия">
-              <a class="btn-gradient" href="/cabinet" role="button"><i class="fa-solid fa-user"></i> Личный кабинет</a>
-              <a class="btn-outline" href="https://t.me/funpaybo0sterr" role="button" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
-            </div>
+                  <div class="btns" role="group" aria-label="Основные действия">
+                    <a class="btn-gradient" href="/cabinet" role="button"><i class="fa-solid fa-user"></i> Личный кабинет</a>
+                    <a class="btn-outline" href="https://t.me/funpaybo0sterr" role="button" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
+                  </div>
 
-            <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-              <div class="card" style="display:inline-block;padding:10px 14px;">
-                <strong>Пользователей:</strong> <span id="stat-users">532</span>
-              </div>
-              <div class="card" style="display:inline-block;padding:10px 14px;">
-                <strong>Запусков клиента:</strong> <span id="stat-runs">5752</span>
+                  <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+                    <div class="card" style="display:inline-block;padding:10px 14px;">
+                      <strong>Пользователей:</strong> <span id="stat-users">532</span>
+                    </div>
+                    <div class="card" style="display:inline-block;padding:10px 14px;">
+                      <strong>Запусков клиента:</strong> <span id="stat-runs">5752</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="visual-card" aria-hidden="false">
-            <div class="visual-frame" role="img" aria-label="Интерфейс FPBooster">
-              <img src="/static/Ui.png" alt="UI FPBooster" loading="lazy" onerror="this.onerror=null;this.classList.add('small-fallback');this.src='/static/Ui.png'">
+          <div style="width:560px;min-width:320px;">
+            <div class="visual-card" aria-hidden="false">
+              <div class="visual-frame" role="img" aria-label="Интерфейс FPBooster">
+                <img src="/static/Ui.png" alt="UI FPBooster" loading="lazy"
+                     onerror="this.onerror=null;this.src='/static/Ui.png';"
+                     class="img-center">
+              </div>
+              <div class="visual-caption">Красивый интерфейс и премиальные темы; UI адаптирован под тёмную тему сайта</div>
             </div>
-            <div class="visual-caption">Красивый интерфейс и премиальные темы; UI адаптирован под тёмную тему сайта</div>
           </div>
         </div>
       </div>
@@ -187,10 +291,10 @@
           <h2 id="why-title" style="margin-top:0;color:#ffd9ff">Почему выбирают нас?</h2>
           <p style="color:var(--muted)">Инструмент, созданный продавцами для продавцов на FunPay: простая настройка, быстрый результат и гарантия обновлений.</p>
 
-          <div class="grid" style="margin-top:18px;">
+          <div class="grid" style="margin-top:22px;">
             <div class="benefit card">
               <h5><i class="fa-solid fa-bolt"></i>&nbsp;&nbsp;Мгновенный буст</h5>
-              <p>Поднимайте все выбранные Node ID быстро и стабильно с визуальной диагностикой результата.</p>
+              <p>Поднимайте выбранные Node ID быстро и стабильно с визуальной диагностикой результата.</p>
             </div>
 
             <div class="benefit card">
@@ -215,7 +319,7 @@
 
             <div class="benefit card">
               <h5><i class="fa-solid fa-road"></i>&nbsp;&nbsp;Планы по функционалу</h5>
-              <p>Мы планируем добавить: возврат/ЧС для заказов с плохими отзывами, автодемпинг, копирование чужих лотов и другие инструменты для автоматизации.</p>
+              <p>Мы планируем добавить: возврат/ЧС для заказов с плохими отзывами, автодемпинг, копирование чужих лотов и другие инструменты.</p>
             </div>
           </div>
         </div>
@@ -225,7 +329,7 @@
     <section aria-labelledby="update-title">
       <div class="container">
         <div class="card" style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-          <div class="update-card update-box">
+          <div class="update-card update-box" style="flex:1;min-width:320px;">
             <div class="update-title">Последнее обновление</div>
             <div class="update-meta">
               <div><strong>Версия:</strong> <span id="upd-ver">1.4</span></div>
@@ -302,7 +406,6 @@
         const changelog = data.UPDATE_CHANGELOG || data.changelog || data.UPDATE_LOG || null;
         const stats = data.stats || null;
 
-        // Do not override "Beta" badge — only update displayed version text in update card
         if(ver) document.getElementById('upd-ver').textContent = ver;
         if(changelog) document.getElementById('upd-changelog').textContent = changelog;
 
@@ -312,7 +415,7 @@
           if(stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = stats.subs;
           if(stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = stats.rates;
         }
-      }).catch(()=>{ /* keep static defaults */ });
+      }).catch(()=>{ /* keep defaults */ });
     })();
   </script>
 </body>
