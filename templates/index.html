@@ -3,10 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>FPBooster — Автоподъём лотов на FunPay</title>
-  <meta name="description" content="FPBooster — автоматизация поднятия лотов на FunPay: быстрые бусты, гибкое расписание, лицензии и промокоды, встроенный апдейтер и премиальные темы." />
+  <title>FPBooster — Лучший софт для FunPay</title>
+  <meta name="description" content="FPBooster — автоматизация поднятия лотов на FunPay: автоподъём, расписание, промокоды, апдейтер и премиальный UI." />
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <style>
     :root{
@@ -23,25 +22,65 @@
     .container{max-width:1180px;margin:0 auto;padding:0 18px}
 
     /* Navbar */
-    .navbar{position:fixed;top:0;left:0;right:0;height:72px;display:flex;align-items:center;background:linear-gradient(180deg, rgba(5,5,6,0.7), rgba(5,5,6,0.55));backdrop-filter: blur(6px);z-index:120;padding:0 18px;box-shadow:0 6px 22px rgba(0,0,0,0.5);}
+    .navbar{position:fixed;top:0;left:0;right:0;height:72px;display:flex;align-items:center;background:linear-gradient(180deg, rgba(5,5,6,0.75), rgba(5,5,6,0.6));backdrop-filter: blur(6px);z-index:120;padding:0 18px;box-shadow:0 6px 22px rgba(0,0,0,0.55);}
     .brand{font-weight:800;font-size:1.125rem;display:flex;align-items:center;gap:10px;color:#fff}
     .brand .ver{background:var(--glass);color:var(--accent1);padding:4px 8px;border-radius:8px;font-weight:700;font-size:0.85rem}
     .nav{margin-left:auto;display:flex;gap:12px;align-items:center}
     .nav-link{color:#dcdcdc;padding:8px 12px;border-radius:8px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
     .btn-cta{background:var(--gradient);color:#fff;padding:10px 14px;border-radius:10px;font-weight:800;border:none;display:inline-flex;align-items:center;gap:8px}
 
-    /* Hero */
-    .hero{min-height:86vh;display:flex;align-items:center;padding-top:96px;position:relative;background:linear-gradient(180deg, rgba(6,6,8,0.5), rgba(6,6,8,0.3));overflow:hidden}
-    .hero-grid{display:grid;grid-template-columns: 1fr 480px;gap:28px;align-items:center;width:100%}
+    /* Hero with limited background image and fade */
+    .hero{
+      min-height:86vh; display:flex; align-items:center; padding-top:96px; position:relative;
+      background: linear-gradient(180deg, rgba(6,6,8,0.0), rgba(6,6,8,0.0));
+      overflow:hidden;
+    }
+    /* Background image container limited to hero height + small margin */
+    .hero-bg {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1100px;           /* controls how far image stretches horizontally */
+      max-width: 120%;
+      height: 560px;          /* stops background after hero area */
+      background-image: url('/templates/Bakground.png');
+      background-position: center top;
+      background-repeat: no-repeat;
+      background-size: cover;
+      opacity: 0.92;
+      filter: saturate(1.05) contrast(1.02);
+      z-index: 0;
+      pointer-events: none;
+    }
+    /* fade to black below the bg image */
+    .hero-bg::after{
+      content:"";
+      position:absolute;
+      left:0; right:0; bottom:-40px;
+      height:220px;
+      background: linear-gradient(180deg, rgba(5,5,6,0.0), rgba(5,5,6,1));
+    }
+
+    .hero-grid{position:relative; z-index:2; display:grid; grid-template-columns: 1fr 480px; gap:28px; align-items:center; width:100%}
     .hero-left h1{font-size:44px;margin:0 0 14px;color:#fff;line-height:1.05}
     .hero-left p{color:var(--muted);font-size:1.05rem;max-width:740px;margin:0 0 20px}
     .btns{display:flex;gap:12px;flex-wrap:wrap}
     .btn-gradient{background:var(--gradient);color:#fff;padding:12px 20px;border-radius:10px;font-weight:800;border:none}
     .btn-outline{background:transparent;color:#fff;padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);font-weight:700}
 
-    /* Visual card */
-    .visual-card{background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));border-radius:12px;padding:18px;box-shadow:0 18px 60px rgba(0,0,0,0.6);display:flex;flex-direction:column;align-items:center}
-    .visual-card img{width:100%;height:auto;border-radius:8px;display:block}
+    /* UI image card — styled to look premium */
+    .visual-card{background:transparent;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:center; justify-content:center}
+    .visual-frame{
+      width:100%;
+      border-radius:16px;
+      overflow:hidden;
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      box-shadow: 0 30px 80px rgba(17,10,40,0.7), 0 8px 28px rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.02);
+    }
+    .visual-frame img{display:block;width:100%;height:auto;object-fit:cover;transform:translateZ(0);}
+
     .visual-caption{margin-top:12px;color:var(--muted);font-size:0.92rem;text-align:center}
 
     /* Section & cards */
@@ -51,13 +90,13 @@
     .benefit h5{margin:0 0 8px;color:#ffd9ff;font-size:1rem}
     .benefit p{margin:0;color:var(--muted);font-size:0.95rem}
 
-    /* Update box */
+    /* Update & info */
     .update-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
     .update-box{min-width:260px;flex:1}
 
     /* Footer */
     footer{background:#060607;color:#bfbfbf;padding:22px 0}
-    .footer-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+    .footer-row{display:flex;flex-direction:column;gap:8px;align-items:flex-start;max-width:1180px;margin:0 auto;padding:0 18px}
 
     /* Responsive */
     @media (max-width: 980px){
@@ -66,6 +105,7 @@
       .visual-card{order: -1}
       .hero-left h1{font-size:28px}
       .hero{padding-top:84px}
+      .hero-bg{height:420px}
     }
   </style>
 </head>
@@ -74,44 +114,48 @@
     <div class="container" style="display:flex;align-items:center;gap:16px;">
       <a class="brand" href="/" aria-label="FPBooster — главная">
         <span>FPBooster</span>
-        <span id="version-badge" class="ver" aria-hidden="true">v—</span>
+        <span id="version-badge" class="ver">v1.4</span>
       </a>
 
       <nav class="nav" role="navigation" aria-label="Основные разделы">
-        <a class="nav-link" href="/docs"><i class="fa-solid fa-book"></i> Документация</a>
         <a class="nav-link" href="/support" target="_blank" rel="noopener"><i class="fa-solid fa-headset"></i> Поддержка</a>
-        <a class="btn-cta" href="/download"><i class="fa-solid fa-download"></i> Скачать</a>
+        <a class="nav-link" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить</a>
+        <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
       </nav>
     </div>
   </header>
 
   <main>
     <section class="hero" role="region" aria-labelledby="hero-title">
+      <div class="hero-bg" aria-hidden="true"></div>
+
       <div class="container">
         <div class="hero-grid">
           <div class="hero-left">
-            <h1 id="hero-title">Автоподъём лотов на FunPay — быстро, без суеты</h1>
-            <p>FPBooster автоматизирует поднятие лотов: быстрые бусты, гибкое расписание, управление Session ID, интеграция промокодов и надёжный апдейтер с проверкой SHA‑256.</p>
+            <h1 id="hero-title">Лучший софт для сайта Фанпэй</h1>
+            <p>FPBooster включает в себя обширный функционал: автоподъём лотов, гибкое расписание, управление Session ID, поддержку промокодов, встроенный апдейтер и расширяемую систему тем — всё, что нужно продавцу для стабильной и эффективной работы. Дополнительно идут инструменты для аналитики и удобной диагностики работы.</p>
 
             <div class="btns" role="group" aria-label="Основные действия">
-              <a class="btn-gradient" href="/download" role="button"><i class="fa-solid fa-download"></i> Скачать FPBooster</a>
-              <a class="btn-outline" href="/docs" role="button"><i class="fa-solid fa-info-circle"></i> Документация</a>
+              <a class="btn-gradient" href="/cabinet" role="button"><i class="fa-solid fa-user"></i> Личный кабинет</a>
+              <a class="btn-outline" href="https://t.me/funpaybo0sterr" role="button" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
             </div>
 
             <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
               <div class="card" style="display:inline-block;padding:10px 14px;">
-                <strong>Пользователей:</strong> <span id="stat-users">—</span>
+                <strong>Пользователей:</strong> <span id="stat-users">532</span>
               </div>
               <div class="card" style="display:inline-block;padding:10px 14px;">
-                <strong>Запусков клиента:</strong> <span id="stat-runs">—</span>
+                <strong>Запусков клиента:</strong> <span id="stat-runs">5752</span>
               </div>
             </div>
           </div>
 
           <div class="visual-card" aria-hidden="false">
-            <img src="/static/hero_fpbooster.png" alt="Интерфейс FPBooster — пример окна клиента" loading="lazy"
-                 onerror="this.onerror=null;this.src='/static/hero_fallback.gif'">
-            <div class="visual-caption">Midnight Blue и Celestial def темы, встроенные эффекты glow и анимация фона</div>
+            <div class="visual-frame" role="img" aria-label="Интерфейс FPBooster">
+              <img src="/templates/Ui.png" alt="UI FPBooster" loading="lazy"
+                   onerror="this.onerror=null;this.src='/static/hero_fallback.gif'">
+            </div>
+            <div class="visual-caption">Красивый интерфейс и премиальные темы; UI адаптирован под тёмную тему сайта</div>
           </div>
         </div>
       </div>
@@ -120,7 +164,7 @@
     <section aria-labelledby="why-title">
       <div class="container">
         <div class="card">
-          <h2 id="why-title" style="margin-top:0;color:#ffd9ff">Почему FPBooster</h2>
+          <h2 id="why-title" style="margin-top:0;color:#ffd9ff">Почему выбирают нас?</h2>
           <p style="color:var(--muted)">Инструмент, созданный продавцами для продавцов на FunPay: простая настройка, быстрый результат и гарантия обновлений.</p>
 
           <div class="grid" style="margin-top:18px;">
@@ -141,17 +185,17 @@
 
             <div class="benefit card">
               <h5><i class="fa-solid fa-palette"></i>&nbsp;&nbsp;Премиальные темы</h5>
-              <p>Midnight Blue по умолчанию и уникальная тема Celestial def с анимированным фоном.</p>
+              <p>Множество премиальных тем на ваш вкус; визуал софта на высшем уровне.</p>
             </div>
 
             <div class="benefit card">
-              <h5><i class="fa-solid fa-rotate"></i>&nbsp;&nbsp;Апдейтер с проверкой</h5>
-              <p>Встроенный апдейтер скачивает .exe, проверяет SHA‑256 и аккуратно обновляет клиент.</p>
+              <h5><i class="fa-solid fa-code-branch"></i>&nbsp;&nbsp;Активная разработка</h5>
+              <p>Проект постоянно развивается — новые фичи, фиксы и улучшения выходят регулярно.</p>
             </div>
 
             <div class="benefit card">
-              <h5><i class="fa-solid fa-gear"></i>&nbsp;&nbsp;Простая интеграция</h5>
-              <p>Лёгкая конфигурация, экспорт/импорт node_id и сохранение Session ID между сессиями.</p>
+              <h5><i class="fa-solid fa-road"></i>&nbsp;&nbsp;Планы по функционалу</h5>
+              <p>Мы планируем добавить: возврат/ЧС для заказов с плохими отзывами, автодемпинг, копирование чужих лотов и другие инструменты для автоматизации.</p>
             </div>
           </div>
         </div>
@@ -164,24 +208,22 @@
           <div class="update-box">
             <h3 id="update-title" style="margin-top:0;">Последнее обновление</h3>
             <div style="display:flex;flex-direction:column;gap:8px">
-              <div><strong>Версия:</strong> <span id="upd-ver">—</span></div>
-              <div><strong>Скачать:</strong> <a id="upd-url" href="#" target="_blank" rel="noopener">—</a></div>
-              <div><strong>SHA‑256:</strong> <code id="upd-sha">—</code></div>
+              <div><strong>Версия:</strong> <span id="upd-ver">1.4</span></div>
+              <div><strong>Доступ к скачиванию:</strong> по ссылке в вашем личном кабинете после покупки</div>
+              <div style="color:var(--muted);font-size:0.95rem;">
+                <strong>Вопросы и идеи:</strong> если хотите предложить фичу или сообщить об ошибке — пишите гл. кодеру в Telegram: <strong>@Manavoid_228</strong>
+              </div>
               <details style="margin-top:6px;">
                 <summary>Changelog</summary>
-                <pre id="upd-changelog" style="white-space:pre-wrap;margin-top:8px;color:var(--muted);"></pre>
+                <div id="upd-changelog" style="white-space:pre-wrap;margin-top:8px;color:var(--muted);">Вся информация об обновлениях ведётся в официальном телеграм‑канале.</div>
               </details>
             </div>
           </div>
 
           <div style="min-width:260px;">
-            <h4 style="margin:0 0 6px">Быстрый старт</h4>
-            <ol style="margin:0 0 12px 18px;color:var(--muted)">
-              <li>Скачайте клиент</li>
-              <li>Вставьте Session ID и добавьте Node IDs</li>
-              <li>Запустите автоматический буст или быстрый буст</li>
-            </ol>
-            <a class="btn-gradient" href="/download"><i class="fa-solid fa-download"></i> Скачать сейчас</a>
+            <h4 style="margin:0 0 6px">Больше информации о софте</h4>
+            <p style="color:var(--muted);margin:0 0 12px;">Если вы хотите оставаться в курсе всех апдейтов, новостей и розыгрышей — подписывайтесь на официальный телеграм‑канал.</p>
+            <a class="btn-gradient" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Официальный ТГК</a>
           </div>
         </div>
       </div>
@@ -192,63 +234,41 @@
         <div class="card" style="display:flex;justify-content:space-between;gap:18px;align-items:center;flex-wrap:wrap">
           <div>
             <h3 id="contact-title" style="margin:0 0 6px">Поддержка и контакты</h3>
-            <div style="color:var(--muted)">Техническая поддержка в Telegram: <strong>@Manavoid_228</strong>, менеджер: <strong>@PeCHeNKa_F</strong></div>
+            <div style="color:var(--muted)">Техническая поддержка: <strong>@PeCHeNKa_F</strong></div>
           </div>
           <div>
-            <a class="btn-outline" href="/docs">Документация</a>
-            <a class="btn-cta" href="/download" style="margin-left:10px">Скачать</a>
+            <a class="btn-outline" href="/cabinet">Личный кабинет</a>
+            <a class="btn-cta" href="https://t.me/funpaybo0sterr" style="margin-left:10px" target="_blank" rel="noopener">Наш телеграм</a>
           </div>
         </div>
       </div>
     </section>
   </main>
 
-  <footer role="contentinfo">
-    <div class="container">
-      <div class="footer-row">
-        <div style="font-weight:700">FPBooster</div>
-        <div>Поддержка: @Manavoid_228 · @PeCHeNKa_F · ntfhelp@mail.ru</div>
-        <div>© 2025</div>
-      </div>
+  <footer role="contentinfo" style="background:#060607;">
+    <div class="footer-row">
+      <div style="font-weight:700;font-size:1.05rem">FPBooster</div>
+      <div style="color:var(--muted)">Поддержка (ТГ): @Manavoid_228 · @PeCHeNKa_F</div>
+      <div style="color:var(--muted)">Copyright © FPBoosterSoft 2025</div>
     </div>
   </footer>
 
   <script>
-    // Подтягиваем /api/update и заполняем виджеты
+    // Подтягиваем /api/update для актуальной версии и changelog (если нужно)
     (function(){
       fetch('/api/update', {cache: 'no-store'}).then(r=>{
         if(!r.ok) throw new Error('no update');
         return r.json();
       }).then(data=>{
-        const ver = data.LATEST_VERSION || data.version || data.latest_version || '—';
-        const url = data.DOWNLOAD_URL || data.url || '#';
-        const sha = (data.UPDATE_SHA256 || data.sha256 || '').toUpperCase() || '—';
-        const changelog = data.UPDATE_CHANGELOG || data.changelog || data.UPDATE_LOG || '';
-
+        const ver = data.LATEST_VERSION || data.version || '1.4';
+        const changelog = data.UPDATE_CHANGELOG || data.changelog || 'Вся информация об обновлениях ведётся в официальном телеграм‑канале.';
         document.getElementById('version-badge').textContent = 'v' + ver;
         document.getElementById('upd-ver').textContent = ver;
-        const a = document.getElementById('upd-url'); a.textContent = url; a.href = url;
-        document.getElementById('upd-sha').textContent = sha;
-        document.getElementById('upd-changelog').textContent = changelog;
-
-        // Статистика (если есть)
-        if(data.stats){
-          if(data.stats.users) document.getElementById('stat-users').textContent = data.stats.users;
-          if(data.stats.runs) document.getElementById('stat-runs').textContent = data.stats.runs;
-        } else {
-          // fallback demo values
-          document.getElementById('stat-users').textContent = '152 618';
-          document.getElementById('stat-runs').textContent = '2 338 704';
-        }
+        var node = document.getElementById('upd-changelog');
+        if(node) node.textContent = changelog;
+        // stats are static per request — kept as provided earlier
       }).catch(()=>{
-        // если не доступно — ставим дефолтные бейджи
-        document.getElementById('version-badge').textContent = 'v—';
-        document.getElementById('upd-ver').textContent = '—';
-        document.getElementById('upd-url').textContent = '—';
-        document.getElementById('upd-sha').textContent = '—';
-        document.getElementById('upd-changelog').textContent = '';
-        document.getElementById('stat-users').textContent = '—';
-        document.getElementById('stat-runs').textContent = '—';
+        // leave current static values if fetch fails
       });
     })();
   </script>
