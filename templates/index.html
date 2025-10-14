@@ -12,12 +12,10 @@
         --bg: #050405;
         --card: #151517;
         --muted: #bdbdbd;
-        --muted-2: #9fa0a6;
         --accent1: #9b4bff;
         --accent2: #5e2bff;
         --gradient: linear-gradient(110deg, var(--accent1), var(--accent2));
-        --glass: rgba(255, 255, 255, 0.12); /* менее прозрачный, чтобы текст выделялся */
-        --glass-weak: rgba(255, 255, 255, 0.03);
+        --glass: rgba(255, 255, 255, 0.12);
         --radius: 14px;
         --max-width: 1180px;
         --content-padding: 18px;
@@ -111,43 +109,35 @@
         gap: 8px;
     }
 
-    /* HERO container */
+    /* HERO */
     .hero {
         position: relative;
         min-height: 92vh;
         display: flex;
         align-items: flex-start;
-        padding-top: 128px; /* увеличенный отступ, чтобы бокс централизовался */
+        padding-top: 128px;
         overflow: hidden;
     }
 
-    /*
-        BACKGROUND
-        - width:100vw чтобы не было чёрных полос по бокам
-        - background-size: cover для корректного заполнения
-        - progressive top->bottom darkening via ::before
-        - strong dissolve into black via ::after (height controls where dissolve begins)
-    */
     .hero-bg {
         position: absolute;
         top: 0;
         left: 50%;
         transform: translateX(-50%);
-        width: 100vw;                 /* растяжение по горизонтали */
-        min-width: 1400px;            /* помогает на очень широких экранах */
-        height: calc(100vh + 560px);  /* позволяет затемнению доходить до блока "Почему выбирают нас?" */
+        width: 100vw;
+        min-width: 1400px;
+        height: calc(100vh + 560px);
         background-image: url('/static/Bakground.png');
         background-position: center 12%;
         background-repeat: no-repeat;
-        background-size: cover;       /* заполнение области без боковых полос */
+        background-size: cover;
         z-index: 0;
         pointer-events: none;
-        filter: contrast(0.92) saturate(1.04) brightness(0.62); /* стартовое затемнение */
+        filter: contrast(0.92) saturate(1.04) brightness(0.62);
         transition: filter .45s ease, opacity .35s ease;
         will-change: transform, opacity, filter;
     }
 
-    /* Верхняя тонкая маска для контраста */
     .hero-bg::before {
         content: "";
         position: absolute;
@@ -166,14 +156,13 @@
         pointer-events: none;
     }
 
-    /* Нижний сильный dissolve для плавного появления чёрного фона раньше */
     .hero-bg::after {
         content: "";
         position: absolute;
         left: 0;
         right: 0;
         bottom: 0;
-        height: 480px; /* регулирует начало плотного затемнения; поднять/опустить по вкусу */
+        height: 480px;
         background: linear-gradient(180deg,
             rgba(0,0,0,0.0) 0%,
             rgba(0,0,0,0.48) 28%,
@@ -182,7 +171,7 @@
         pointer-events: none;
     }
 
-    /* Контент внутри hero: адаптивная сетка, центрирование заголовка */
+    /* Hero grid & centered panel */
     .hero-grid {
         position: relative;
         z-index: 8;
@@ -194,7 +183,6 @@
         padding: 36px 0;
     }
 
-    /* Полупрозрачный бокс с заголовком — менее прозрачный */
     .hero-panel {
         position: relative;
         z-index: 10;
@@ -208,7 +196,6 @@
         box-shadow: 0 46px 140px rgba(0,0,0,0.72);
     }
 
-    /* Заголовок централизован и не прилегает к верху */
     .hero-left {
         display: flex;
         flex-direction: column;
@@ -260,7 +247,7 @@
         font-weight: 700;
     }
 
-    /* Визуальная карточка с UI: увеличим изображение в 2-3 раза визуально */
+    /* Visual card — make UI image much larger, crop transparent space and center */
     .visual-card {
         background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
         border-radius: 18px;
@@ -272,37 +259,92 @@
         box-shadow: var(--soft-shadow);
         border: 1px solid rgba(255,255,255,0.02);
         width: 100%;
-        max-width: 1100px; /* расширено, чтобы UI мог стать очень крупным на широких экранах */
+        max-width: 1180px;
         margin: 0 auto;
     }
 
-    .visual-frame {
+    /* Wrapper to crop transparent padding around UI PNG and simulate zoom */
+    .visual-clip {
         width: 100%;
-        border-radius: 14px;
-        overflow: hidden;
-        background: linear-gradient(180deg, rgba(0,0,0,0.46), rgba(0,0,0,0.20));
-        position: relative;
+        overflow: hidden;            /* crucial: crop transparent margins */
+        border-radius: 12px;
         display: block;
-        box-shadow: inset 0 16px 60px rgba(0,0,0,0.75), 0 32px 120px rgba(0,0,0,0.75);
-        border: 1px solid rgba(255,255,255,0.035);
+        position: relative;
+        padding: 6px;               /* subtle inner spacing */
+        background: linear-gradient(180deg, rgba(0,0,0,0.46), rgba(0,0,0,0.18));
+        box-shadow: inset 0 12px 48px rgba(0,0,0,0.7);
     }
 
-    /* Основная правка: увеличить отображаемую картинку UI.
-       Если исходник маленький — используем object-fit: contain и позволяем изображению выходить за контейнер на мобильных экранах */
-    .visual-frame img {
+    /*
+        Key change:
+        - enlarge image visually by scaling and allowing it to overflow inside the clip wrapper
+        - use transform: scale() to avoid pixel stretching for raster sources while keeping object-fit: contain
+        - for PNGs with transparent margins we rely on .visual-clip overflow:hidden to crop them
+    */
+    .visual-clip img {
         display: block;
-        width: 100%;
+        width: auto;                   /* keep natural width for better sharpness */
+        max-width: none;
         height: auto;
-        max-height: 1200px;     /* максимально большое превью на десктопе */
-        object-fit: contain;    /* сохранить UI целиком */
-        object-position: center;
+        max-height: none;
+        transform-origin: center center;
         transition: transform .28s ease, filter .35s ease;
         filter: drop-shadow(0 28px 80px rgba(0,0,0,0.78)) contrast(1.06);
+        will-change: transform, filter;
+        /* default desktop scale: 2.2x (approx 2-3 times larger as requested) */
+        transform: scale(2.2);
     }
 
-    /* Hover slight scale */
-    .visual-frame img:hover {
-        transform: scale(1.01);
+    /* Optional: slightly reduce scale on huge screens to avoid overflow issues */
+    @media (min-width: 1920px) {
+        .visual-clip img {
+            transform: scale(2.0);
+        }
+    }
+
+    /* Mobile: increase apparent size even more by enlarging scale and allowing horizontal overflow (cropped by visual-clip) */
+    @media (max-width: 768px) {
+        .visual-clip img {
+            transform: scale(2.8);  /* larger on phones/tablets so UI appears dominant */
+        }
+
+        .hero {
+            padding-top: 110px;
+        }
+
+        .hero-panel {
+            padding: 20px;
+            border-radius: 14px;
+            margin: 0 12px;
+        }
+
+        .hero-left h1 {
+            font-size: 28px;
+        }
+
+        .hero-left p {
+            font-size: 1rem;
+        }
+    }
+
+    /* Small phones: cap scale to prevent clipping too extreme */
+    @media (max-width: 420px) {
+        .visual-clip img {
+            transform: scale(2.4);
+        }
+
+        .hero {
+            padding-top: 96px;
+        }
+
+        .hero-left h1 {
+            font-size: 24px;
+        }
+    }
+
+    /* If the source is vector or high-res, allow a less-aggressive scale to keep crispness */
+    .visual-clip.highres img {
+        transform: scale(1.5); /* use this class when high-res source is available */
     }
 
     .visual-caption {
@@ -312,7 +354,7 @@
         text-align: center;
     }
 
-    /* Секция и карточки */
+    /* Sections & cards */
     section {
         padding: 80px 0;
     }
@@ -343,28 +385,6 @@
         font-size: 0.98rem;
     }
 
-    /* Update card */
-    .update-card {
-        background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-        border-radius: 14px;
-        padding: 18px;
-        box-shadow: 0 26px 78px rgba(9,6,20,0.72);
-        border: 1px solid rgba(255,255,255,0.02);
-    }
-
-    .update-title {
-        font-size: 1.08rem;
-        color: #ffd9ff;
-        margin-bottom: 6px;
-    }
-
-    .update-meta {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        color: var(--muted);
-    }
-
     /* Footer */
     .footer {
         background: linear-gradient(180deg, rgba(8,8,10,1), rgba(5,5,6,1));
@@ -382,132 +402,12 @@
         gap: 18px;
     }
 
-    .footer-top {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 16px;
-        flex-wrap: wrap;
-    }
-
     .footer-bottom {
         font-size: 0.92rem;
         color: #9a9a9a;
     }
 
-    /*
-        RESPONSIVE: телефоны и планшеты
-        - Центрируем блок и даём больший верхний отступ
-        - Увеличиваем визуальный UI на малых экранах, позволяя ему немного выходить за контейнер
-        - Усиливаем нижнее затемнение на маленьких экранах, чтобы фон быстрее растворялся в чёрный
-    */
-    @media (max-width: 1280px) {
-        .hero-grid {
-            grid-template-columns: 1fr 520px;
-        }
-
-        .visual-card {
-            max-width: 980px;
-        }
-
-        .hero-left h1 {
-            font-size: 44px;
-        }
-    }
-
-    @media (max-width: 1024px) {
-        .hero-grid {
-            grid-template-columns: 1fr;
-            gap: 22px;
-        }
-
-        .hero-panel {
-            padding: 26px;
-            border-radius: 16px;
-        }
-
-        .visual-frame img {
-            max-height: 920px;
-        }
-    }
-
-    @media (max-width: 768px) {
-        .hero {
-            padding-top: 110px;
-        }
-
-        .hero-panel {
-            padding: 20px;
-            border-radius: 14px;
-            margin: 0 12px;
-        }
-
-        .hero-left h1 {
-            font-size: 28px;
-            text-align: center;
-        }
-
-        .hero-left p {
-            font-size: 1rem;
-            text-align: center;
-        }
-
-        .btns {
-            justify-content: center;
-        }
-
-        .visual-card {
-            max-width: 100%;
-            padding: 12px;
-        }
-
-        /* Увеличиваем UI в 2-3 раза визуально на мобилях:
-           width >100% и отсутствие жёсткого ограничения по высоте делает UI крупнее и заметнее */
-        .visual-frame img {
-            max-height: 900px;
-            width: 140%;
-            transform-origin: center;
-        }
-
-        .visual-frame {
-            padding: 8px;
-        }
-
-        /* На мобильных сделать растворение ещё резче */
-        .hero-bg::after {
-            height: 360px;
-            background: linear-gradient(180deg,
-                rgba(0,0,0,0.0) 0%,
-                rgba(0,0,0,0.56) 30%,
-                rgba(0,0,0,0.92) 68%,
-                rgba(0,0,0,1) 100%);
-        }
-    }
-
-    @media (max-width: 420px) {
-        .hero {
-            padding-top: 94px;
-        }
-
-        .hero-left h1 {
-            font-size: 24px;
-        }
-
-        .hero-left p {
-            font-size: 0.98rem;
-        }
-
-        .visual-frame img {
-            width: 160%;
-            max-height: 980px;
-        }
-
-        .hero-bg::after {
-            height: 300px; /* на самых маленьких экранах растворение начинается ещё раньше */
-        }
-    }
-
-    /* Small polish */
+    /* small polish */
     .img-center {
         display: block;
         margin: 0 auto;
@@ -713,5 +613,6 @@
   </script>
 </body>
 </html>
+
 
 
