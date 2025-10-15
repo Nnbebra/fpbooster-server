@@ -123,7 +123,7 @@
         min-height: 92vh;
         display: flex;
         align-items: flex-start;
-        padding-top: 128px;
+        padding-top: 140px; /* увеличенный отступ чтобы панель не прилегала к верху */
         overflow: hidden;
     }
 
@@ -147,7 +147,7 @@
         background-size: cover;
         z-index: 0;
         pointer-events: none;
-        filter: contrast(0.92) saturate(1.04) brightness(0.60);
+        filter: contrast(0.92) saturate(1.04) brightness(0.58); /* чуть более затемнено изначально */
         transition: filter 450ms ease, opacity 350ms ease;
         will-change: transform, opacity, filter;
     }
@@ -162,9 +162,9 @@
         bottom: 0;
         background: linear-gradient(180deg,
             rgba(0,0,0,0.06) 0%,
-            rgba(0,0,0,0.14) 18%,
-            rgba(0,0,0,0.28) 38%,
-            rgba(0,0,0,0.48) 60%,
+            rgba(0,0,0,0.14) 16%,
+            rgba(0,0,0,0.28) 36%,
+            rgba(0,0,0,0.48) 58%,
             rgba(0,0,0,0.78) 86%,
             rgba(0,0,0,1) 100%);
         mix-blend-mode: multiply;
@@ -181,8 +181,8 @@
         height: 520px;
         background: linear-gradient(180deg,
             rgba(0,0,0,0.0) 0%,
-            rgba(0,0,0,0.48) 28%,
-            rgba(0,0,0,0.82) 68%,
+            rgba(0,0,0,0.52) 28%,
+            rgba(0,0,0,0.86) 68%,
             rgba(0,0,0,1) 100%);
         pointer-events: none;
     }
@@ -194,22 +194,27 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 28px;
-        align-items: start;
+        align-items: center; /* выравнивание по центру по вертикали для лучшей централизации панели */
         width: 100%;
-        padding: 36px 0;
+        padding: 48px 0; /* увеличенный внутренний отступ для отделения от верха */
     }
 
+    /* Полупрозрачный бокс — центрируем содержимое дополнительно */
     .hero-panel {
         position: relative;
         z-index: 10;
-        background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
-        border: 1px solid rgba(255,255,255,0.06);
+        background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05));
+        border: 1px solid rgba(255,255,255,0.07);
         border-radius: 18px;
-        padding: 32px;
+        padding: 36px;
         max-width: 980px;
-        margin: 0 auto;
+        margin: 28px auto; /* отступ сверху и снизу для более "плавающего" центра */
         backdrop-filter: blur(12px) saturate(1.06);
-        box-shadow: 0 46px 140px rgba(0,0,0,0.72);
+        box-shadow: 0 52px 160px rgba(0,0,0,0.74);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
     }
 
     .hero-left {
@@ -217,7 +222,8 @@
         flex-direction: column;
         justify-content: center;
         gap: 14px;
-        padding-top: 6px;
+        padding-top: 0; /* убираем прилегание к верху */
+        width: 100%;
     }
 
     .hero-left h1 {
@@ -242,7 +248,7 @@
         gap: 12px;
         flex-wrap: wrap;
         justify-content: center;
-        margin-top: 14px;
+        margin-top: 18px;
     }
 
     .btn-gradient {
@@ -257,12 +263,12 @@
     }
 
     .btn-gradient:hover {
-        transform: translateY(-3px) scale(1.01);
-        box-shadow: 0 20px 60px rgba(92, 40, 255, 0.24);
+        transform: translateY(-4px) scale(1.02);
+        box-shadow: 0 26px 80px rgba(92, 40, 255, 0.26);
     }
 
     .btn-gradient:active {
-        transform: translateY(1px) scale(.995);
+        transform: translateY(1px) scale(.993);
     }
 
     .btn-outline {
@@ -284,7 +290,7 @@
         transform: translateY(1px) scale(.995);
     }
 
-    /* Visual card — large UI preview */
+    /* Visual card — large UI preview (увеличено) */
     .visual-card {
         background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
         border-radius: 18px;
@@ -328,6 +334,7 @@
         - use transform scale to enlarge the visual element 2-3x visually
         - keep image natural width where possible to preserve sharpness
         - overflow is hidden by .visual-clip to crop transparent PNG margins
+        - provide a class .visual-clip.full to force centered crop if needed
     */
     .visual-clip img {
         display: block;
@@ -338,17 +345,21 @@
         transform-origin: center center;
         transition: transform 360ms var(--btn-ease), filter 360ms var(--btn-ease);
         filter: drop-shadow(0 28px 80px rgba(0,0,0,0.78)) contrast(1.06);
-        transform: scale(2.4); /* default desktop scale ~2.4x (visually 2-3x larger) */
+        transform: scale(3.0); /* увеличено по умолчанию до ~3x для явной заметности */
         will-change: transform, filter;
     }
 
+    .visual-clip.full img {
+        transform: scale(3.2); /* вариант для более агрессивного увеличения */
+    }
+
     .visual-clip img:hover {
-        transform: scale(2.48);
+        transform: scale(3.06);
     }
 
     /* high-res source adjustment: if you add class .highres, scale less */
     .visual-clip.highres img {
-        transform: scale(1.6);
+        transform: scale(1.9);
     }
 
     /* Caption */
@@ -454,7 +465,7 @@
         }
 
         .visual-clip img {
-            transform: scale(2.1);
+            transform: scale(2.6);
         }
 
         .hero-left h1 {
@@ -474,7 +485,7 @@
         }
 
         .visual-clip img {
-            transform: scale(2.6);
+            transform: scale(2.8);
         }
 
         .visual-clip.highres img {
@@ -512,15 +523,15 @@
 
         /* make UI visually much larger on phones */
         .visual-clip img {
-            transform: scale(3.2);
+            transform: scale(4.0);
         }
 
         .hero-bg::after {
             height: 360px;
             background: linear-gradient(180deg,
                 rgba(0,0,0,0.0) 0%,
-                rgba(0,0,0,0.56) 30%,
-                rgba(0,0,0,0.92) 68%,
+                rgba(0,0,0,0.60) 30%,
+                rgba(0,0,0,0.94) 68%,
                 rgba(0,0,0,1) 100%);
         }
     }
@@ -535,7 +546,7 @@
         }
 
         .visual-clip img {
-            transform: scale(2.8);
+            transform: scale(3.4);
         }
 
         .hero-bg::after {
@@ -749,6 +760,7 @@
   </script>
 </body>
 </html>
+
 
 
 
