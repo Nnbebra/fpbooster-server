@@ -12,6 +12,7 @@
         --bg: #050405;
         --card: #151517;
         --muted: #bdbdbd;
+        --muted-2: #9fa0a6;
         --accent1: #9b4bff;
         --accent2: #5e2bff;
         --gradient: linear-gradient(110deg, var(--accent1), var(--accent2));
@@ -20,6 +21,7 @@
         --max-width: 1180px;
         --content-padding: 18px;
         --soft-shadow: 0 40px 140px rgba(8, 6, 30, 0.82);
+        --btn-ease: cubic-bezier(.16, .84, .34, 1);
     }
 
     /* Base */
@@ -107,6 +109,12 @@
         display: inline-flex;
         align-items: center;
         gap: 8px;
+        transition: transform 180ms var(--btn-ease), box-shadow 180ms var(--btn-ease), opacity 180ms var(--btn-ease);
+    }
+
+    .btn-cta:active {
+        transform: translateY(1px) scale(.997);
+        opacity: .98;
     }
 
     /* HERO */
@@ -119,6 +127,12 @@
         overflow: hidden;
     }
 
+    /*
+        background:
+        - stretch horizontally (100vw) to avoid side black bars
+        - background-size: cover to fill
+        - progressive top->bottom darken via ::before and strong dissolve via ::after
+    */
     .hero-bg {
         position: absolute;
         top: 0;
@@ -126,18 +140,19 @@
         transform: translateX(-50%);
         width: 100vw;
         min-width: 1400px;
-        height: calc(100vh + 560px);
+        height: calc(100vh + 640px);
         background-image: url('/static/Bakground.png');
         background-position: center 12%;
         background-repeat: no-repeat;
         background-size: cover;
         z-index: 0;
         pointer-events: none;
-        filter: contrast(0.92) saturate(1.04) brightness(0.62);
-        transition: filter .45s ease, opacity .35s ease;
+        filter: contrast(0.92) saturate(1.04) brightness(0.60);
+        transition: filter 450ms ease, opacity 350ms ease;
         will-change: transform, opacity, filter;
     }
 
+    /* progressive darkening multiplier */
     .hero-bg::before {
         content: "";
         position: absolute;
@@ -148,21 +163,22 @@
         background: linear-gradient(180deg,
             rgba(0,0,0,0.06) 0%,
             rgba(0,0,0,0.14) 18%,
-            rgba(0,0,0,0.28) 40%,
-            rgba(0,0,0,0.52) 68%,
-            rgba(0,0,0,0.88) 92%,
+            rgba(0,0,0,0.28) 38%,
+            rgba(0,0,0,0.48) 60%,
+            rgba(0,0,0,0.78) 86%,
             rgba(0,0,0,1) 100%);
         mix-blend-mode: multiply;
         pointer-events: none;
     }
 
+    /* bottom dissolve to full black (controls where dark becomes solid) */
     .hero-bg::after {
         content: "";
         position: absolute;
         left: 0;
         right: 0;
         bottom: 0;
-        height: 480px;
+        height: 520px;
         background: linear-gradient(180deg,
             rgba(0,0,0,0.0) 0%,
             rgba(0,0,0,0.48) 28%,
@@ -171,7 +187,7 @@
         pointer-events: none;
     }
 
-    /* Hero grid & centered panel */
+    /* Centered hero grid and panel */
     .hero-grid {
         position: relative;
         z-index: 8;
@@ -186,7 +202,7 @@
     .hero-panel {
         position: relative;
         z-index: 10;
-        background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05));
+        background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
         border: 1px solid rgba(255,255,255,0.06);
         border-radius: 18px;
         padding: 32px;
@@ -236,6 +252,17 @@
         border-radius: 10px;
         font-weight: 800;
         border: none;
+        transition: transform 220ms var(--btn-ease), box-shadow 220ms var(--btn-ease), opacity 220ms var(--btn-ease);
+        box-shadow: 0 10px 30px rgba(92, 40, 255, 0.18);
+    }
+
+    .btn-gradient:hover {
+        transform: translateY(-3px) scale(1.01);
+        box-shadow: 0 20px 60px rgba(92, 40, 255, 0.24);
+    }
+
+    .btn-gradient:active {
+        transform: translateY(1px) scale(.995);
     }
 
     .btn-outline {
@@ -245,9 +272,19 @@
         border-radius: 10px;
         border: 1px solid rgba(255,255,255,0.12);
         font-weight: 700;
+        transition: transform 220ms var(--btn-ease), background 220ms var(--btn-ease), color 220ms var(--btn-ease);
     }
 
-    /* Visual card — make UI image much larger, crop transparent space and center */
+    .btn-outline:hover {
+        background: rgba(255,255,255,0.02);
+        transform: translateY(-2px) scale(1.01);
+    }
+
+    .btn-outline:active {
+        transform: translateY(1px) scale(.995);
+    }
+
+    /* Visual card — large UI preview */
     .visual-card {
         background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
         border-radius: 18px;
@@ -263,90 +300,58 @@
         margin: 0 auto;
     }
 
-    /* Wrapper to crop transparent padding around UI PNG and simulate zoom */
+    /* Clip wrapper to crop transparent margins of PNG and visually enlarge */
     .visual-clip {
         width: 100%;
-        overflow: hidden;            /* crucial: crop transparent margins */
-        border-radius: 12px;
+        overflow: hidden;
+        border-radius: 14px;
         display: block;
         position: relative;
-        padding: 6px;               /* subtle inner spacing */
-        background: linear-gradient(180deg, rgba(0,0,0,0.46), rgba(0,0,0,0.18));
+        padding: 6px;
+        background: linear-gradient(180deg, rgba(0,0,0,0.46), rgba(0,0,0,0.20));
         box-shadow: inset 0 12px 48px rgba(0,0,0,0.7);
     }
 
+    /* Stronger frame for accessibility */
+    .visual-frame {
+        width: 100%;
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+        display: block;
+        border: 1px solid rgba(255,255,255,0.03);
+        background: linear-gradient(180deg, rgba(0,0,0,0.42), rgba(0,0,0,0.18));
+    }
+
     /*
-        Key change:
-        - enlarge image visually by scaling and allowing it to overflow inside the clip wrapper
-        - use transform: scale() to avoid pixel stretching for raster sources while keeping object-fit: contain
-        - for PNGs with transparent margins we rely on .visual-clip overflow:hidden to crop them
+        Key change for UI scaling:
+        - use transform scale to enlarge the visual element 2-3x visually
+        - keep image natural width where possible to preserve sharpness
+        - overflow is hidden by .visual-clip to crop transparent PNG margins
     */
     .visual-clip img {
         display: block;
-        width: auto;                   /* keep natural width for better sharpness */
-        max-width: none;
+        width: auto;
         height: auto;
+        max-width: none;
         max-height: none;
         transform-origin: center center;
-        transition: transform .28s ease, filter .35s ease;
+        transition: transform 360ms var(--btn-ease), filter 360ms var(--btn-ease);
         filter: drop-shadow(0 28px 80px rgba(0,0,0,0.78)) contrast(1.06);
+        transform: scale(2.4); /* default desktop scale ~2.4x (visually 2-3x larger) */
         will-change: transform, filter;
-        /* default desktop scale: 2.2x (approx 2-3 times larger as requested) */
-        transform: scale(2.2);
     }
 
-    /* Optional: slightly reduce scale on huge screens to avoid overflow issues */
-    @media (min-width: 1920px) {
-        .visual-clip img {
-            transform: scale(2.0);
-        }
+    .visual-clip img:hover {
+        transform: scale(2.48);
     }
 
-    /* Mobile: increase apparent size even more by enlarging scale and allowing horizontal overflow (cropped by visual-clip) */
-    @media (max-width: 768px) {
-        .visual-clip img {
-            transform: scale(2.8);  /* larger on phones/tablets so UI appears dominant */
-        }
-
-        .hero {
-            padding-top: 110px;
-        }
-
-        .hero-panel {
-            padding: 20px;
-            border-radius: 14px;
-            margin: 0 12px;
-        }
-
-        .hero-left h1 {
-            font-size: 28px;
-        }
-
-        .hero-left p {
-            font-size: 1rem;
-        }
-    }
-
-    /* Small phones: cap scale to prevent clipping too extreme */
-    @media (max-width: 420px) {
-        .visual-clip img {
-            transform: scale(2.4);
-        }
-
-        .hero {
-            padding-top: 96px;
-        }
-
-        .hero-left h1 {
-            font-size: 24px;
-        }
-    }
-
-    /* If the source is vector or high-res, allow a less-aggressive scale to keep crispness */
+    /* high-res source adjustment: if you add class .highres, scale less */
     .visual-clip.highres img {
-        transform: scale(1.5); /* use this class when high-res source is available */
+        transform: scale(1.6);
     }
 
+    /* Caption */
     .visual-caption {
         margin-top: 14px;
         color: var(--muted);
@@ -382,7 +387,29 @@
     .benefit p {
         margin: 0;
         color: var(--muted);
-        font-size: 0.98rem;
+        font-size: 0.96rem;
+    }
+
+    /* Update card */
+    .update-card {
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 26px 78px rgba(9,6,20,0.72);
+        border: 1px solid rgba(255,255,255,0.02);
+    }
+
+    .update-title {
+        font-size: 1.06rem;
+        color: #ffd9ff;
+        margin-bottom: 6px;
+    }
+
+    .update-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        color: var(--muted);
     }
 
     /* Footer */
@@ -402,12 +429,121 @@
         gap: 18px;
     }
 
+    .footer-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
     .footer-bottom {
         font-size: 0.92rem;
         color: #9a9a9a;
     }
 
-    /* small polish */
+    /*
+        Responsive: phones and tablets
+        - center the hero panel
+        - increase visual scale on small screens so UI feels prominent
+        - start dissolve earlier on smaller screens
+    */
+    @media (max-width: 1440px) {
+        .hero-grid {
+            grid-template-columns: 1fr 520px;
+        }
+
+        .visual-clip img {
+            transform: scale(2.1);
+        }
+
+        .hero-left h1 {
+            font-size: 44px;
+        }
+    }
+
+    @media (max-width: 1024px) {
+        .hero-grid {
+            grid-template-columns: 1fr;
+            gap: 22px;
+        }
+
+        .hero-panel {
+            padding: 26px;
+            border-radius: 16px;
+        }
+
+        .visual-clip img {
+            transform: scale(2.6);
+        }
+
+        .visual-clip.highres img {
+            transform: scale(1.9);
+        }
+    }
+
+    @media (max-width: 768px) {
+        .hero {
+            padding-top: 110px;
+        }
+
+        .hero-panel {
+            padding: 20px;
+            border-radius: 14px;
+            margin: 0 12px;
+        }
+
+        .hero-left h1 {
+            font-size: 28px;
+        }
+
+        .hero-left p {
+            font-size: 1rem;
+        }
+
+        .btns {
+            justify-content: center;
+        }
+
+        .visual-card {
+            max-width: 100%;
+            padding: 12px;
+        }
+
+        /* make UI visually much larger on phones */
+        .visual-clip img {
+            transform: scale(3.2);
+        }
+
+        .hero-bg::after {
+            height: 360px;
+            background: linear-gradient(180deg,
+                rgba(0,0,0,0.0) 0%,
+                rgba(0,0,0,0.56) 30%,
+                rgba(0,0,0,0.92) 68%,
+                rgba(0,0,0,1) 100%);
+        }
+    }
+
+    @media (max-width: 420px) {
+        .hero {
+            padding-top: 96px;
+        }
+
+        .hero-left h1 {
+            font-size: 24px;
+        }
+
+        .visual-clip img {
+            transform: scale(2.8);
+        }
+
+        .hero-bg::after {
+            height: 300px;
+        }
+    }
+
+    /* Small polish */
     .img-center {
         display: block;
         margin: 0 auto;
@@ -613,6 +749,7 @@
   </script>
 </body>
 </html>
+
 
 
 
