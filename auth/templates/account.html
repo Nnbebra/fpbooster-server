@@ -1,0 +1,38 @@
+<!-- templates/account.html -->
+{% extends "account_base.html" %}
+{% block content %}
+<div class="container" style="max-width:920px">
+  <div class="card">
+    <h2 style="margin:0 0 12px;color:#fff;text-align:center">Личный кабинет</h2>
+    <div class="grid" style="gap:14px">
+      <div class="card" style="padding:14px"><strong>UID:</strong> {{ user.id }}</div>
+      <div class="card" style="padding:14px"><strong>Ник:</strong> {{ user.username or '—' }}</div>
+      <div class="card" style="padding:14px"><strong>Email:</strong> {{ user.email }}</div>
+      <div class="card" style="padding:14px"><strong>Подтверждён:</strong> {{ 'Да' if user.email_confirmed else 'Нет' }}</div>
+    </div>
+    {% if not user.email_confirmed %}
+      <div class="alert" style="margin-top:12px">Подтвердите email — письмо отправлено на {{ user.email }}. Не пришло? <a href="/resend-confirm">Отправить заново</a></div>
+    {% endif %}
+    <div style="margin-top:18px">
+      <h3 style="margin:0 0 10px;color:#ffd9ff">Мои лицензии</h3>
+      {% if licenses and licenses|length > 0 %}
+        <div class="grid">
+          {% for lic in licenses %}
+            <div class="card" style="padding:16px">
+              <div><strong>Ключ:</strong> {{ lic.license_key }}</div>
+              <div><strong>Статус:</strong> {{ lic.status }}</div>
+              <div><strong>Истекает:</strong> {{ lic.expires or '—' }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="card" style="padding:16px;color:var(--muted)">Лицензий пока нет.</div>
+      {% endif %}
+    </div>
+    <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+      <a class="btn-gradient" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить ключ</a>
+      <a class="btn-outline" href="/logout"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
