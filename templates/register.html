@@ -1,87 +1,49 @@
-<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <title>Регистрация — FPBooster</title>
-  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <style>
-    /* базовые стили из index.html */
-    :root {
-      --bg:#050405; --card:#151517; --muted:#bdbdbd;
-      --accent1:#9b4bff; --accent2:#5e2bff;
-      --gradient:linear-gradient(110deg,var(--accent1),var(--accent2));
-      --soft-shadow:0 40px 140px rgba(8,6,30,.82);
-    }
-    html,body{margin:0;padding:0;background:var(--bg);color:#eaeaea;font-family:Inter,"Open Sans",system-ui}
-    .container{max-width:1180px;margin:0 auto;padding:0 18px}
-    .navbar{position:fixed;top:0;left:0;right:0;height:72px;display:flex;align-items:center;
-      background:linear-gradient(180deg,rgba(5,5,6,.88),rgba(5,5,6,.70));backdrop-filter:blur(6px);
-      z-index:160;padding:0 18px;box-shadow:0 12px 44px rgba(0,0,0,.72)}
-    .header-inner{display:flex;align-items:center;justify-content:space-between;width:100%}
-    .brand{font-weight:800;font-size:1.125rem;color:#fff;display:flex;align-items:center;gap:8px}
-    .ver{background:rgba(255,255,255,.12);color:var(--accent1);padding:6px 10px;border-radius:8px;font-weight:700;font-size:.88rem}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));
-      border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:22px;
-      box-shadow:0 52px 160px rgba(0,0,0,.74)}
-    .form-label{display:block;margin-bottom:8px;color:#ffd9ff;font-weight:700}
-    .form-control{width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.14);
-      background:rgba(0,0,0,.22);color:#fff;outline:none}
-    .form-control:focus{border-color:var(--accent1)}
-    .btn-gradient{background:var(--gradient);color:#fff;padding:12px 20px;border-radius:10px;font-weight:800;
-      border:none;box-shadow:0 10px 30px rgba(92,40,255,.18);cursor:pointer;width:100%}
-    .alert{margin-top:12px;padding:12px 14px;border-radius:10px;background:rgba(255,50,50,.10);
-      border:1px solid rgba(255,50,50,.18);color:#ff9a9a}
-    .muted{color:var(--muted)}
-    .nav-link{color:#dcdcdc}
-    .page{padding-top:118px}
-  </style>
-</head>
-<body>
-  <header class="navbar">
-    <div class="container header-inner">
-      <a class="brand" href="/"><span>FPBooster</span><span class="ver">Beta</span></a>
-      <div class="right-group">
-        <a class="nav-link" href="/login"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
+{% extends "account_base.html" %}
+{% block title %}Регистрация — FPBooster{% endblock %}
+
+{% block content %}
+<section style="padding:40px 0;">
+  <div class="panel-glass card" style="max-width:780px;margin:0 auto;">
+    <h1 style="margin-top:0;">Создать аккаунт</h1>
+    <p class="muted" style="margin:6px 0 18px;">Регистрация для доступа к личному кабинету и обновлениям.</p>
+
+    {% if error %}
+      <div class="card" style="background:rgba(255,0,0,0.09); border:1px solid rgba(255,0,0,0.18); color:#ffb2b2; margin-bottom:16px;">
+        <i class="fa-solid fa-circle-exclamation"></i> {{ error }}
       </div>
-    </div>
-  </header>
+    {% endif %}
 
-  <main class="page">
-    <div class="container" style="max-width:560px">
-      <div class="card">
-        <h2 style="margin:0 0 12px;color:#fff;text-align:center">Регистрация</h2>
-        <form method="post" action="/register">
-          <label class="form-label">E‑mail</label>
-          <input class="form-control" type="email" name="email" required autocomplete="email">
-          <div style="height:12px"></div>
+    <form method="post" action="/register" style="display:grid; gap:14px;">
+      <label style="display:flex; flex-direction:column; gap:6px;">
+        <span>Email</span>
+        <input type="email" name="email" required placeholder="name@domain.com"
+               style="padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); background:#0c0c0e; color:#eaeaea;">
+      </label>
 
-          <label class="form-label">Пароль</label>
-          <input class="form-control" type="password" name="password" required minlength="6" autocomplete="new-password">
-          <div style="height:12px"></div>
+      <label style="display:flex; flex-direction:column; gap:6px;">
+        <span>Пароль</span>
+        <input type="password" name="password" minlength="6" required placeholder="минимум 6 символов"
+               style="padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); background:#0c0c0e; color:#eaeaea;">
+      </label>
 
-          <label class="form-label">Ник (необязательно)</label>
-          <input class="form-control" type="text" name="username" autocomplete="nickname">
-          <div style="height:14px"></div>
+      <label style="display:flex; flex-direction:column; gap:6px;">
+        <span>Имя пользователя (необязательно)</span>
+        <input type="text" name="username" placeholder="отображаемое имя"
+               style="padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); background:#0c0c0e; color:#eaeaea;">
+      </label>
 
-          <!-- Чекбокс согласия -->
-          <div class="mb-3" style="margin-top:12px">
-            <label style="display:flex;align-items:flex-start;gap:8px;font-size:0.9rem;color:var(--muted)">
-              <input type="checkbox" name="accept_terms" required style="margin-top:4px">
-              Я полностью ознакомлен и <a href="/eula" target="_blank">принимаю пользовательское соглашение</a>, 
-              а также даю своё согласие на <a href="/datahandle" target="_blank">обработку персональных данных</a>.
-            </label>
-          </div>
+      <label style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+        <input type="checkbox" name="accept_terms" value="1" required>
+        <span>Я принимаю условия использования и политику конфиденциальности</span>
+      </label>
 
-          <button class="btn-gradient" type="submit">Создать аккаунт</button>
-        </form>
-
-        {% if error %}<div class="alert">{{ error }}</div>{% endif %}
-        <div class="muted" style="margin-top:12px;text-align:center">
-          Уже есть аккаунт? <a class="nav-link" href="/login">Войти</a>
-        </div>
+      <div style="display:flex; gap:12px; align-items:center; margin-top:8px;">
+        <button type="submit" class="btn-cta"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</button>
+        <a href="/login" class="btn-outline"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
       </div>
-    </div>
-  </main>
-</body>
-</html>
+
+      <div class="muted" style="margin-top:8px;">После регистрации на указанный email придёт письмо для подтверждения.</div>
+    </form>
+  </div>
+</section>
+{% endblock %}
