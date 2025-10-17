@@ -7,8 +7,8 @@ CONFIRM_TTL_HOURS = int(os.getenv("CONFIRM_TTL_HOURS", "24"))
 
 SMTP_HOST = os.getenv("SMTP_HOST", "in-v3.mailjet.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")  # Mailjet API key
-SMTP_PASS = os.getenv("SMTP_PASS")  # Mailjet secret
+SMTP_USER = os.getenv("d5c826b671171c3b292a8e47b30ddea4")  # Mailjet API key
+SMTP_PASS = os.getenv("6e96366a642c7217f36546918667ccfd")  # Mailjet secret
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@fpbooster.shop")
 FROM_NAME = os.getenv("FROM_NAME", "FPBooster")
 
@@ -43,3 +43,4 @@ async def create_and_send_confirmation(app, user_id: int, email: str):
     <p>Ссылка действительна {CONFIRM_TTL_HOURS} часов.</p>
     """
     await send_email(app, email, subject, html)
+
