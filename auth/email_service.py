@@ -1,8 +1,16 @@
 # auth/email_service.py
-import os, secrets
+import os, secrets, smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, timedelta
 
 CONFIRM_TTL_HOURS = int(os.getenv("CONFIRM_TTL_HOURS", "24"))
+
+SMTP_HOST = os.getenv("SMTP_HOST", "in-v3.mailjet.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")  # Mailjet API key
+SMTP_PASS = os.getenv("SMTP_PASS")  # Mailjet secret
+FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@fpbooster.shop")
+FROM_NAME = os.getenv("FROM_NAME", "FPBooster")
 
 async def create_token(app, user_id: int) -> str:
     token = secrets.token_urlsafe(32)
@@ -15,15 +23,19 @@ async def create_token(app, user_id: int) -> str:
     return token
 
 async def send_email(app, to_email: str, subject: str, html_body: str):
-    # Можем реализовать два варианта:
-    # 1) SMTP: использовать os.environ SMTP_HOST/PORT/USER/PASS
-    # 2) SendGrid: SENDGRID_API_KEY
-    # Здесь оставляю заглушку — подключим по твоему выбору.
-    pass
+    msg = MIMEText(html_body, "html", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = f"{FROM_NAME} <{FROM_EMAIL}>"
+    msg["To"] = to_email
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(FROM_EMAIL, [to_email], msg.as_string())
 
 async def create_and_send_confirmation(app, user_id: int, email: str):
     token = await create_token(app, user_id)
-    confirm_url = os.getenv("BASE_URL", "https://example.com").rstrip("/") + f"/confirm?token={token}"
+    confirm_url = os.getenv("BASE_URL", "https://fpbooster.shop").rstrip("/") + f"/confirm?token={token}"
     subject = "Подтверждение email для FPBooster"
     html = f"""
     <p>Здравствуйте! Для подтверждения email нажмите:</p>
