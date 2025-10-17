@@ -1,16 +1,27 @@
-<!-- templates/email_confirm.html -->
 {% extends "account_base.html" %}
+{% block title %}Подтверждение email — FPBooster{% endblock %}
+
 {% block content %}
-<div class="container" style="max-width:560px">
-  <div class="card">
-    <h2 style="margin:0 0 12px;color:#fff;text-align:center">Подтверждение email</h2>
+<section style="padding:30px 0;">
+  <div class="panel-glass card" style="max-width:780px; margin:0 auto; text-align:center;">
     {% if ok %}
-      <div style="color:#a7ffcb">Email успешно подтверждён.</div>
-      <div style="margin-top:14px;text-align:center"><a class="btn-gradient" href="/cabinet">В кабинет</a></div>
+      <div style="font-size:1.2rem; color:#b6ffb6; font-weight:700; margin-bottom:10px;">
+        <i class="fa-solid fa-circle-check"></i> Email подтверждён
+      </div>
+      <p class="muted" style="margin-top:0;">Спасибо! Ваш адрес успешно подтверждён. Теперь вы можете пользоваться всеми функциями кабинета.</p>
+      <div style="margin-top:12px;">
+        <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Перейти в кабинет</a>
+      </div>
     {% else %}
-      <div class="alert">{{ msg }}</div>
-      <div style="margin-top:14px;text-align:center"><a class="btn-outline" href="/cabinet">Вернуться</a></div>
+      <div style="font-size:1.2rem; color:#ffbdbd; font-weight:700; margin-bottom:10px;">
+        <i class="fa-solid fa-circle-exclamation"></i> Ошибка подтверждения
+      </div>
+      <p class="muted" style="margin-top:0;">{{ msg }}</p>
+      <div style="margin-top:12px; display:flex; gap:10px; justify-content:center;">
+        <a class="btn-outline" href="/register"><i class="fa-solid fa-user-plus"></i> Регистрация</a>
+        <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Кабинет</a>
+      </div>
     {% endif %}
   </div>
-</div>
+</section>
 {% endblock %}
