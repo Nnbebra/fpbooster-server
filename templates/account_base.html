@@ -1,38 +1,101 @@
-<!-- templates/account_base.html -->
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <title>Кабинет — FPBooster</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}Личный кабинет — FPBooster{% endblock %}</title>
+  <meta name="description" content="FPBooster — премиальный кабинет пользователя и управление лицензиями." />
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <style>
-    /* Вставь те же базовые стили, что в index.html */
-    :root { /* ... как в index ... */ }
-    html,body{ /* ... */ }
-    .container{ /* ... */ }
-    .navbar{ /* ... */ }
-    .header-inner{ /* ... */ }
-    .brand{ /* ... */ }
-    .ver{ /* ... */ }
-    .card{ /* ... */ }
-    .btn-gradient{ /* ... */ }
-    .btn-outline{ /* ... */ }
-    .page{padding-top:118px}
+    :root {
+      --bg: #050405;
+      --card: #151517;
+      --muted: #bdbdbd;
+      --accent1: #9b4bff;
+      --accent2: #5e2bff;
+      --gradient: linear-gradient(110deg, var(--accent1), var(--accent2));
+      --glass: rgba(255, 255, 255, 0.12);
+      --radius: 14px;
+      --max-width: 1180px;
+      --content-padding: 18px;
+      --soft-shadow: 0 40px 140px rgba(8, 6, 30, 0.82);
+      --btn-ease: cubic-bezier(.16, .84, .34, 1);
+    }
+    html, body { height:100%; margin:0; padding:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:var(--bg); color:#eaeaea; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+    a { color:inherit; text-decoration:none; }
+    .container { max-width:var(--max-width); margin:0 auto; padding:0 var(--content-padding); }
+
+    .navbar { position:fixed; top:0; left:0; right:0; height:72px; display:flex; align-items:center;
+      background:linear-gradient(180deg, rgba(5,5,6,0.88), rgba(5,5,6,0.70));
+      backdrop-filter:blur(6px); z-index:160; padding:0 var(--content-padding);
+      box-shadow:0 12px 44px rgba(0,0,0,0.72); }
+    .header-inner { display:flex; align-items:center; gap:16px; width:100%; justify-content:space-between; }
+    .brand { font-weight:800; font-size:1.125rem; color:#fff; display:flex; align-items:center; gap:8px; }
+    .ver { background:var(--glass); color:var(--accent1); padding:6px 10px; border-radius:8px; font-weight:700; font-size:0.88rem; }
+    .nav-link { color:#dcdcdc; padding:8px 12px; border-radius:8px; font-weight:600; display:inline-flex; align-items:center; gap:8px; transition: color 160ms var(--btn-ease), transform 160ms var(--btn-ease); }
+    .nav-link:hover { color:#fff; transform:translateY(-1px); }
+    .btn-cta { background:var(--gradient); color:#fff; padding:10px 14px; border-radius:10px; font-weight:800; border:none; display:inline-flex; align-items:center; gap:8px; transition: transform 180ms var(--btn-ease), box-shadow 180ms var(--btn-ease), opacity 180ms var(--btn-ease); box-shadow:0 10px 30px rgba(92, 40, 255, 0.18); }
+    .btn-cta:hover { transform:translateY(-3px) scale(1.01); box-shadow:0 22px 66px rgba(92, 40, 255, 0.26); }
+    .btn-outline { background:transparent; color:#fff; padding:10px 14px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); font-weight:700; transition:transform 180ms var(--btn-ease), box-shadow 180ms var(--btn-ease), background 180ms var(--btn-ease); box-shadow:0 8px 24px rgba(0,0,0,0.25); }
+    .btn-outline:hover { background:rgba(255,255,255,0.03); transform:translateY(-2px) scale(1.01); box-shadow:0 16px 48px rgba(0,0,0,0.35); }
+
+    .footer { background:linear-gradient(180deg, rgba(8,8,10,1), rgba(5,5,6,1)); padding:40px 0; color:var(--muted); border-top:1px solid rgba(255,255,255,0.02); }
+    .footer-inner { max-width:var(--max-width); margin:0 auto; padding:0 var(--content-padding); display:flex; flex-direction:column; gap:18px; }
+    .footer-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .footer-links .nav-link { padding:6px 10px; }
+    .footer-bottom { font-size:0.92rem; color:#9a9a9a; }
+
+    main { padding-top:96px; }
+    .card { background:var(--card); border-radius:12px; padding:26px; box-shadow:0 18px 56px rgba(0,0,0,0.56); color:#eaeaea; }
+    .panel-glass { background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05)); border:1px solid rgba(255,255,255,0.08); border-radius:16px; backdrop-filter:blur(12px) saturate(1.06); box-shadow:0 52px 160px rgba(0,0,0,0.74); }
+    .muted { color:var(--muted); }
   </style>
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
-  <header class="navbar">
-    <div class="container header-inner">
-      <a class="brand" href="/"><span>FPBooster</span><span class="ver">Beta</span></a>
-      <div class="right-group">
-        <a class="nav-link" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить</a>
-        <a class="nav-link" href="/logout"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
+<header class="navbar" role="banner">
+  <div class="container header-inner">
+    <div class="left-group">
+      <a class="brand" href="/" aria-label="FPBooster — главная">
+        <span>FPBooster</span>
+        <span id="version-badge" class="ver">Beta</span>
+      </a>
+    </div>
+    <div class="right-group">
+      <a class="nav-link" href="/support" target="_blank" rel="noopener"><i class="fa-solid fa-headset"></i> Поддержка</a>
+      <a class="nav-link" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить</a>
+      <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<footer class="footer" role="contentinfo">
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div style="font-weight:700;font-size:1.05rem">FPBooster</div>
+        <div style="color:var(--muted);font-size:0.95rem">Автоматизация и премиальный UI для продавцов FunPay</div>
+      </div>
+      <div class="footer-links">
+        <a class="nav-link" href="/support">Связаться</a>
+        <a class="nav-link" href="/buy">Купить</a>
+        <a class="nav-link" href="/docs">Документация</a>
       </div>
     </div>
-  </header>
-  <main class="page">
-    {% block content %}{% endblock %}
-  </main>
+    <div class="footer-bottom">
+      <div>Поддержка (ТГ): <strong>@Manavoid_228 · @PeCHeNKa_F</strong></div>
+      <div>Copyright © FPBoosterSoft 2025</div>
+    </div>
+  </div>
+</footer>
+
+{% block scripts %}{% endblock %}
 </body>
 </html>
