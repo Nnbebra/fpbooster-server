@@ -1,38 +1,55 @@
-<!-- templates/account.html -->
 {% extends "account_base.html" %}
+{% block title %}Кабинет — FPBooster{% endblock %}
+
 {% block content %}
-<div class="container" style="max-width:920px">
-  <div class="card">
-    <h2 style="margin:0 0 12px;color:#fff;text-align:center">Личный кабинет</h2>
-    <div class="grid" style="gap:14px">
-      <div class="card" style="padding:14px"><strong>UID:</strong> {{ user.id }}</div>
-      <div class="card" style="padding:14px"><strong>Ник:</strong> {{ user.username or '—' }}</div>
-      <div class="card" style="padding:14px"><strong>Email:</strong> {{ user.email }}</div>
-      <div class="card" style="padding:14px"><strong>Подтверждён:</strong> {{ 'Да' if user.email_confirmed else 'Нет' }}</div>
+<section style="padding:30px 0;">
+  <div class="panel-glass card" style="margin-bottom:18px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0 0 6px;">Привет, {{ user.email }}</h2>
+        <div class="muted">
+          Статус email: 
+          {% if user.email_confirmed %}
+            <span style="color:#b6ffb6;"><i class="fa-solid fa-circle-check"></i> подтверждён</span>
+          {% else %}
+            <span style="color:#ffd1a6;"><i class="fa-solid fa-circle-exclamation"></i> не подтверждён</span>
+          {% endif %}
+        </div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <a class="btn-outline" href="/logout"><i class="fa-solid fa-arrow-right-from-bracket"></i> Выйти</a>
+        <a class="btn-cta" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить лицензии</a>
+      </div>
     </div>
     {% if not user.email_confirmed %}
-      <div class="alert" style="margin-top:12px">Подтвердите email — письмо отправлено на {{ user.email }}. Не пришло? <a href="/resend-confirm">Отправить заново</a></div>
+      <div class="card" style="margin-top:12px; background:rgba(255,255,0,0.06); border:1px solid rgba(255,255,0,0.18); color:#ffe9a8;">
+        Чтобы подтвердить адрес, проверьте почту и перейдите по ссылке из письма. Если письмо не пришло, повторно зарегистрируйте или свяжитесь с поддержкой.
+      </div>
     {% endif %}
-    <div style="margin-top:18px">
-      <h3 style="margin:0 0 10px;color:#ffd9ff">Мои лицензии</h3>
-      {% if licenses and licenses|length > 0 %}
-        <div class="grid">
-          {% for lic in licenses %}
-            <div class="card" style="padding:16px">
-              <div><strong>Ключ:</strong> {{ lic.license_key }}</div>
-              <div><strong>Статус:</strong> {{ lic.status }}</div>
-              <div><strong>Истекает:</strong> {{ lic.expires or '—' }}</div>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="card" style="padding:16px;color:var(--muted)">Лицензий пока нет.</div>
-      {% endif %}
-    </div>
-    <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
-      <a class="btn-gradient" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить ключ</a>
-      <a class="btn-outline" href="/logout"><i class="fa-solid fa-right-from-bracket"></i> Выйти</a>
-    </div>
   </div>
-</div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Ваши лицензии</h3>
+    {% if licenses and licenses|length > 0 %}
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px;">
+        {% for lic in licenses %}
+          <div class="card" style="background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:1px solid rgba(255,255,255,0.04);">
+            <div style="font-weight:700; margin-bottom:6px; color:#ffd9ff;">
+              <i class="fa-solid fa-key"></i> {{ lic.license_key }}
+            </div>
+            <div class="muted">Статус: 
+              {% if lic.status == 'active' %}<span style="color:#b6ffb6;">Активна</span>
+              {% elif lic.status == 'expired' %}<span style="color:#ffb2b2;">Истекла</span>
+              {% elif lic.status == 'banned' %}<span style="color:#ff9f9f;">Заблокирована</span>
+              {% else %}{{ lic.status }}{% endif %}
+            </div>
+            <div class="muted">Истекает: {% if lic.expires %}{{ lic.expires.isoformat() }}{% else %}—{% endif %}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">Лицензии не найдены. Приобретите лицензию, чтобы начать пользоваться софтом.</div>
+    {% endif %}
+  </div>
+</section>
 {% endblock %}
