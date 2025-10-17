@@ -22,6 +22,15 @@ templates = Jinja2Templates(directory="templates")
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+
+# server.py (фрагмент)
+from auth.users_router import router as users_router
+from auth.email_confirm import router as email_confirm_router
+
+app.include_router(users_router, tags=["auth"])
+app.include_router(email_confirm_router, tags=["email"])
+
+
 # ===== Админ токен =====
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 if not ADMIN_TOKEN:
@@ -414,3 +423,4 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
