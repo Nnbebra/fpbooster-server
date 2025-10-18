@@ -92,34 +92,40 @@
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
         <span class="navbar-toggler-icon"></span>
       </button>
-      <div class="collapse navbar-collapse" id="navbarNav">
-        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-          <li class="nav-item">
-            <a class="nav-link {% if request.url.path.startswith('/admin/licenses') %}active{% endif %}" href="/admin/licenses">
-              <i class="fas fa-key"></i> Лицензии
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link {% if request.url.path.startswith('/admin/promocodes') %}active{% endif %}" href="/admin/promocodes">
-              <i class="fas fa-ticket-alt"></i> Промокоды
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link {% if request.url.path.startswith('/admin/creators') %}active{% endif %}" href="/admin/creators">
-              <i class="fas fa-users"></i> Контент‑мейкеры
-            </a>
-          </li>
-        </ul>
-        <ul class="navbar-nav">
-          <li class="nav-item">
-            <a class="nav-link text-danger" href="/admin/logout">
-              <i class="fas fa-sign-out-alt"></i> Выйти
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </nav>
+<div class="collapse navbar-collapse" id="navbarNav">
+  <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+    <li class="nav-item">
+      <a class="nav-link {% if request.url.path.startswith('/admin/licenses') %}active{% endif %}" href="/admin/licenses">
+        <i class="fas fa-key"></i> Лицензии
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.url.path.startswith('/admin/users') %}active{% endif %}" href="/admin/users">
+        <i class="fas fa-user-shield"></i> Пользователи
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.url.path.startswith('/admin/promocodes') %}active{% endif %}" href="/admin/promocodes">
+        <i class="fas fa-ticket-alt"></i> Промокоды
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.url.path.startswith('/admin/creators') %}active{% endif %}" href="/admin/creators">
+        <i class="fas fa-users"></i> Контент‑мейкеры
+      </a>
+    </li>
+  </ul>
+  <ul class="navbar-nav">
+    <li class="nav-item">
+      <a class="nav-link text-danger" href="/admin/logout">
+        <i class="fas fa-sign-out-alt"></i> Выйти
+      </a>
+    </li>
+  </ul>
+</div>
+</div>
+</nav>
+
 
   <div class="container mt-4">
     {% block content %}{% endblock %}
@@ -128,3 +134,4 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
+
