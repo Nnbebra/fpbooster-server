@@ -333,7 +333,7 @@ async def admin_edit_form(request: Request, license_key: str, _=Depends(ui_guard
     async with app.state.pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT license_key, status, expires, user_name, created_at, last_check
+            SELECT license_key, status, expires, user_name, user_uid, created_at, last_check
             FROM licenses
             WHERE license_key=$1
             """,
@@ -432,6 +432,7 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
