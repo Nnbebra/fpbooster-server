@@ -21,20 +21,31 @@
       </label>
 
       <label style="display:flex; flex-direction:column; gap:6px;">
+        <span>Имя пользователя</span>
+        <input type="text" name="username" required placeholder="отображаемое имя"
+               style="padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); background:#0c0c0e; color:#eaeaea;">
+      </label>
+
+      <label style="display:flex; flex-direction:column; gap:6px;">
         <span>Пароль</span>
         <input type="password" name="password" minlength="6" required placeholder="минимум 6 символов"
                style="padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); background:#0c0c0e; color:#eaeaea;">
       </label>
 
       <label style="display:flex; flex-direction:column; gap:6px;">
-        <span>Имя пользователя (необязательно)</span>
-        <input type="text" name="username" placeholder="отображаемое имя"
+        <span>Повторите пароль</span>
+        <input type="password" name="password2" minlength="6" required placeholder="повторите пароль"
                style="padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); background:#0c0c0e; color:#eaeaea;">
       </label>
 
-      <label style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+      <label style="display:flex; align-items:flex-start; gap:10px; margin-top:8px;">
         <input type="checkbox" name="accept_terms" value="1" required>
-        <span>Я принимаю условия использования и политику конфиденциальности</span>
+        <span>
+          Я полностью ознакомлен и 
+          <a href="/eula" target="_blank">принимаю пользовательское соглашение</a>, 
+          а также даю свое согласие на 
+          <a href="/datahandle" target="_blank">обработку персональных данных</a>
+        </span>
       </label>
 
       <div style="display:flex; gap:12px; align-items:center; margin-top:8px;">
