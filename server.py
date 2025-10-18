@@ -482,6 +482,18 @@ async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
 
 
 
+@app.get("/eula", response_class=HTMLResponse)
+async def eula_page(request: Request):
+    return templates.TemplateResponse("eula.html", {"request": request})
+
+@app.get("/datahandle", response_class=HTMLResponse)
+async def datahandle_page(request: Request):
+    return templates.TemplateResponse("datahandle.html", {"request": request})
+
+
+
+
+
 
 
 
