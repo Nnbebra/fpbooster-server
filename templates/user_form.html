@@ -23,10 +23,14 @@
       <label for="user_group">Группа</label>
       <select class="form-select" id="user_group" name="user_group">
         <option value="Пользователь" {% if row.user_group=="Пользователь" %}selected{% endif %}>Пользователь</option>
+        <option value="Сотрудник" {% if row.user_group=="Сотрудник" %}selected{% endif %}>Сотрудник</option>
         <option value="Ст.Сотрудник" {% if row.user_group=="Ст.Сотрудник" %}selected{% endif %}>Ст.Сотрудник</option>
+        <option value="Контент Мэйкер" {% if row.user_group=="Контент Мэйкер" %}selected{% endif %}>Контент Мэйкер</option>
+        <option value="Кодер" {% if row.user_group=="Кодер" %}selected{% endif %}>Кодер</option>
         <option value="Гл.Кодер" {% if row.user_group=="Гл.Кодер" %}selected{% endif %}>Гл.Кодер</option>
       </select>
     </div>
+
 
     {% if error %}
       <div class="alert alert-danger">{{ error }}</div>
@@ -43,3 +47,4 @@
   </form>
 </div>
 {% endblock %}
+
