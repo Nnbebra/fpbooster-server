@@ -20,7 +20,12 @@ templates = Jinja2Templates(directory="templates")
 # Публичная главная страница
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    user = None
+    try:
+        user = await get_current_user(request.app, request)
+    except:
+        pass
+    return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
 # server.py (фрагмент)
@@ -423,4 +428,5 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
