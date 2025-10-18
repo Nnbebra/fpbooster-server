@@ -11,7 +11,11 @@ templates = Jinja2Templates(directory="templates")
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request, "error": None})
+    try:
+        _ = await get_current_user(request.app, request)
+        return RedirectResponse("/cabinet", status_code=302)
+    except:
+        return templates.TemplateResponse("register.html", {"request": request, "error": None})
 
 @router.post("/register", response_class=HTMLResponse)
 async def register_submit(
@@ -61,7 +65,11 @@ async def register_submit(
 
 @router.get("/login", response_class=HTMLResponse)
 async def user_login_page(request: Request):
-    return templates.TemplateResponse("user_login.html", {"request": request, "error": None})
+    try:
+        _ = await get_current_user(request.app, request)
+        return RedirectResponse("/cabinet", status_code=302)
+    except:
+        return templates.TemplateResponse("user_login.html", {"request": request, "error": None})
 
 @router.post("/login")
 async def user_login(request: Request, email: str = Form(...), password: str = Form(...)):
@@ -96,3 +104,4 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
