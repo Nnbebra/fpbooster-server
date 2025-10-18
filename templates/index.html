@@ -561,8 +561,15 @@
       <div class="right-group">
         <a class="nav-link" href="/support" target="_blank" rel="noopener"><i class="fa-solid fa-headset"></i> Поддержка</a>
         <a class="nav-link" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить</a>
-        <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
+
+        {% if user %}
+          <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
+        {% else %}
+          <a class="btn-cta" href="/login"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
+          <a class="btn-outline" href="/register"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</a>
+        {% endif %}
       </div>
+
     </div>
   </header>
 
@@ -580,9 +587,15 @@
                   <p>FPBooster включает автоподъём лотов, гибкое расписание, управление Session ID, поддержку промокодов, встроенный апдейтер и премиальные темы. Инструменты аналитики и диагностики помогут увеличить эффективность работы продавца.</p>
 
                   <div class="btns" role="group" aria-label="Основные действия">
-                    <a class="btn-gradient" href="/cabinet" role="button"><i class="fa-solid fa-user"></i> Личный кабинет</a>
-                    <a class="btn-outline" href="https://t.me/funpaybo0sterr" role="button" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
+                    {% if user %}
+                      <a class="btn-gradient" href="/cabinet" role="button"><i class="fa-solid fa-user"></i> Личный кабинет</a>
+                    {% else %}
+                      <a class="btn-gradient" href="/login" role="button"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
+                      <a class="btn-outline" href="/register" role="button"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</a>
+                    {% endif %}
+                      <a class="btn-outline" href="https://t.me/funpaybo0sterr" role="button" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
                   </div>
+
 
                   <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
                     <div class="card" style="display:inline-block;padding:10px 14px;">
@@ -746,6 +759,7 @@
   </script>
 </body>
 </html>
+
 
 
 
