@@ -2,7 +2,7 @@
 {% block title %}Регистрация — FPBooster{% endblock %}
 
 {% block content %}
-<section style="padding:40px 0;">
+<section style="padding:40px 0; margin-bottom:120px;"> <!-- добавлен margin-bottom -->
   <div class="panel-glass card" style="max-width:780px;margin:0 auto;">
     <h1 style="margin-top:0;">Создать аккаунт</h1>
     <p class="muted" style="margin:6px 0 18px;">Регистрация для доступа к личному кабинету и обновлениям.</p>
@@ -42,9 +42,9 @@
         <input type="checkbox" name="accept_terms" value="1" required>
         <span>
           Я полностью ознакомлен и 
-          <a href="/eula" target="_blank">принимаю пользовательское соглашение</a>, 
+          <a href="/eula" target="_blank" class="link-highlight">принимаю пользовательское соглашение</a>, 
           а также даю свое согласие на 
-          <a href="/datahandle" target="_blank">обработку персональных данных</a>
+          <a href="/datahandle" target="_blank" class="link-highlight">обработку персональных данных</a>
         </span>
       </label>
 
@@ -57,4 +57,18 @@
     </form>
   </div>
 </section>
+
+<style>
+  /* Подсветка ссылок в блоке согласия */
+  .link-highlight {
+    color: #bb86fc;
+    font-weight: 600;
+    text-decoration: underline;
+    transition: color 0.25s ease, text-shadow 0.25s ease;
+  }
+  .link-highlight:hover {
+    color: #ffffff;
+    text-shadow: 0 0 6px rgba(155, 75, 255, 0.8);
+  }
+</style>
 {% endblock %}
