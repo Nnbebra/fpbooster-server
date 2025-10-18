@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
 from .email_service import create_and_send_confirmation
+from fastapi.responses import RedirectResponse
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -87,7 +88,12 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
 
 @router.get("/cabinet", response_class=HTMLResponse)
 async def account_page(request: Request):
-    user = await get_current_user(request.app, request)
+    try:
+        user = await get_current_user(request.app, request)
+    except:
+        # если не авторизован → редирект на логин
+        return RedirectResponse(url="/login", status_code=302)
+
     async with request.app.state.pool.acquire() as conn:
         licenses = await conn.fetch(
             """SELECT l.license_key, l.status, l.expires
@@ -97,11 +103,16 @@ async def account_page(request: Request):
                ORDER BY l.created_at DESC""",
             user["id"],
         )
-    return templates.TemplateResponse("account.html", {"request": request, "user": user, "licenses": licenses})
+
+    return templates.TemplateResponse(
+        "account.html",
+        {"request": request, "user": user, "licenses": licenses}
+    )
 
 @router.get("/logout")
 async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
 
