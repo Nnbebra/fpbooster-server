@@ -149,6 +149,7 @@ async def check_license(license: str):
             "status": row["status"],
             "expires": row["expires"].isoformat() if row["expires"] else None,
             "user": row["user_name"],
+            "user_uid": str(row["user_uid"]),
             "created": row["created_at"].isoformat() if row["created_at"] else None,
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
@@ -431,6 +432,7 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
 
