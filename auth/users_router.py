@@ -42,17 +42,21 @@ async def register_submit(
         )
 
     async with request.app.state.pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email)
-        if exists:
-            return templates.TemplateResponse(
-                "register.html",
-                {"request": request, "error": "Такой email уже зарегистрирован"},
-                status_code=400,
-            )
-        pw_hash = hash_password(password)
         row = await conn.fetchrow(
-            "INSERT INTO users (email, password_hash, username) VALUES ($1, $2, $3) RETURNING id, email",
+            "INSERT INTO users (email, password_hash, username) VALUES ($1, $2, $3) RETURNING id, email, uid, username",
             email, pw_hash, (username or "").strip() or None
+        )
+
+        # создаём лицензию сразу
+        license_key = generate_license_key()
+        await conn.execute(
+            """
+            INSERT INTO licenses (license_key, status, user_name, user_uid)
+            VALUES ($1, 'expired', $2, $3)
+            """,
+            license_key,
+            row["username"] or row["email"],
+            row["uid"]
         )
 
     # отправка письма подтверждения (пока заглушка)
@@ -114,5 +118,6 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
 
 
