@@ -13,9 +13,10 @@ async def get_current_user(app, request: Request):
         raise HTTPException(status_code=401, detail="Invalid token")
     async with app.state.pool.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, email, username, email_confirmed, created_at, last_login FROM users WHERE id=$1",
+            "SELECT id, uid, email, username, user_group, email_confirmed, created_at, last_login FROM users WHERE id=$1",
             user_id
         )
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
