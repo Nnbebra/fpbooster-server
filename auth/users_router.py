@@ -1,20 +1,18 @@
 # auth/users_router.py
-from fastapi import APIRouter, Request, Form, Depends, status
+from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
 from .email_service import create_and_send_confirmation
-from fastapi.responses import RedirectResponse
+import secrets, string
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-import secrets, string
-
 def generate_license_key():
+    # 8-символьный, уникальный, верхний регистр + цифры
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
-
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
@@ -29,9 +27,8 @@ async def register_submit(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
-    pw_hash = hash_password(password),
     username: str = Form(None),
-    accept_terms: str = Form(None),   # добавили чекбокс
+    accept_terms: str = Form(None),
 ):
     if not accept_terms:
         return templates.TemplateResponse(
@@ -48,13 +45,20 @@ async def register_submit(
             status_code=400,
         )
 
+    pw_hash = hash_password(password)  # ВНУТРИ обработчика
+
     async with request.app.state.pool.acquire() as conn:
+        # создаём пользователя
         row = await conn.fetchrow(
-            "INSERT INTO users (email, password_hash, username) VALUES ($1, $2, $3) RETURNING id, email, uid, username",
+            """
+            INSERT INTO users (email, password_hash, username)
+            VALUES ($1, $2, $3)
+            RETURNING id, email, uid, username
+            """,
             email, pw_hash, (username or "").strip() or None
         )
 
-        # создаём лицензию сразу
+        # создаём привязанную лицензию
         license_key = generate_license_key()
         await conn.execute(
             """
@@ -66,13 +70,15 @@ async def register_submit(
             row["uid"]
         )
 
-    # отправка письма подтверждения (пока заглушка)
+    # письмо подтверждения
     await create_and_send_confirmation(request.app, row["id"], row["email"])
 
+    # логин и редирект в кабинет
     token = make_jwt(row["id"], row["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
+
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -125,6 +131,7 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
 
 
 
