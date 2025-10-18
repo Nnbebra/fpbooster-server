@@ -50,6 +50,9 @@ app.state.ADMIN_TOKEN = ADMIN_TOKEN
 from creators import router as creators_router
 from admin_creators import router as admin_creators_router
 from referrals import router as referrals_router
+from buy import router as buy_router
+app.include_router(buy_router, tags=["buy"])
+
 
 app.include_router(creators_router)
 app.include_router(admin_creators_router)
@@ -489,6 +492,7 @@ async def eula_page(request: Request):
 @app.get("/datahandle", response_class=HTMLResponse)
 async def datahandle_page(request: Request):
     return templates.TemplateResponse("datahandle.html", {"request": request})
+
 
 
 
