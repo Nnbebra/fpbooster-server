@@ -433,6 +433,45 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
+# /admin/users — список пользователей
+@app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        if q:
+            rows = await conn.fetch(
+                """
+                SELECT id, email, username, uid, user_group, created_at, last_login
+                FROM users
+                WHERE email ILIKE $1 OR username ILIKE $1 OR CAST(uid AS TEXT) ILIKE $1
+                ORDER BY created_at DESC
+                """,
+                f"%{q}%"
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, email, username, uid, user_group, created_at, last_login
+                FROM users
+                ORDER BY created_at DESC
+                """
+            )
+    return templates.TemplateResponse("users.html", {"request": request, "rows": rows, "q": q or ""})
+
+
+@app.get("/admin/users/edit/{uid}", response_class=HTMLResponse)
+async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT id, email, username, uid, user_group FROM users WHERE uid=$1", uid)
+    if not row:
+        return Response("User not found", status_code=404)
+    return templates.TemplateResponse("user_form.html", {"request": request, "row": row, "error": None})
+
+@app.post("/admin/users/edit/{uid}")
+async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        await conn.execute("UPDATE users SET user_group=$1 WHERE uid=$2", user_group, uid)
+    return RedirectResponse(url="/admin/users", status_code=302)
+
 
 
 
