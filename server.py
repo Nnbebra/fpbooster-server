@@ -8,6 +8,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
 from guards import admin_guard_ui
+from fastapi import Request
+from fastapi.responses import HTMLResponse
+from auth.guards import get_current_user
 
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
@@ -24,7 +27,7 @@ async def index(request: Request):
     try:
         user = await get_current_user(request.app, request)
     except:
-        pass
+        user = None
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
@@ -428,5 +431,6 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
+
 
 
