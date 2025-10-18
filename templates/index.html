@@ -25,7 +25,7 @@
         --btn-ease: cubic-bezier(.16, .84, .34, 1);
     }
 
-    /* Base */
+    /* Base + sticky footer layout */
     html, body {
         height: 100%;
         margin: 0;
@@ -36,7 +36,6 @@
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
 
-        /* sticky footer layout */
         display: flex;
         flex-direction: column;
     }
@@ -46,9 +45,10 @@
         text-decoration: none;
     }
 
-    /* Контент занимает всё пространство между navbar и footer */
+    /* Основной контент занимает пространство между navbar и footer */
     main, .container {
         flex: 1 0 auto;
+        min-height: 0; /* важно для корректного flex-распределения */
     }
 
     .container {
@@ -144,8 +144,8 @@
         position: relative;
         min-height: 92vh;
         display: flex;
-        align-items: center; /* центрируем содержимое по вертикали */
-        padding-top: 148px; /* больше отступ от фиксированного navbar */
+        align-items: center;
+        padding-top: 148px; /* отступ от фиксированного navbar */
         overflow: hidden;
     }
 
@@ -162,7 +162,7 @@
         transform: translateX(-50%);
         width: 100vw;
         min-width: 1400px;
-        height: calc(100vh + 720px); /* покрыть hero и ещё вниз для плавного растворения */
+        height: calc(100vh + 720px);
         background-image: url('/static/Bakground3.png');
         background-position: center 12%;
         background-repeat: no-repeat;
@@ -213,10 +213,10 @@
         position: relative;
         z-index: 8;
         display: grid;
-        grid-template-columns: 1fr; /* один столбец для строгой вертикальной централизации */
+        grid-template-columns: 1fr;
         gap: 28px;
         align-items: center;
-        justify-items: center; /* горизонтальная центровка */
+        justify-items: center;
         width: 100%;
         padding: 24px 0;
     }
@@ -390,6 +390,10 @@
         padding: 80px 0;
     }
 
+    section:last-of-type {
+        padding-bottom: 0; /* чтобы последняя секция не давила на футер */
+    }
+
     .card {
         background: var(--card);
         border-radius: 12px;
@@ -438,26 +442,28 @@
         color: var(--muted);
     }
 
-    /* Footer — фиксируем высоту и не даём сжиматься/расти */
+    /* Footer — фиксируем высоту и не даём растягиваться */
     .footer {
         background: linear-gradient(180deg, rgba(8,8,10,1), rgba(5,5,6,1));
         color: var(--muted);
         border-top: 1px solid rgba(255,255,255,0.02);
 
-        /* sticky footer */
         flex-shrink: 0;
-        height: 200px;         /* фиксированная высота, настроить под дизайн */
-        padding: 40px 0;       /* внутренние отступы сохраняются внутри высоты */
+        height: 200px;       /* фиксированная высота */
+        padding: 40px 0;     /* внутр. отступы считаются в высоту */
         box-sizing: border-box;
     }
 
     .footer-inner {
-        max-width: var(--max-width);
-        margin: 0 auto;
-        padding: 0 var(--content-padding);
+        height: 100%;
+        max-height: 100%;
+        overflow: auto; /* если контента больше — скролл внутри футера */
         display: flex;
         flex-direction: column;
         gap: 18px;
+        max-width: var(--max-width);
+        margin: 0 auto;
+        padding: 0 var(--content-padding);
     }
 
     .footer-top {
@@ -473,63 +479,35 @@
         color: #9a9a9a;
     }
 
-    /*
-        Responsive
-        - сохраняем централизацию
-        - усиливаем масштаб UI на мобилках
-        - делаем растворение фона раньше
-    */
+    /* Responsive */
     @media (max-width: 1280px) {
-        .hero {
-            padding-top: 140px;
-        }
-        .hero-panel {
-            max-width: 920px;
-        }
-        .visual-clip img {
-            transform: scale(2.7);
-        }
+        .hero { padding-top: 140px; }
+        .hero-panel { max-width: 920px; }
+        .visual-clip img { transform: scale(2.7); }
     }
 
     @media (max-width: 1024px) {
-        .hero {
-            padding-top: 130px;
-        }
+        .hero { padding-top: 130px; }
         .hero-panel {
             padding: 32px;
             border-radius: 16px;
             margin: 0 12px;
         }
-        .visual-clip img {
-            transform: scale(2.9);
-        }
-        .visual-clip.highres img {
-            transform: scale(2.0);
-        }
+        .visual-clip img { transform: scale(2.9); }
+        .visual-clip.highres img { transform: scale(2.0); }
     }
 
     @media (max-width: 768px) {
-        .hero {
-            padding-top: 118px;
-        }
+        .hero { padding-top: 118px; }
         .hero-panel {
             padding: 22px;
             border-radius: 14px;
             margin: 0 12px;
         }
-        .hero-left h1 {
-            font-size: 30px;
-        }
-        .hero-left p {
-            font-size: 1rem;
-        }
-        .visual-card {
-            max-width: 100%;
-            padding: 12px;
-        }
-        .visual-clip img {
-            transform: scale(3.8); /* крупнее на телефонах */
-        }
+        .hero-left h1 { font-size: 30px; }
+        .hero-left p { font-size: 1rem; }
+        .visual-card { max-width: 100%; padding: 12px; }
+        .visual-clip img { transform: scale(3.8); }
         .hero-bg::after {
             height: 380px;
             background: linear-gradient(180deg,
@@ -541,18 +519,10 @@
     }
 
     @media (max-width: 420px) {
-        .hero {
-            padding-top: 102px;
-        }
-        .hero-left h1 {
-            font-size: 24px;
-        }
-        .visual-clip img {
-            transform: scale(3.2);
-        }
-        .hero-bg::after {
-            height: 320px;
-        }
+        .hero { padding-top: 102px; }
+        .hero-left h1 { font-size: 24px; }
+        .visual-clip img { transform: scale(3.2); }
+        .hero-bg::after { height: 320px; }
     }
 
     /* Small polish */
@@ -774,6 +744,7 @@
   </script>
 </body>
 </html>
+
 
 
 
