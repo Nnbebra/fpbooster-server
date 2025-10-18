@@ -3,12 +3,14 @@
 
 {% block content %}
 <section style="padding:30px 0;">
+
+  <!-- Приветствие и статус email -->
   <div class="panel-glass card" style="margin-bottom:18px;">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <div>
-        <h2 style="margin:0 0 6px;">Привет, {{ user.email }}</h2>
+        <h2 style="margin:0 0 6px;">Привет, {{ user.username }}</h2>
         <div class="muted">
-          Статус email: 
+          Статус email:
           {% if user.email_confirmed %}
             <span style="color:#b6ffb6;"><i class="fa-solid fa-circle-check"></i> подтверждён</span>
           {% else %}
@@ -28,6 +30,47 @@
     {% endif %}
   </div>
 
+  <!-- Таблица с данными пользователя -->
+  <div class="panel-glass card" style="margin-bottom:18px;">
+    <h3 style="margin-top:0;">Данные аккаунта</h3>
+    <table style="width:100%; border-collapse:collapse; margin-top:12px;">
+      <tr>
+        <td style="padding:8px; font-weight:600;">UID</td>
+        <td style="padding:8px;">{{ user.uid }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Логин</td>
+        <td style="padding:8px;">{{ user.username or "-" }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Группа</td>
+        <td style="padding:8px;">{{ user.user_group }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Дата регистрации</td>
+        <td style="padding:8px;">{{ user.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Последний вход</td>
+        <td style="padding:8px;">{{ user.last_login.strftime("%d.%m.%Y %H:%M") if user.last_login else "—" }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">E-mail</td>
+        <td style="padding:8px;">{{ user.email }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Кнопки действий -->
+  <div class="card" style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-bottom:18px;">
+    <a class="btn-cta" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить клиент</a>
+    <a class="btn-outline" href="/promocodes"><i class="fa-solid fa-ticket"></i> Мои промокоды</a>
+    <a class="btn-outline" href="/purchases"><i class="fa-solid fa-box"></i> Купленные товары</a>
+    <a class="btn-outline" href="/change-password"><i class="fa-solid fa-key"></i> Сменить пароль</a>
+    <a class="btn-outline" href="/logout"><i class="fa-solid fa-arrow-right-from-bracket"></i> Выйти</a>
+  </div>
+
+  <!-- Лицензии -->
   <div class="card">
     <h3 style="margin-top:0;">Ваши лицензии</h3>
     {% if licenses and licenses|length > 0 %}
@@ -37,13 +80,13 @@
             <div style="font-weight:700; margin-bottom:6px; color:#ffd9ff;">
               <i class="fa-solid fa-key"></i> {{ lic.license_key }}
             </div>
-            <div class="muted">Статус: 
+            <div class="muted">Статус:
               {% if lic.status == 'active' %}<span style="color:#b6ffb6;">Активна</span>
               {% elif lic.status == 'expired' %}<span style="color:#ffb2b2;">Истекла</span>
               {% elif lic.status == 'banned' %}<span style="color:#ff9f9f;">Заблокирована</span>
               {% else %}{{ lic.status }}{% endif %}
             </div>
-            <div class="muted">Истекает: {% if lic.expires %}{{ lic.expires.isoformat() }}{% else %}—{% endif %}</div>
+            <div class="muted">Истекает: {% if lic.expires %}{{ lic.expires.strftime("%d.%m.%Y %H:%M") }}{% else %}—{% endif %}</div>
           </div>
         {% endfor %}
       </div>
@@ -51,5 +94,6 @@
       <div class="muted">Лицензии не найдены. Приобретите лицензию, чтобы начать пользоваться софтом.</div>
     {% endif %}
   </div>
+
 </section>
 {% endblock %}
