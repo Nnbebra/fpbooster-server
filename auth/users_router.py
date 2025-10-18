@@ -26,8 +26,9 @@ async def register_page(request: Request):
 async def register_submit(
     request: Request,
     email: str = Form(...),
+    username: str = Form(...),
     password: str = Form(...),
-    username: str = Form(None),
+    password2: str = Form(...),
     accept_terms: str = Form(None),
 ):
     if not accept_terms:
@@ -37,7 +38,20 @@ async def register_submit(
             status_code=400,
         )
 
-    email = email.strip().lower()
+    if not username.strip():
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Имя пользователя обязательно"},
+            status_code=400,
+        )
+
+    if password != password2:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Пароли не совпадают"},
+            status_code=400,
+        )
+
     if len(password) < 6:
         return templates.TemplateResponse(
             "register.html",
@@ -45,20 +59,20 @@ async def register_submit(
             status_code=400,
         )
 
-    pw_hash = hash_password(password)  # ВНУТРИ обработчика
+    email = email.strip().lower()
+    pw_hash = hash_password(password)
 
     async with request.app.state.pool.acquire() as conn:
-        # создаём пользователя
         row = await conn.fetchrow(
             """
             INSERT INTO users (email, password_hash, username)
             VALUES ($1, $2, $3)
             RETURNING id, email, uid, username
             """,
-            email, pw_hash, (username or "").strip() or None
+            email, pw_hash, username.strip()
         )
 
-        # создаём привязанную лицензию
+        # создаём лицензию сразу
         license_key = generate_license_key()
         await conn.execute(
             """
@@ -66,14 +80,12 @@ async def register_submit(
             VALUES ($1, 'expired', $2, $3)
             """,
             license_key,
-            row["username"] or row["email"],
+            row["username"],
             row["uid"]
         )
 
-    # письмо подтверждения
     await create_and_send_confirmation(request.app, row["id"], row["email"])
 
-    # логин и редирект в кабинет
     token = make_jwt(row["id"], row["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
@@ -131,6 +143,7 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
 
 
 
