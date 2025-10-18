@@ -1,0 +1,49 @@
+{% extends "account_base.html" %}
+{% block title %}Купить FPBooster{% endblock %}
+
+{% block content %}
+<section style="padding:60px 0; margin-bottom:120px;">
+  <div class="container">
+    <h2 class="text-center mb-5">Наши тарифы</h2>
+    <div class="grid" style="gap:24px;">
+
+      <!-- Тариф 30 дней -->
+      <div class="card-dark p-4 text-center">
+        <img src="/static/products/30days.png" alt="30 дней" class="img-center" style="max-height:140px; margin-bottom:16px;">
+        <h4>Лицензия на 30 дней</h4>
+        <p class="muted">Идеально для теста и краткосрочного использования</p>
+        <div class="price mb-3">
+          <span class="text-danger"><s>350 ₽</s></span>
+          <span class="text-success" style="font-size:1.2rem; font-weight:700;">299 ₽</span>
+        </div>
+        <a href="/checkout?plan=30" class="btn-cta w-100"><i class="fa-solid fa-basket-shopping mr-2"></i>Купить</a>
+      </div>
+
+      <!-- Тариф 365 дней -->
+      <div class="card-dark p-4 text-center">
+        <img src="/static/products/365days.png" alt="365 дней" class="img-center" style="max-height:140px; margin-bottom:16px;">
+        <h4>Лицензия на 365 дней</h4>
+        <p class="muted">Лучший выбор для постоянных пользователей</p>
+        <div class="price mb-3">
+          <span class="text-danger"><s>3500 ₽</s></span>
+          <span class="text-success" style="font-size:1.2rem; font-weight:700;">2499 ₽</span>
+        </div>
+        <a href="/checkout?plan=365" class="btn-cta w-100"><i class="fa-solid fa-basket-shopping mr-2"></i>Купить</a>
+      </div>
+
+      <!-- Тариф Lifetime -->
+      <div class="card-dark p-4 text-center">
+        <img src="/static/products/lifetime.png" alt="Lifetime" class="img-center" style="max-height:140px; margin-bottom:16px;">
+        <h4>Лицензия навсегда</h4>
+        <p class="muted">Один раз и навсегда — максимальная выгода</p>
+        <div class="price mb-3">
+          <span class="text-danger"><s>6000 ₽</s></span>
+          <span class="text-success" style="font-size:1.2rem; font-weight:700;">3999 ₽</span>
+        </div>
+        <a href="/checkout?plan=lifetime" class="btn-cta w-100"><i class="fa-solid fa-basket-shopping mr-2"></i>Купить</a>
+      </div>
+
+    </div>
+  </div>
+</section>
+{% endblock %}
