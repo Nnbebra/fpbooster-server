@@ -55,6 +55,14 @@ app.include_router(creators_router)
 app.include_router(admin_creators_router)
 app.include_router(referrals_router)
 
+
+
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+
 # ========= Конфигурация =========
 DB_URL = os.getenv("DATABASE_URL", "").strip()
 if not DB_URL:
@@ -471,6 +479,7 @@ async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE users SET user_group=$1 WHERE uid=$2", user_group, uid)
     return RedirectResponse(url="/admin/users", status_code=302)
+
 
 
 
