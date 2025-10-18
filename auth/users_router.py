@@ -10,6 +10,12 @@ from fastapi.responses import RedirectResponse
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
+import secrets, string
+
+def generate_license_key():
+    return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+
+
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     try:
@@ -23,6 +29,7 @@ async def register_submit(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
+    pw_hash = hash_password(password),
     username: str = Form(None),
     accept_terms: str = Form(None),   # добавили чекбокс
 ):
@@ -118,6 +125,7 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
 
 
 
