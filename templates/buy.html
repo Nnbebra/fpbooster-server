@@ -9,68 +9,92 @@
 
   h2 { font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.6); }
 
-  .plans-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 36px; }
+  .plans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 36px;
+  }
 
   .plan-card {
     position: relative;
     background: linear-gradient(330deg, #1e1e22, #151517);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 16px;
-    padding: 36px 28px;
+    padding: 28px;
     text-align: center;
     box-shadow: 0 22px 60px rgba(0,0,0,0.65);
     transition: transform 0.25s ease, box-shadow 0.25s ease;
-    display: flex; flex-direction: column; justify-content: flex-start;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
   .plan-card:hover { transform: translateY(-8px); box-shadow: 0 32px 80px rgba(0,0,0,0.8); }
 
-  /* Увеличиваем визуальную область картинки: делаем высоту выше и object-fit: cover */
-  .plan-card .img-wrap {
+  /* расширенный блок картинки чтобы заполнял фон */
+  .img-wrap {
     width: 100%;
-    height: 360px;              /* увеличенная высота чтобы картинка заполняла блок */
-    display: block;
+    height: 300px;
     border-radius: 12px;
     overflow: hidden;
-    margin-bottom: 20px;
+    margin-bottom: 18px;
     box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+    background: linear-gradient(180deg, #111, #161616);
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  .plan-card .img-wrap img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;          /* fill the box, no grey bars */
-    transform-origin: center;
+  .img-wrap img {
+    width: 120%;
+    height: 120%;
+    object-fit: cover;
+    transform: translateY(-4%);
     display: block;
   }
 
-  .plan-card h4 { margin: 0 0 10px; font-size: 1.5rem; color: #fff; }
-  .plan-card p { color: var(--muted, #bdbdbd); font-size: 1rem; margin-bottom: 20px; }
+  .plan-card h4 { margin: 8px 0 8px; font-size: 1.4rem; color: #fff; }
+  .plan-card p { color: var(--muted, #bdbdbd); font-size: 1rem; margin-bottom: 14px; }
 
-  .plan-card .price { margin-bottom: 22px; font-size: 1.2rem; }
+  .plan-card .price { margin-bottom: 18px; font-size: 1.15rem; }
   .plan-card .price s { color: #dc3545; margin-right: 10px; }
-  .plan-card .price .current { color: #28a745; font-weight: 700; font-size: 1.4rem; }
+  .plan-card .price .current { color: #28a745; font-weight: 700; font-size: 1.35rem; }
 
-  .plan-card .btn-cta {
+  .btn-cta {
     background: linear-gradient(330deg, #9f56cb, #f988e7);
-    border: none; border-radius: 10px; padding: 14px 20px;
-    font-weight: 700; color: #fff; text-transform: uppercase;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
     transition: background 0.25s ease, transform 0.2s ease;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 1rem; margin-top: auto; width: calc(100% - 4px); align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.98rem;
+    margin-top: auto;
+    width: calc(100% - 4px);
+    align-self: center;
     box-shadow: 0 6px 18px rgba(159,86,203,0.12);
   }
-  .plan-card .btn-cta:hover { background: linear-gradient(330deg, #8f4eb8, #cf71c0); transform: translateY(-2px); }
+  .btn-cta:hover { background: linear-gradient(330deg, #8f4eb8, #cf71c0); transform: translateY(-2px); }
 
   .discount-badge {
-    position: absolute; top: 16px; right: 16px;
-    background: #dc3545; color: #fff; font-size: 0.85rem; font-weight: 700;
-    padding: 6px 10px; border-radius: 8px;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: #dc3545;
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 6px 10px;
+    border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   }
 
   @media (max-width: 420px) {
-    .plan-card { padding: 20px; }
-    .plan-card .img-wrap { height: 220px; }
+    .img-wrap { height: 220px; }
+    .img-wrap img { width: 150%; height: 150%; }
+    .plan-card { padding: 18px; }
   }
 </style>
 
@@ -82,10 +106,10 @@
       {% for plan in plans %}
       <div class="plan-card">
         {% if plan.discount %}
-          <span class="discount-badge">{{ plan.discount }}</span>
+        <span class="discount-badge">{{ plan.discount }}</span>
         {% endif %}
         <div class="img-wrap">
-          <img src="{{ plan.img }}" alt="{{ plan.title }}">
+          <img src="{{ plan.img }}" alt="{{ plan.title }}" onerror="this.onerror=null;this.src='/static/products/placeholder.png'">
         </div>
         <h4>{{ plan.title }}</h4>
         <p>Доступ ко всем актуальным функциям FPBooster.</p>
