@@ -3,23 +3,11 @@
 
 {% block content %}
 <style>
-  html, body {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-  main {
-    flex: 1 0 auto;
-  }
-  footer {
-    flex-shrink: 0;
-  }
+  html, body { height: 100%; display: flex; flex-direction: column; }
+  main { flex: 1 0 auto; }
+  footer { flex-shrink: 0; }
 
-  h2 {
-    font-weight: 700;
-    color: #fff;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
-  }
+  h2 { font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.6); }
 
   .plans-grid {
     display: grid;
@@ -38,45 +26,24 @@
     transition: transform 0.25s ease, box-shadow 0.25s ease;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
   }
-  .plan-card:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 32px 80px rgba(0,0,0,0.8);
-  }
+  .plan-card:hover { transform: translateY(-8px); box-shadow: 0 32px 80px rgba(0,0,0,0.8); }
 
   .plan-card img {
     max-height: 240px;
     margin-bottom: 20px;
     border-radius: 12px;
     box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+    object-fit: contain;
+    width: 100%;
   }
 
-  .plan-card h4 {
-    margin: 0 0 10px;
-    font-size: 1.5rem;
-    color: #fff;
-  }
+  .plan-card h4 { margin: 0 0 10px; font-size: 1.5rem; color: #fff; }
+  .plan-card p { color: var(--muted, #bdbdbd); font-size: 1rem; margin-bottom: 20px; }
 
-  .plan-card p {
-    color: var(--muted, #bdbdbd);
-    font-size: 1rem;
-    margin-bottom: 20px;
-  }
-
-  .plan-card .price {
-    margin-bottom: 22px;
-    font-size: 1.2rem;
-  }
-  .plan-card .price s {
-    color: #dc3545;
-    margin-right: 10px;
-  }
-  .plan-card .price .current {
-    color: #28a745;
-    font-weight: 700;
-    font-size: 1.4rem;
-  }
+  .plan-card .price { margin-bottom: 22px; font-size: 1.2rem; }
+  .plan-card .price s { color: #dc3545; margin-right: 10px; }
+  .plan-card .price .current { color: #28a745; font-weight: 700; font-size: 1.4rem; }
 
   .plan-card .btn-cta {
     background: linear-gradient(330deg, #9f56cb, #f988e7);
@@ -92,15 +59,12 @@
     justify-content: center;
     font-size: 1rem;
     margin-top: auto;
-    width: calc(100% - 4px); /* фиксируем ширину внутри карточки */
-    align-self: center;       /* центрируем внутри flex */
+    width: calc(100% - 4px);
+    align-self: center;
+    box-shadow: 0 6px 18px rgba(159,86,203,0.12);
   }
-  .plan-card .btn-cta:hover {
-    background: linear-gradient(330deg, #8f4eb8, #cf71c0);
-    transform: translateY(-2px);
-  }
+  .plan-card .btn-cta:hover { background: linear-gradient(330deg, #8f4eb8, #cf71c0); transform: translateY(-2px); }
 
-  /* Бейдж скидки */
   .discount-badge {
     position: absolute;
     top: 16px;
@@ -113,6 +77,11 @@
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   }
+
+  @media (max-width: 420px) {
+    .plan-card { padding: 20px; }
+    .plan-card img { max-height: 180px; }
+  }
 </style>
 
 <main>
@@ -120,53 +89,24 @@
   <div class="container">
     <h2 class="text-center mb-5">Наши тарифы</h2>
     <div class="plans-grid">
-
-      <!-- Тариф 30 дней -->
+      {% for plan in plans %}
       <div class="plan-card">
-        <span class="discount-badge">-15%</span>
-        <img src="/static/products/30days.png" alt="30 дней">
-        <h4>Лицензия на 30 дней</h4>
-        <p>Подписка на 30 дней. Доступ ко всем актуальным функциям.</p>
+        {% if plan.discount %}
+        <span class="discount-badge">{{ plan.discount }}</span>
+        {% endif %}
+        <img src="{{ plan.img }}" alt="{{ plan.title }}">
+        <h4>{{ plan.title }}</h4>
+        <p>Доступ ко всем актуальным функциям FPBooster.</p>
         <div class="price">
-          <s>350 ₽</s> <span class="current">299 ₽</span>
-        </div>
-        <a href="/checkout/{{ plan.id }}" class="btn-cta">
-          <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
-        </a>
-
-      </div>
-
-      <!-- Тариф 90 дней -->
-      <div class="plan-card">
-        <span class="discount-badge">-20%</span>
-        <img src="/static/products/90days.png" alt="90 дней">
-        <h4>Лицензия на 90 дней</h4>
-        <p>Подписка на 90 дней. Доступ ко всем актуальным функциям.</p>
-        <div class="price">
-          <s>900 ₽</s> <span class="current">749 ₽</span>
+          <s>{{ plan.old_price }} ₽</s> <span class="current">{{ plan.price }} ₽</span>
         </div>
         <a href="/checkout/{{ plan.id }}" class="btn-cta">
           <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
         </a>
       </div>
-
-      <!-- Тариф 365 дней -->
-      <div class="plan-card">
-        <span class="discount-badge">-30%</span>
-        <img src="/static/products/365days.png" alt="365 дней">
-        <h4>Лицензия на 365 дней</h4>
-        <p>Подписка на 365 дней. Доступ ко всем актуальным функциям.</p>
-        <div class="price">
-          <s>3500 ₽</s> <span class="current">2399 ₽</span>
-        </div>
-        <a href="/checkout/{{ plan.id }}" class="btn-cta">
-          <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
-        </a>
-      </div>
-
+      {% endfor %}
     </div>
   </div>
 </section>
 </main>
 {% endblock %}
-
