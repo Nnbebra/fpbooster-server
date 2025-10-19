@@ -3,152 +3,211 @@
 
 {% block content %}
 <style>
-/* Подгонка под твой пример CSS (сохранена логика и классы) */
-.modal-wrapper { display:flex; justify-content:center; padding:60px 0; }
-.modal-content {
-  background-clip: padding-box;
-  border: 1px solid var(--border-color, #17171b);
-  border-radius: 8px;
-  color: #e8e8e8;
-}
-.modal-content { display: grid; grid-template-columns: 320px 1fr; gap:0; max-width:980px; width:100%; }
+  :root{
+    --border-color:#17171b;
+    --muted:#cfcfcf;
+  }
 
-/* Секция методов оплаты */
-.PaymentMethodModal_container__o1WaO { display:flex; align-items:center; justify-content:center; width:100%; height:100%; }
-.PaymentMethodModal_paymentMethods__Egz7z {
-  padding: 20px;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  align-items:center;
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
-}
-.PaymentMethodModal_paymentMethod__3mq6J {
-  width: 100%;
-  padding: 10px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.02);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  transition: transform .12s ease, box-shadow .12s ease;
-}
-.PaymentMethodModal_paymentMethod__3mq6J img { max-width: 100%; height:44px; object-fit:contain; }
+  .modal-wrapper { display:flex; justify-content:center; padding:60px 12px; }
+  .modal-content {
+    max-width: 980px;
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    background: linear-gradient(180deg,#0f0f11 0%, #161617 100%);
+    border: 1px solid rgba(255,255,255,0.04);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.7);
+    color: #e6e6e6;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+  }
 
-/* Активный метод */
-.PaymentMethodModal_active__w40cZ { box-shadow: 0 8px 30px rgba(159,86,203,0.12); transform: translateY(-4px); }
+  .PaymentMethodModal_paymentMethods__Egz7z {
+    padding: 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    align-items:center;
+    justify-content:flex-start;
+  }
 
-/* Инфо правая колонка */
-.PaymentMethodModal_paymentInfo__WHyrR { padding: 28px 30px; display:flex; flex-direction:column; gap:12px; background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent); }
-.PaymentMethodModal_paymentInfo__WHyrR h4 { margin:0; color:#fff; font-size:1.25rem; }
-.PaymentMethodModal_price__aubih { color:#d6d6d6; font-size:1.05rem; }
-.PaymentMethodModal_price__aubih s { color:#ff6b6b; margin-right:8px; }
-.PaymentMethodModal_discount__B8seK { display:inline-block; background:#dc3545; color:#fff; padding:6px 10px; border-radius:8px; font-weight:700; }
+  .pm-method-row {
+    width:100%;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+    justify-content:center;
+  }
 
-.btn.btn-gradient, .btn.btn-lg.btn-gradient {
-  display:inline-flex; align-items:center; justify-content:center;
-  background: linear-gradient(330deg,#9f56cb,#f988e7);
-  border:none; color:#fff; padding:12px 16px; border-radius:10px; font-weight:700; cursor:pointer;
-}
-.btn.btn-lg.btn-light {
-  display:inline-flex; align-items:center; justify-content:center;
-  background: #f8f9fa; color:#111; padding:12px 16px; border-radius:10px; border:none; text-decoration:none;
-}
+  .pm-method {
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+    padding: 10px;
+    width: 100%;
+    max-width: 140px;
+    height: 64px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .pm-method img { max-width: 100%; max-height: 44px; object-fit:contain; display:block; }
 
-/* Gift box */
-.PaymentMethodModal_gift__wPDIQ { margin-top:12px; background: rgba(255,255,255,0.02); padding:12px; border-radius:8px; color:#d6d6d6; }
+  .pm-method.active {
+    box-shadow: 0 8px 30px rgba(159,86,203,0.12);
+    transform: translateY(-4px);
+  }
 
-/* Footer button area (mobile) */
-.modal-footer { padding: 12px 20px; display:flex; justify-content:flex-end; background:transparent; border-top: none; }
+  .PaymentMethodModal_paymentInfo__WHyrR {
+    padding: 28px 30px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .PaymentMethodModal_paymentInfo__WHyrR h4 { margin:0; color:#fff; font-size:1.25rem; }
+  .PaymentMethodModal_price__aubih { color:var(--muted); font-size:1.05rem; }
+  .PaymentMethodModal_price__aubih s { color:#ff6b6b; margin-right:8px; }
+  .PaymentMethodModal_discount__B8seK {
+    display:inline-block; background:#dc3545; color:#fff; padding:6px 10px; border-radius:8px; font-weight:700;
+  }
 
-/* Responsive */
-@media (max-width: 980px) {
-  .modal-content { grid-template-columns: 1fr; max-width:720px; }
-  .PaymentMethodModal_paymentMethods__Egz7z { flex-direction:row; flex-wrap:wrap; gap:8px; padding:14px; }
-  .PaymentMethodModal_paymentMethod__3mq6J { flex:1 1 30%; min-width:90px; padding:8px; height:64px; }
-}
+  .btn {
+    border: none;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  .btn-gradient {
+    background: linear-gradient(330deg,#9f56cb,#f988e7);
+    color:#fff;
+    width:100%;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .btn-light {
+    background: #f8f9fa;
+    color: #111;
+    width:100%;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  .PaymentMethodModal_gift__wPDIQ {
+    margin-top:12px;
+    background: rgba(255,255,255,0.02);
+    padding:12px;
+    border-radius:8px;
+    color:var(--muted);
+  }
+
+  .modal-footer {
+    grid-column: 1/-1;
+    padding: 16px 24px;
+    display:flex;
+    justify-content:flex-end;
+    background: transparent;
+  }
+
+  @media (max-width: 980px) {
+    .modal-content { grid-template-columns: 1fr; }
+    .PaymentMethodModal_paymentMethods__Egz7z { padding: 12px; }
+    .pm-method { flex: 1 1 31%; min-width: 90px; max-width: 120px; height:72px; }
+  }
 </style>
 
 <section class="modal-wrapper" aria-labelledby="checkout-title" role="dialog">
-  <div class="modal-content" role="document">
-    <div class="PaymentMethodModal_container__o1WaO">
-      <div class="PaymentMethodModal_paymentMethods__Egz7z" aria-hidden="false">
-        <!-- Использованы прямые URL-иконок из примера; можно заменить на свои -->
-        <div class="PaymentMethodModal_paymentMethod__3mq6J PaymentMethodModal_active__w40cZ">
-          <img src="https://celka.su/img/payments/method_4.png" alt="method_4">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_5.png" alt="method_5">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_6.png" alt="method_6">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_7.png" alt="method_7">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_8.png" alt="method_8">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_10.png" alt="method_10">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_11.png" alt="method_11">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_12.png" alt="method_12">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_13.png" alt="method_13">
-        </div>
-        <div class="PaymentMethodModal_paymentMethod__3mq6J">
-          <img src="https://celka.su/img/payments/method_14.png" alt="method_14">
-        </div>
+  <div class="modal-content" role="document" id="payment-modal">
+    <div class="PaymentMethodModal_paymentMethods__Egz7z" aria-hidden="false">
+      <div style="width:100%; text-align:center; margin-bottom:6px;"><strong style="color:var(--muted)">Способы оплаты</strong></div>
+
+      <div class="pm-method-row" id="pm-list">
+        <!-- Вставлены прямые внешние ссылки на иконки для надёжной загрузки -->
+        <div class="pm-method active" data-method="card"><img src="https://celka.su/img/payments/method_4.png" alt="card"></div>
+        <div class="pm-method" data-method="qiwi"><img src="https://celka.su/img/payments/method_5.png" alt="qiwi"></div>
+        <div class="pm-method" data-method="yoomoney"><img src="https://celka.su/img/payments/method_6.png" alt="yoomoney"></div>
+        <div class="pm-method" data-method="webmoney"><img src="https://celka.su/img/payments/method_7.png" alt="webmoney"></div>
+        <div class="pm-method" data-method="crypto"><img src="https://celka.su/img/payments/method_8.png" alt="crypto"></div>
+        <div class="pm-method" data-method="sber"><img src="https://celka.su/img/payments/method_10.png" alt="sber"></div>
+        <div class="pm-method" data-method="apple"><img src="https://celka.su/img/payments/method_11.png" alt="apple"></div>
+        <div class="pm-method" data-method="google"><img src="https://celka.su/img/payments/method_12.png" alt="google"></div>
       </div>
 
-      <div class="PaymentMethodModal_paymentInfo__WHyrR">
-        <h4 id="checkout-title">Покупка «{{ plan.title }}»</h4>
+    </div>
 
-        <div class="PaymentMethodModal_price__aubih">
-          К оплате:
-          <s class="ml-1">{{ plan.old_price }}</s>
-          <b class="text-success" style="margin-left:8px; font-size:1.4rem;">{{ plan.price }} ₽</b>
-        </div>
+    <div class="PaymentMethodModal_paymentInfo__WHyrR">
+      <h4 id="checkout-title">Покупка «{{ plan.title }}»</h4>
 
-        {% if plan.discount %}
-        <div class="PaymentMethodModal_discount__B8seK">Скидка {{ plan.discount|replace('-', '') }}</div>
-        {% endif %}
+      <div class="PaymentMethodModal_price__aubih">
+        К оплате:
+        <s class="ml-1">{{ plan.old_price }}</s>
+        <b style="margin-left:8px; font-size:1.4rem; color:#9fffa1;">{{ plan.price }} ₽</b>
+      </div>
 
-        <form action="/payment/start" method="get" style="margin-top:12px;">
-          <input type="hidden" name="plan" value="{{ plan.id }}">
-          <button type="submit" class="btn btn-lg btn-gradient w-100 mt-3">
-            <i class="fa-solid fa-circle-arrow-right mr-2"></i>Продолжить
-          </button>
-        </form>
+      {% if plan.discount %}
+      <div class="PaymentMethodModal_discount__B8seK">Скидка {{ plan.discount|replace('-', '') }}</div>
+      {% endif %}
 
-        <!-- Кнопка оплаты через Funpay открывает внешнюю вкладку -->
-        <a class="btn btn-lg btn-light w-100 mt-3 mb-4" href="https://funpay.com/users/17156368/" target="_blank" rel="noreferrer">
-          Оплатить через
-          <img src="https://celka.su/img/payments/funpay.svg" width="56" class="ml-2" alt="funpay">
-        </a>
+      <form id="pay-form" action="/payment/start" method="get" style="margin-top:12px;">
+        <input type="hidden" name="plan" value="{{ plan.id }}">
+        <input type="hidden" name="method" value="card" id="pay-method-input">
+        <button type="submit" class="btn btn-gradient btn-lg" id="continue-btn">
+          <i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить
+        </button>
+      </form>
 
-        <div class="PaymentMethodModal_gift__wPDIQ">
-          <span><i class="fa-solid fa-gift mr-2"></i>Подарок</span>
-          <p style="margin:6px 0 0;">Вы получите уникальный промокод на скидку <b>5%</b> после оплаты.</p>
-        </div>
+      <a class="btn btn-light btn-lg" href="https://funpay.com/users/17156368/" target="_blank" rel="noreferrer" style="margin-top:10px;">
+        Оплатить через
+        <img src="https://celka.su/img/payments/funpay.svg" width="56" style="margin-left:10px;" alt="funpay">
+      </a>
 
-        <div style="margin-top:auto; text-align:left;">
-          <a href="/buy" style="color:#cfcfcf; text-decoration:none;">← Вернуться к тарифам</a>
-        </div>
+      <div class="PaymentMethodModal_gift__wPDIQ">
+        <strong><i class="fa-solid fa-gift mr-2"></i> Подарок</strong>
+        <p style="margin:6px 0 0;">Вы получите уникальный промокод на скидку <b>5%</b> после оплаты.</p>
+      </div>
+
+      <div style="margin-top:auto;">
+        <a href="/buy" style="color:#cfcfcf; text-decoration:none;">← Вернуться к тарифам</a>
       </div>
     </div>
 
     <div class="modal-footer">
       <button type="button" class="btn btn-gradient" onclick="history.back();">
-        <i class="fa-solid fa-circle-left mr-2"></i>Отмена
+        <i class="fa-solid fa-circle-left mr-2"></i> Отмена
       </button>
     </div>
   </div>
 </section>
+
+<script>
+  (function(){
+    const pmList = document.getElementById('pm-list');
+    const payMethodInput = document.getElementById('pay-method-input');
+
+    pmList.addEventListener('click', (e) => {
+      const pm = e.target.closest('.pm-method');
+      if(!pm) return;
+      // toggle active class
+      pmList.querySelectorAll('.pm-method').forEach(el => el.classList.remove('active'));
+      pm.classList.add('active');
+      const method = pm.getAttribute('data-method') || 'card';
+      payMethodInput.value = method;
+      // update continue button text slightly (optional)
+      const cont = document.getElementById('continue-btn');
+      cont.innerHTML = '<i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить (' + method + ')';
+    });
+
+    // ensure images fallback if external host blocked
+    document.querySelectorAll('.pm-method img').forEach(img => {
+      img.onerror = function(){ this.src = '/static/img/payments/fallback.png'; };
+    });
+  })();
+</script>
 {% endblock %}
