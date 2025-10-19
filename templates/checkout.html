@@ -3,17 +3,21 @@
 
 {% block content %}
 <style>
+  .checkout-container {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    max-width: 720px; margin: 0 auto;
+  }
   .checkout-card {
-    background: linear-gradient(330deg, #1e1e22, #151517);
+    background: #1e1e22;
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 16px;
     padding: 32px 28px;
     box-shadow: 0 22px 60px rgba(0,0,0,0.65);
-    max-width: 720px; margin: 0 auto;
+    width: 100%;
   }
-  .checkout-card h2 { color: #fff; text-align: center; }
-  .checkout-top { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: center; }
-  .checkout-top img { max-height: 200px; border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,0.55); width:100%; object-fit:contain; }
+  .checkout-card h2 { color: #fff; text-align: center; margin-bottom: 24px; }
+  .checkout-top { display: flex; gap: 24px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .checkout-top img { max-height: 200px; border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,0.55); }
   .price-line { font-size: 1.1rem; margin-top: 6px; }
   .price-line s { color: #dc3545; margin-right: 8px; }
   .price-line .current { color: #28a745; font-weight: 700; font-size: 1.3rem; }
@@ -21,58 +25,4 @@
   .badge-discount {
     display: inline-block; background: #dc3545; color: #fff;
     border-radius: 10px; padding: 6px 10px; font-weight: 700; font-size: 0.9rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-top: 8px;
-  }
-
-  .btn-next {
-    background: linear-gradient(330deg, #9f56cb, #f988e7);
-    border: none; border-radius: 12px;
-    padding: 14px 20px; color: #fff; font-weight: 700;
-    text-transform: uppercase; width: 100%;
-    display: inline-flex; align-items: center; justify-content: center;
-    transition: background 0.25s ease, transform 0.2s ease;
-    margin-top: 18px;
-  }
-  .btn-next:hover { background: linear-gradient(330deg, #8f4eb8, #cf71c0); transform: translateY(-2px); }
-
-  .gift {
-    margin-top: 18px; background: rgba(255,255,255,0.03); border-radius: 12px; padding: 12px 14px; color: #d9d9d9;
-  }
-
-  @media (max-width: 720px) {
-    .checkout-top { grid-template-columns: 1fr; text-align: center; }
-  }
-</style>
-
-<section style="padding:80px 0; margin-bottom:120px;">
-  <div class="container">
-    <div class="checkout-card">
-      <h2 class="mb-4">Оформление заказа</h2>
-      <div class="checkout-top">
-        <img src="{{ plan.img }}" alt="{{ plan.title }}">
-        <div>
-          <h4 style="color:#fff; margin:0 0 8px;">Покупка «{{ plan.title }}»</h4>
-          <div class="price-line">
-            <s>{{ plan.old_price }} ₽</s>
-            <span class="current">{{ plan.price }} ₽</span>
-          </div>
-          {% if plan.discount %}
-            <div class="badge-discount">Скидка {{ plan.discount }}</div>
-          {% endif %}
-        </div>
-      </div>
-
-      <a href="/payment/start?plan={{ plan.id }}" class="btn-next">
-        <i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить к оплате
-      </a>
-
-      <div class="gift">
-        <span><i class="fa-solid fa-gift mr-2"></i> Подарок</span>
-        <p style="margin:6px 0 0;">Вы получите уникальный промокод на скидку <b>5%</b> после оплаты.</p>
-      </div>
-
-      <p class="mt-3" style="text-align:center;"><a href="/buy" class="text-muted">← Вернуться к тарифам</a></p>
-    </div>
-  </div>
-</section>
-{% endblock %}
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-top: 8
