@@ -154,7 +154,7 @@ async def check_license(license: str):
     async with app.state.pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT license_key, status, expires, user_name, created_at, last_check
+            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid
             FROM licenses
             WHERE license_key = $1
             """,
@@ -172,10 +172,11 @@ async def check_license(license: str):
             "status": row["status"],
             "expires": row["expires"].isoformat() if row["expires"] else None,
             "user": row["user_name"],
-            "user_uid": str(row["user_uid"]),
+            "user_uid": str(row["user_uid"]) if row["user_uid"] else None,
             "created": row["created_at"].isoformat() if row["created_at"] else None,
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
+
 
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
@@ -516,6 +517,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
