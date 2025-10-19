@@ -1,0 +1,26 @@
+{% extends "account_base.html" %}
+{% block title %}Оформление заказа — {{ plan.title }}{% endblock %}
+
+{% block content %}
+<section style="padding:80px 0; margin-bottom:120px;">
+  <div class="container">
+    <div class="card-dark p-5" style="max-width:600px; margin:0 auto; text-align:center;">
+      <h2 class="mb-4">Оформление заказа</h2>
+      <img src="{{ plan.img }}" alt="{{ plan.title }}" style="max-height:200px; margin-bottom:20px;">
+      <h4>{{ plan.title }}</h4>
+      <p class="muted">Доступ ко всем актуальным функциям FPBooster</p>
+      <div class="price mb-3">
+        <s class="text-danger">{{ plan.old_price }} ₽</s>
+        <span class="text-success" style="font-size:1.4rem; font-weight:700; margin-left:8px;">{{ plan.price }} ₽</span>
+      </div>
+      <div class="discount mb-3">
+        <span class="badge bg-danger">Скидка {{ plan.discount }}</span>
+      </div>
+      <a href="/payment/start?plan={{ plan.id }}" class="btn btn-lg btn-gradient w-100">
+        <i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить к оплате
+      </a>
+      <p class="mt-3"><a href="/buy" class="text-muted">← Вернуться к тарифам</a></p>
+    </div>
+  </div>
+</section>
+{% endblock %}
