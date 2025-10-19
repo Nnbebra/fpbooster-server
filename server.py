@@ -11,6 +11,9 @@ from guards import admin_guard_ui
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from auth.guards import get_current_user
+from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
+import pathlib
 
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
@@ -501,6 +504,12 @@ async def eula_page(request: Request):
 async def datahandle_page(request: Request):
     return templates.TemplateResponse("datahandle.html", {"request": request})
 
+
+
+@app.get("/shop-verification-9PmRxnl75J.txt", response_class=PlainTextResponse)
+async def verification_file():
+    file_path = pathlib.Path("templates/shop-verification-9PmRxnl75J.txt")
+    return file_path.read_text(encoding="utf-8")
 
 
 
