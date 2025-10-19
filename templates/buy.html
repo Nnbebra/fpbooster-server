@@ -2,50 +2,137 @@
 {% block title %}Купить FPBooster{% endblock %}
 
 {% block content %}
+<style>
+  body {
+    background: var(--background-color, #121214);
+    color: #eaeaea;
+    font-family: "Open Sans", sans-serif;
+  }
+
+  h2 {
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+  }
+
+  .plans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 28px;
+  }
+
+  .plan-card {
+    background: linear-gradient(330deg, #1e1e22, #151517);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 28px 22px;
+    text-align: center;
+    box-shadow: 0 18px 48px rgba(0,0,0,0.6);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .plan-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 28px 66px rgba(0,0,0,0.75);
+  }
+
+  .plan-card img {
+    max-height: 140px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+
+  .plan-card h4 {
+    margin: 0 0 8px;
+    font-size: 1.25rem;
+    color: #fff;
+  }
+
+  .plan-card p {
+    color: var(--muted, #bdbdbd);
+    font-size: 0.95rem;
+    margin-bottom: 16px;
+  }
+
+  .plan-card .price {
+    margin-bottom: 18px;
+    font-size: 1.1rem;
+  }
+
+  .plan-card .price s {
+    color: #dc3545;
+    margin-right: 8px;
+  }
+
+  .plan-card .price .current {
+    color: #28a745;
+    font-weight: 700;
+    font-size: 1.2rem;
+  }
+
+  .plan-card .btn-cta {
+    background: linear-gradient(330deg, #9f56cb, #f988e7);
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    transition: background 0.25s ease, transform 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .plan-card .btn-cta:hover {
+    background: linear-gradient(330deg, #8f4eb8, #cf71c0);
+    transform: translateY(-2px);
+  }
+</style>
+
 <section style="padding:60px 0; margin-bottom:120px;">
   <div class="container">
     <h2 class="text-center mb-5">Наши тарифы</h2>
-    <div class="grid" style="gap:24px;">
+    <div class="plans-grid">
 
       <!-- Тариф 30 дней -->
-      <div class="card-dark p-4 text-center">
-        <img src="/static/products/30days.png" alt="30 дней" class="img-center" style="max-height:140px; margin-bottom:16px;">
-        <h4 class="mb-2">Лицензия на 30 дней</h4>
-        <p class="muted mb-3">Идеально для теста и краткосрочного использования</p>
-        <div class="price mb-3">
-          <span class="text-danger"><s>350 ₽</s></span>
-          <span class="text-success" style="font-size:1.2rem; font-weight:700; margin-left:8px;">299 ₽</span>
+      <div class="plan-card">
+        <img src="/static/products/30days.png" alt="30 дней">
+        <h4>Лицензия на 30 дней</h4>
+        <p>Идеально для теста и краткосрочного использования</p>
+        <div class="price">
+          <s>350 ₽</s> <span class="current">299 ₽</span>
         </div>
-        <a href="/checkout?plan=30" class="btn-cta w-100">
-          <i class="fa-solid fa-basket-shopping mr-2"></i>Купить
+        <a href="/checkout?plan=30" class="btn-cta">
+          <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
         </a>
       </div>
 
       <!-- Тариф 90 дней -->
-      <div class="card-dark p-4 text-center">
-        <img src="/static/products/90days.png" alt="90 дней" class="img-center" style="max-height:140px; margin-bottom:16px;">
-        <h4 class="mb-2">Лицензия на 90 дней</h4>
-        <p class="muted mb-3">Оптимальный выбор для активных пользователей</p>
-        <div class="price mb-3">
-          <span class="text-danger"><s>900 ₽</s></span>
-          <span class="text-success" style="font-size:1.2rem; font-weight:700; margin-left:8px;">749 ₽</span>
+      <div class="plan-card">
+        <img src="/static/products/90days.png" alt="90 дней">
+        <h4>Лицензия на 90 дней</h4>
+        <p>Оптимальный выбор для активных пользователей</p>
+        <div class="price">
+          <s>900 ₽</s> <span class="current">749 ₽</span>
         </div>
-        <a href="/checkout?plan=90" class="btn-cta w-100">
-          <i class="fa-solid fa-basket-shopping mr-2"></i>Купить
+        <a href="/checkout?plan=90" class="btn-cta">
+          <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
         </a>
       </div>
 
       <!-- Тариф 365 дней -->
-      <div class="card-dark p-4 text-center">
-        <img src="/static/products/365days.png" alt="365 дней" class="img-center" style="max-height:140px; margin-bottom:16px;">
-        <h4 class="mb-2">Лицензия на 365 дней</h4>
-        <p class="muted mb-3">Лучший выбор для постоянных пользователей</p>
-        <div class="price mb-3">
-          <span class="text-danger"><s>3500 ₽</s></span>
-          <span class="text-success" style="font-size:1.2rem; font-weight:700; margin-left:8px;">2499 ₽</span>
+      <div class="plan-card">
+        <img src="/static/products/365days.png" alt="365 дней">
+        <h4>Лицензия на 365 дней</h4>
+        <p>Лучший выбор для постоянных пользователей</p>
+        <div class="price">
+          <s>3500 ₽</s> <span class="current">2499 ₽</span>
         </div>
-        <a href="/checkout?plan=365" class="btn-cta w-100">
-          <i class="fa-solid fa-basket-shopping mr-2"></i>Купить
+        <a href="/checkout?plan=365" class="btn-cta">
+          <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
         </a>
       </div>
 
