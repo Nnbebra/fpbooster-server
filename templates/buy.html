@@ -130,9 +130,10 @@
         <div class="price">
           <s>350 ₽</s> <span class="current">299 ₽</span>
         </div>
-        <a href="/checkout?plan=30" class="btn-cta">
+        <a href="/checkout/{{ plan.id }}" class="btn-cta">
           <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
         </a>
+
       </div>
 
       <!-- Тариф 90 дней -->
@@ -144,7 +145,7 @@
         <div class="price">
           <s>900 ₽</s> <span class="current">749 ₽</span>
         </div>
-        <a href="/checkout?plan=90" class="btn-cta">
+        <a href="/checkout/{{ plan.id }}" class="btn-cta">
           <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
         </a>
       </div>
@@ -158,7 +159,7 @@
         <div class="price">
           <s>3500 ₽</s> <span class="current">2399 ₽</span>
         </div>
-        <a href="/checkout?plan=365" class="btn-cta">
+        <a href="/checkout/{{ plan.id }}" class="btn-cta">
           <i class="fa-solid fa-basket-shopping mr-2"></i> Купить
         </a>
       </div>
@@ -168,3 +169,4 @@
 </section>
 </main>
 {% endblock %}
+
