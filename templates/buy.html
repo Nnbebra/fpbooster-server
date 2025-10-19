@@ -38,7 +38,7 @@
     transition: transform 0.25s ease, box-shadow 0.25s ease;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start;
   }
   .plan-card:hover {
     transform: translateY(-8px);
@@ -81,7 +81,7 @@
   .plan-card .btn-cta {
     background: linear-gradient(330deg, #9f56cb, #f988e7);
     border: none;
-    border-radius: 12px;
+    border-radius: 10px;
     padding: 14px 20px;
     font-weight: 700;
     color: #fff;
@@ -92,7 +92,8 @@
     justify-content: center;
     font-size: 1rem;
     margin-top: auto;
-    width: 100%;
+    width: calc(100% - 4px); /* фиксируем ширину внутри карточки */
+    align-self: center;       /* центрируем внутри flex */
   }
   .plan-card .btn-cta:hover {
     background: linear-gradient(330deg, #8f4eb8, #cf71c0);
