@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory="templates")
 router = APIRouter()
 
-# Оставляем только 30, 90, 365 — без "навсегда"
+# Тарифы: 30, 90, 365 — без "навсегда"
 PLANS = {
     "30": {
         "id": "30",
