@@ -5,7 +5,6 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory="templates")
 router = APIRouter()
 
-# Статичные тарифы, можно позже вынести в БД
 PLANS = {
     "30": {
         "id": "30",
@@ -30,14 +29,6 @@ PLANS = {
         "price": 2399,
         "discount": "30%",
         "img": "/static/products/365days.png",
-    },
-    "life": {
-        "id": "life",
-        "title": "Лицензия навсегда",
-        "old_price": 6000,
-        "price": 3999,
-        "discount": "33%",
-        "img": "/static/products/lifetime.png",
     },
 }
 
