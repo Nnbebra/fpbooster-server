@@ -1,0 +1,16 @@
+{% extends "account_base.html" %}
+{% block title %}Ошибка оплаты{% endblock %}
+
+{% block content %}
+<section style="padding:80px 0; margin-bottom:120px;">
+  <div class="container" style="max-width:640px; margin:0 auto; text-align:center;">
+    <div style="background:linear-gradient(330deg,#1e1e22,#151517); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:40px; box-shadow:0 22px 60px rgba(0,0,0,0.65);">
+      <h2 style="color:#dc3545; margin-bottom:20px;">Оплата не удалась</h2>
+      <p style="color:#ccc; margin-bottom:24px;">К сожалению, транзакция не была завершена. Попробуйте ещё раз или выберите другой способ оплаты.</p>
+      <a href="/checkout/30" class="btn btn-gradient" style="text-decoration:none; padding:12px 20px; border-radius:10px; font-weight:700;">
+        Повторить оплату
+      </a>
+    </div>
+  </div>
+</section>
+{% endblock %}
