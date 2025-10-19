@@ -14,6 +14,7 @@ from auth.guards import get_current_user
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 import pathlib
+from fastapi.responses import RedirectResponse
 
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
@@ -512,6 +513,9 @@ async def verification_file():
     return file_path.read_text(encoding="utf-8")
 
 
+@app.get("/support")
+async def support_redirect():
+    return RedirectResponse(url="https://t.me/funpaybo0sterr")
 
 
 
