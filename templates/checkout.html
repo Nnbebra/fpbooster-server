@@ -2,49 +2,49 @@
 {% block title %}Оформление заказа — {{ plan.title }}{% endblock %}
 
 {% block content %}
-<style>
-  /* стили оставляем как у тебя */
-</style>
+<!-- Подключаем внешний CSS -->
+<link rel="stylesheet" href="/templates_css/checkout.css">
 
-<section class="modal-wrapper" aria-labelledby="checkout-title" role="dialog">
-  <div class="modal-content" role="document" id="payment-modal">
-    <div class="PaymentMethodModal_paymentMethods__Egz7z">
-      <div style="width:100%; text-align:center; margin-bottom:6px;">
-        <strong style="color:var(--muted)">Способы оплаты</strong>
-      </div>
-      <div class="pm-method-row" id="pm-list">
-        <!-- методы оплаты оставляем -->
-        <div class="pm-method active" data-method="card">
-          <img src="/static/img/payments/card.png" alt="card" loading="lazy">
+<section class="PaymentMethodModal_container__o1WaO" aria-labelledby="checkout-title" role="dialog">
+  <div class="modal-dialog">
+    <div class="modal-content" role="document" id="payment-modal">
+      <div class="PaymentMethodModal_paymentMethods__Egz7z">
+        <div style="width:100%; text-align:center; margin-bottom:6px;">
+          <strong style="color:var(--muted)">Способы оплаты</strong>
         </div>
-        <div class="pm-method" data-method="crypto">
-          <img src="/static/img/payments/crypto.png" alt="crypto" loading="lazy">
+        <div class="pm-method-row" id="pm-list">
+          <div class="pm-method active" data-method="card">
+            <img src="/static/img/payments/card.png" alt="card" loading="lazy">
+          </div>
+          <div class="pm-method" data-method="crypto">
+            <img src="/static/img/payments/crypto.png" alt="crypto" loading="lazy">
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="PaymentMethodModal_paymentInfo__WHyrR">
-      <h4 id="checkout-title">Покупка «{{ plan.title }}»</h4>
-      <div class="PaymentMethodModal_price__aubih">
-        К оплате:
-        <s>{{ plan.old_price }} ₽</s>
-        <b style="margin-left:8px; font-size:1.4rem; color:#9fffa1;">{{ plan.price }} ₽</b>
+      <div class="PaymentMethodModal_paymentInfo__WHyrR">
+        <h4 id="checkout-title">Покупка «{{ plan.title }}»</h4>
+        <div class="PaymentMethodModal_price__aubih">
+          К оплате:
+          <s>{{ plan.old_price }} ₽</s>
+          <b class="price-current">{{ plan.price }} ₽</b>
+        </div>
+        {% if plan.discount %}
+        <div class="PaymentMethodModal_discount__B8seK">Скидка {{ plan.discount|replace('-', '') }}</div>
+        {% endif %}
+
+        <form id="pay-form" action="/payment/start" method="get" style="margin-top:12px;">
+          <input type="hidden" name="plan" value="{{ plan.id }}">
+          <input type="hidden" name="method" value="card" id="pay-method-input">
+          <button type="submit" class="btn btn-gradient btn-lg" id="continue-btn">
+            <i class="fa-solid fa-circle-arrow-right mr-2"></i> Перейти к оплате
+          </button>
+        </form>
+
+        <p class="checkout-note">
+          Оплата обрабатывается через <b>PayPalych</b>. После нажатия кнопки вы будете перенаправлены на защищённую страницу оплаты.
+        </p>
       </div>
-      {% if plan.discount %}
-      <div class="PaymentMethodModal_discount__B8seK">Скидка {{ plan.discount|replace('-', '') }}</div>
-      {% endif %}
-
-      <form id="pay-form" action="/payment/start" method="get" style="margin-top:12px;">
-        <input type="hidden" name="plan" value="{{ plan.id }}">
-        <input type="hidden" name="method" value="card" id="pay-method-input">
-        <button type="submit" class="btn btn-gradient btn-lg" id="continue-btn">
-          <i class="fa-solid fa-circle-arrow-right mr-2"></i> Перейти к оплате
-        </button>
-      </form>
-
-      <p style="margin-top:16px; font-size:0.9rem; color:var(--muted);">
-        Оплата обрабатывается через <b>PayPalych</b>. После нажатия кнопки вы будете перенаправлены на защищённую страницу оплаты.
-      </p>
     </div>
   </div>
 </section>
