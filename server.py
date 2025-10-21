@@ -75,6 +75,8 @@ app.include_router(referrals_router)
 from fastapi.staticfiles import StaticFiles
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/templates_css", StaticFiles(directory="templates_css"), name="templates_css")
+
 
 
 
@@ -517,6 +519,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
