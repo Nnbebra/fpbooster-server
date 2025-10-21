@@ -1,151 +1,240 @@
 # payments.py
 import os
 import hashlib
+import time
 from datetime import date, timedelta
 
 import httpx
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from buy import PLANS   # исправлено: абсолютный импорт
+from buy import PLANS
+from auth.guards import get_current_user
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-# ===== Конфиг PayPalych =====
-SHOP_ID = os.getenv("PAYPALYCH_SHOP_ID")
-API_TOKEN = os.getenv("PAYPALYCH_TOKEN")
-API_URL = "https://paypalych.com/api/create"
+# ===== Конфиг PayPalych (pal24.pro) =====
+SHOP_ID = os.getenv("PAYPALYCH_SHOP_ID")  # пример: "1g7WZ4k2Wz"
+API_TOKEN = os.getenv("PAYPALYCH_TOKEN")  # пример: "24960|E6mYfLC07N..."
+BILL_CREATE_URL = "https://pal24.pro/api/v1/bill/create"
+
+def md5_upper(s: str) -> str:
+    return hashlib.md5(s.encode("utf-8")).hexdigest().upper()
+
+def verify_signature(out_sum: str, inv_id: str, signature_value: str, api_token: str) -> bool:
+    expected = md5_upper(f"{out_sum}:{inv_id}:{api_token}")
+    return expected == (signature_value or "").upper()
 
 
-def make_sign(shop_id: str, amount: int, order_id: str, token: str) -> str:
-    """
-    Генерация подписи для PayPalych.
-    Формула: md5(f"{shop_id}:{amount}:{order_id}:{token}")
-    """
-    sign_str = f"{shop_id}:{amount}:{order_id}:{token}"
-    return hashlib.md5(sign_str.encode()).hexdigest()
+# ===== Success / Fail страницы (POST редирект с подписью) =====
 
-
-# ===== Success / Fail страницы =====
-
-@router.get("/payment/success", response_class=HTMLResponse)
+@router.post("/payment/success", response_class=HTMLResponse)
 async def payment_success(request: Request):
-    return templates.TemplateResponse("payment_success.html", {"request": request})
+    """
+    PayPalych делает POST-редирект сюда после успешной оплаты:
+    fields: InvId, OutSum, CurrencyIn, custom (optional), SignatureValue
+    """
+    form = await request.form()
+    inv_id = form.get("InvId", "")
+    out_sum = form.get("OutSum", "")
+    currency_in = form.get("CurrencyIn", "")
+    signature = form.get("SignatureValue", "")
+    custom = form.get("custom", "")
+
+    # Проверка подписи
+    if not verify_signature(out_sum, inv_id, signature, API_TOKEN):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Можно показать пользователю подтверждение с номером заказа
+    return templates.TemplateResponse(
+        "payment_success.html",
+        {
+            "request": request,
+            "inv_id": inv_id,
+            "amount": out_sum,
+            "currency": currency_in,
+            "custom": custom,
+        },
+    )
 
 
-@router.get("/payment/fail", response_class=HTMLResponse)
+@router.post("/payment/fail", response_class=HTMLResponse)
 async def payment_fail(request: Request):
-    return templates.TemplateResponse("payment_fail.html", {"request": request})
+    """
+    PayPalych делает POST-редирект сюда после неуспешной оплаты:
+    fields: InvId, OutSum, CurrencyIn, custom (optional), SignatureValue
+    """
+    form = await request.form()
+    inv_id = form.get("InvId", "")
+    out_sum = form.get("OutSum", "")
+    currency_in = form.get("CurrencyIn", "")
+    signature = form.get("SignatureValue", "")
+    custom = form.get("custom", "")
+
+    # Проверка подписи
+    if not verify_signature(out_sum, inv_id, signature, API_TOKEN):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    return templates.TemplateResponse(
+        "payment_fail.html",
+        {
+            "request": request,
+            "inv_id": inv_id,
+            "amount": out_sum,
+            "currency": currency_in,
+            "custom": custom,
+        },
+    )
 
 
-# ===== Старт оплаты =====
+# ===== Старт оплаты: создаём счёт и редиректим на страницу оплаты =====
 
 @router.get("/payment/start")
 async def payment_start(request: Request, plan: str = Query(...), method: str = Query("card")):
+    """
+    Создаёт счёт через pal24.pro и редиректит пользователя на link_page_url.
+    - Сумма берётся из PLANS[plan]["price"].
+    - order_id уникален (plan + uid + ip + timestamp).
+    - В custom передаём uid и план для дальнейшей привязки.
+    """
     plan_data = PLANS.get(plan)
     if not plan_data:
         return {"ok": False, "error": "Неверный тариф"}
 
-    amount = plan_data["price"]
-    order_id = f"order_{plan}_{request.client.host}"
+    # Текущий пользователь (если авторизован)
+    try:
+        user = await get_current_user(request.app, request)
+    except Exception:
+        user = None
 
-    sign = make_sign(SHOP_ID, amount, order_id, API_TOKEN)
+    uid = (user.uid if (user and getattr(user, "uid", None)) else None)
+
+    amount = plan_data["price"]
+    # Уникальный идентификатор заказа. InvId вернётся в Success/Fail/Postback.
+    order_id = f"order_{plan}_{uid or 'anon'}_{request.client.host}_{int(time.time())}"
+
+    # custom: безопасная привязка данных, чтобы на postback восстановить контекст
+    # формат: "uid:<uid>|plan:<plan>"
+    custom = f"uid:{uid or 'anon'}|plan:{plan}"
 
     payload = {
-        "shop_id": SHOP_ID,
         "amount": amount,
-        "currency": "RUB",
         "order_id": order_id,
-        "method": method,
-        "desc": f"Покупка {plan_data['title']}",
-        "success_url": "https://fpbooster.shop/payment/success",
-        "fail_url": "https://fpbooster.shop/payment/fail",
-        "result_url": "https://fpbooster.shop/payment/result",
-        "sign": sign,
+        "description": f"Покупка {plan_data['title']}",
+        "type": "normal",
+        "shop_id": SHOP_ID,
+        "currency_in": "RUB",
+        "custom": custom,
+        "payer_pays_commission": 1,  # по желанию: включает комиссию плательщику
+        "name": "Платёж FPBooster",
+        # method в pal24 необязателен; оставляем для будущей логики, если понадобится
     }
 
-    async with httpx.AsyncClient() as client:
-        r = await client.post(API_URL, data=payload)
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(BILL_CREATE_URL, headers=headers, data=payload)
+        if r.status_code == 401:
+            return {"ok": False, "error": "Ошибка авторизации в PayPalych (401)"}
         r.raise_for_status()
         data = r.json()
 
-    if data.get("ok") and "pay_url" in data:
-        return RedirectResponse(url=data["pay_url"])
+    # ожидаем success="true" и link_page_url
+    link_page_url = data.get("link_page_url")
+    success = str(data.get("success", "")).lower() == "true"
+
+    if success and link_page_url:
+        return RedirectResponse(url=link_page_url, status_code=302)
     else:
-        return {"ok": False, "error": data.get("error", "Неизвестная ошибка")}
+        return {"ok": False, "error": data}
 
 
-# ===== Callback-и от платёжки =====
+# ===== Postback: смена статуса заказа в нашей системе =====
 
 @router.post("/payment/result")
 async def payment_result(request: Request):
     """
-    Callback от PayPalych:
-    - принимает uid и plan (30/90/365)
-    - активирует или продлевает лицензию
+    Postback от PayPalych на Result URL (после оплаты):
+    Пример формата:
+    {
+      "Status": "SUCCESS" | "FAIL",
+      "InvId": "...",
+      "OutSum": "18.54",
+      "CurrencyIn": "RUB",
+      "custom": "uid:<...>|plan:<...>",
+      "SignatureValue": "<MD5_UPPER(OutSum:InvId:apiToken)>"
+    }
+    Логика:
+    - Проверяем подпись.
+    - Если SUCCESS: активируем/продлеваем лицензию.
+    - Если FAIL: статуса лицензии не меняем (или помечаем как expired — на твоё усмотрение).
     """
     data = await request.form()
-    uid = data.get("uid")
-    plan = data.get("plan")  # 30 / 90 / 365
 
-    days = {"30": 30, "90": 90, "365": 365}.get(plan, 30)
+    status = (data.get("Status") or "").upper()
+    inv_id = data.get("InvId", "")
+    out_sum = data.get("OutSum", "")
+    currency_in = data.get("CurrencyIn", "")
+    signature = data.get("SignatureValue", "")
+    custom = data.get("custom", "")
 
-    async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT expires FROM licenses WHERE user_uid=$1", uid
-        )
+    # 1) Проверка подписи (обязательна)
+    if not verify_signature(out_sum, inv_id, signature, API_TOKEN):
+        raise HTTPException(status_code=400, detail="Invalid signature")
 
-        if row and row["expires"] and row["expires"] > date.today():
-            # продлеваем от текущей даты окончания
-            new_expires = row["expires"] + timedelta(days=days)
-        else:
-            # новая активация
-            new_expires = date.today() + timedelta(days=days)
+    # 2) Разбор custom: uid и plan
+    uid = None
+    plan = None
+    try:
+        parts = dict(p.split(":", 1) for p in custom.split("|") if ":" in p)
+        uid = parts.get("uid")
+        plan = parts.get("plan")
+    except Exception:
+        uid = None
+        plan = None
 
-        await conn.execute(
-            """
-            UPDATE licenses
-            SET status='active', expires=$1
-            WHERE user_uid=$2
-            """,
-            new_expires,
-            uid,
-        )
+    # 3) Приведение плана к дням
+    days = {"30": 30, "90": 90, "365": 365}.get(plan or "", 30)
 
-    return {"ok": True, "uid": uid, "plan": plan, "expires": str(new_expires)}
+    # 4) Смена статуса в нашей БД
+    if status == "SUCCESS" and uid:
+        async with request.app.state.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT expires FROM licenses WHERE user_uid=$1",
+                uid,
+            )
 
+            if row and row["expires"] and row["expires"] > date.today():
+                new_expires = row["expires"] + timedelta(days=days)
+            else:
+                new_expires = date.today() + timedelta(days=days)
 
-@router.post("/payment/refund")
-async def payment_refund(request: Request):
-    """
-    Callback: возврат — помечает лицензию как expired
-    """
-    data = await request.form()
-    uid = data.get("uid")
+            await conn.execute(
+                """
+                UPDATE licenses
+                SET status='active', expires=$1
+                WHERE user_uid=$2
+                """,
+                new_expires,
+                uid,
+            )
 
-    async with request.app.state.pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE licenses SET status='expired' WHERE user_uid=$1",
-            uid,
-        )
+        return {
+            "ok": True,
+            "status": "SUCCESS",
+            "uid": uid,
+            "plan": plan,
+            "expires": str(new_expires),
+            "inv_id": inv_id,
+            "amount": out_sum,
+            "currency": currency_in,
+        }
 
-    return {"ok": True, "uid": uid, "status": "expired"}
+    elif status == "FAIL":
+        # можешь логировать неуспешную оплату/пытаться повторно
+        return {"ok": False, "status": "FAIL", "inv_id": inv_id}
 
-
-@router.post("/payment/chargeback")
-async def payment_chargeback(request: Request):
-    """
-    Callback: чарджбэк — помечает лицензию как banned
-    """
-    data = await request.form()
-    uid = data.get("uid")
-
-    async with request.app.state.pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE licenses SET status='banned' WHERE user_uid=$1",
-            uid,
-        )
-
-    return {"ok": True, "uid": uid, "status": "banned"}
+    # Неизвестный статус — просто логируем
+    return {"ok": False, "status": status or "UNKNOWN", "inv_id": inv_id}
