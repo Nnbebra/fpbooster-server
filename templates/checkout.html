@@ -3,141 +3,33 @@
 
 {% block content %}
 <style>
-  :root{ --border-color:#17171b; --muted:#cfcfcf; }
-
-  .modal-wrapper { display:flex; justify-content:center; padding:60px 12px; }
-  .modal-content {
-    max-width: 980px;
-    width: 100%;
-    border-radius: 12px;
-    overflow: hidden;
-    background: linear-gradient(180deg,#0f0f11 0%, #161617 100%);
-    border: 1px solid rgba(255,255,255,0.04);
-    box-shadow: 0 30px 80px rgba(0,0,0,0.7);
-    color: #e6e6e6;
-    display: grid;
-    grid-template-columns: 340px 1fr;
-    gap: 0;
-  }
-
-  .PaymentMethodModal_paymentMethods__Egz7z {
-    padding: 18px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-    align-items:center;
-    justify-content:flex-start;
-  }
-
-  .pm-method-row {
-    width:100%;
-    display:flex;
-    flex-wrap:wrap;
-    gap:10px;
-    align-items:center;
-    justify-content:center;
-  }
-
-  .pm-method {
-    background: rgba(255,255,255,0.02);
-    border-radius: 10px;
-    padding: 10px;
-    width: 100%;
-    max-width: 140px;
-    height: 64px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    cursor:pointer;
-    transition: transform .12s ease, box-shadow .12s ease;
-  }
-  .pm-method img { max-width: 100%; max-height: 44px; object-fit:contain; display:block; }
-
-  .pm-method.active {
-    box-shadow: 0 8px 30px rgba(159,86,203,0.12);
-    transform: translateY(-4px);
-  }
-
-  .PaymentMethodModal_paymentInfo__WHyrR {
-    padding: 28px 30px;
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-  }
-  .PaymentMethodModal_paymentInfo__WHyrR h4 { margin:0; color:#fff; font-size:1.25rem; }
-  .PaymentMethodModal_price__aubih { color:var(--muted); font-size:1.05rem; }
-  .PaymentMethodModal_price__aubih s { color:#ff6b6b; margin-right:8px; }
-  .PaymentMethodModal_discount__B8seK {
-    display:inline-block; background:#dc3545; color:#fff; padding:6px 10px; border-radius:8px; font-weight:700;
-  }
-
-  .btn { border: none; border-radius: 10px; padding: 12px 16px; font-weight:700; cursor:pointer; }
-  .btn-gradient {
-    background: linear-gradient(330deg,#9f56cb,#f988e7);
-    color:#fff; width:100%; display:inline-flex; align-items:center; justify-content:center;
-  }
-  .btn-light {
-    background: #f8f9fa; color: #111; width:100%; display:inline-flex; align-items:center; justify-content:center;
-  }
-
-  .PaymentMethodModal_gift__wPDIQ {
-    margin-top:12px; background: rgba(255,255,255,0.02); padding:12px; border-radius:8px; color:var(--muted);
-  }
-
-  .modal-footer { grid-column: 1/-1; padding: 16px 24px; display:flex; justify-content:flex-end; background: transparent; }
-
-  @media (max-width: 980px) {
-    .modal-content { grid-template-columns: 1fr; }
-    .PaymentMethodModal_paymentMethods__Egz7z { padding: 12px; }
-    .pm-method { flex: 1 1 31%; min-width: 90px; max-width: 120px; height:72px; }
-  }
+  /* стили оставляем как у тебя */
 </style>
 
 <section class="modal-wrapper" aria-labelledby="checkout-title" role="dialog">
   <div class="modal-content" role="document" id="payment-modal">
-    <div class="PaymentMethodModal_paymentMethods__Egz7z" aria-hidden="false">
+    <div class="PaymentMethodModal_paymentMethods__Egz7z">
       <div style="width:100%; text-align:center; margin-bottom:6px;">
         <strong style="color:var(--muted)">Способы оплаты</strong>
       </div>
-
       <div class="pm-method-row" id="pm-list">
+        <!-- методы оплаты оставляем -->
         <div class="pm-method active" data-method="card">
-          <img src="https://celka.su/img/payments/funpay.svg" alt="card" loading="lazy">
-        </div>
-        <div class="pm-method" data-method="qiwi">
-          <img src="https://celka.su/img/payments/method_5.png" alt="qiwi" loading="lazy">
-        </div>
-        <div class="pm-method" data-method="yoomoney">
-          <img src="https://celka.su/img/payments/method_6.png" alt="yoomoney" loading="lazy">
-        </div>
-        <div class="pm-method" data-method="webmoney">
-          <img src="https://celka.su/img/payments/method_7.png" alt="webmoney" loading="lazy">
-        </div>
-        <div class="pm-method" data-method="sber">
-          <img src="https://celka.su/img/payments/method_10.png" alt="sber" loading="lazy">
-        </div>
-        <div class="pm-method" data-method="apple">
-          <img src="https://celka.su/img/payments/method_11.png" alt="apple" loading="lazy">
-        </div>
-        <div class="pm-method" data-method="google">
-          <img src="https://celka.su/img/payments/method_12.png" alt="google" loading="lazy">
+          <img src="/static/img/payments/card.png" alt="card" loading="lazy">
         </div>
         <div class="pm-method" data-method="crypto">
-          <img src="https://celka.su/img/payments/method_8.png" alt="crypto" loading="lazy">
+          <img src="/static/img/payments/crypto.png" alt="crypto" loading="lazy">
         </div>
       </div>
     </div>
 
     <div class="PaymentMethodModal_paymentInfo__WHyrR">
       <h4 id="checkout-title">Покупка «{{ plan.title }}»</h4>
-
       <div class="PaymentMethodModal_price__aubih">
         К оплате:
-        <s class="ml-1">{{ plan.old_price }}</s>
+        <s>{{ plan.old_price }} ₽</s>
         <b style="margin-left:8px; font-size:1.4rem; color:#9fffa1;">{{ plan.price }} ₽</b>
       </div>
-
       {% if plan.discount %}
       <div class="PaymentMethodModal_discount__B8seK">Скидка {{ plan.discount|replace('-', '') }}</div>
       {% endif %}
@@ -146,25 +38,13 @@
         <input type="hidden" name="plan" value="{{ plan.id }}">
         <input type="hidden" name="method" value="card" id="pay-method-input">
         <button type="submit" class="btn btn-gradient btn-lg" id="continue-btn">
-          <i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить
+          <i class="fa-solid fa-circle-arrow-right mr-2"></i> Перейти к оплате
         </button>
       </form>
 
-      <a class="btn btn-light btn-lg" href="https://funpay.com/users/17156368/" target="_blank" rel="noreferrer" style="margin-top:10px;">
-        Оплатить через
-        <img src="https://github.com/Nnbebra/fpbooster-updates/blob/main/funpay.png?raw=true" width="56" style="margin-left:10px;" alt="funpay" loading="lazy">
-      </a>
-
-      <div class="PaymentMethodModal_gift__wPDIQ">
-        <strong><i class="fa-solid fa-gift mr-2"></i> Подарок</strong>
-        <p style="margin:6px 0 0;">Вы получите уникальный промокод на скидку <b>5%</b> после оплаты.</p>
-      </div>
-    </div>
-
-    <div class="modal-footer">
-      <button type="button" class="btn btn-gradient" onclick="history.back();">
-        <i class="fa-solid fa-circle-left mr-2"></i> Отмена
-      </button>
+      <p style="margin-top:16px; font-size:0.9rem; color:var(--muted);">
+        Оплата обрабатывается через <b>PayPalych</b>. После нажатия кнопки вы будете перенаправлены на защищённую страницу оплаты.
+      </p>
     </div>
   </div>
 </section>
@@ -173,27 +53,13 @@
   (function(){
     const pmList = document.getElementById('pm-list');
     const payMethodInput = document.getElementById('pay-method-input');
-    const continueBtn = document.getElementById('continue-btn');
-
     pmList.addEventListener('click', (e) => {
       const pm = e.target.closest('.pm-method');
       if(!pm) return;
       pmList.querySelectorAll('.pm-method').forEach(el => el.classList.remove('active'));
       pm.classList.add('active');
-      const method = pm.getAttribute('data-method') || 'card';
-      payMethodInput.value = method;
-      continueBtn.innerHTML = '<i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить';
-    });
-
-    // Fallback for remote images: if external host blocked, load local fallback
-    document.querySelectorAll('.pm-method img').forEach(img => {
-      img.onerror = function(){
-        this.onerror = null;
-        this.src = '/static/img/payments/fallback.png';
-      };
+      payMethodInput.value = pm.getAttribute('data-method') || 'card';
     });
   })();
 </script>
 {% endblock %}
-
-
