@@ -2,9 +2,9 @@
 {% block title %}Оформление заказа — {{ plan.title }}{% endblock %}
 
 {% block content %}
-<!-- Подключаем внешний CSS -->
 <link rel="stylesheet" href="/templates_css/checkout.css">
 
+<main>
 <section class="PaymentMethodModal_container__o1WaO" aria-labelledby="checkout-title" role="dialog">
   <div class="modal-dialog">
     <div class="modal-content" role="document" id="payment-modal">
@@ -33,21 +33,32 @@
         <div class="PaymentMethodModal_discount__B8seK">Скидка {{ plan.discount|replace('-', '') }}</div>
         {% endif %}
 
+        <!-- Кнопка PayPalych -->
         <form id="pay-form" action="/payment/start" method="get" style="margin-top:12px;">
           <input type="hidden" name="plan" value="{{ plan.id }}">
           <input type="hidden" name="method" value="card" id="pay-method-input">
-          <button type="submit" class="btn btn-gradient btn-lg" id="continue-btn">
+          <button type="submit" class="btn btn-gradient btn-lg w-100">
             <i class="fa-solid fa-circle-arrow-right mr-2"></i> Перейти к оплате
           </button>
         </form>
 
+        <!-- Кнопка FunPay -->
+        <a type="button"
+           class="btn btn-lg btn-light w-100 mt-3 mb-4"
+           href="https://funpay.com/users/17156368/"
+           target="_blank" rel="noreferrer">
+          <i class="mr-2"></i>Оплатить через
+          <img src="/static/img/payments/funpay.svg" width="56px" class="ml-2" alt="funpay">
+        </a>
+
         <p class="checkout-note">
-          Оплата обрабатывается через <b>PayPalych</b>. После нажатия кнопки вы будете перенаправлены на защищённую страницу оплаты.
+          Оплата обрабатывается через <b>PayPalych</b> или <b>FunPay</b>. После нажатия кнопки вы будете перенаправлены на защищённую страницу оплаты.
         </p>
       </div>
     </div>
   </div>
 </section>
+</main>
 
 <script>
   (function(){
