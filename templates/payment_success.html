@@ -6,7 +6,13 @@
   <div class="container" style="max-width:640px; margin:0 auto; text-align:center;">
     <div style="background:linear-gradient(330deg,#1e1e22,#151517); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:40px; box-shadow:0 22px 60px rgba(0,0,0,0.65);">
       <h2 style="color:#28a745; margin-bottom:20px;">Оплата прошла успешно!</h2>
-      <p style="color:#ccc; margin-bottom:24px;">Спасибо за покупку лицензии FPBooster. Данные о вашей оплате уже зафиксированы.</p>
+      <p style="color:#ccc; margin-bottom:12px;">Спасибо за покупку лицензии FPBooster.</p>
+      {% if inv_id %}
+        <p style="color:#9fffa1; margin-bottom:12px;">Номер заказа: <b>{{ inv_id }}</b></p>
+      {% endif %}
+      {% if amount %}
+        <p style="color:#9fffa1; margin-bottom:24px;">Сумма: <b>{{ amount }} {{ currency }}</b></p>
+      {% endif %}
       <a href="/buy" class="btn btn-gradient" style="text-decoration:none; padding:12px 20px; border-radius:10px; font-weight:700;">
         ← Вернуться к тарифам
       </a>
