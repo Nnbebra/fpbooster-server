@@ -1,11 +1,6 @@
 /* JavaScript/main.js
-   Responsibilities:
-   - Navbar shrink on scroll
-   - Smooth anchor scrolling for local anchors
-   - Lightweight hero image parallax/visibility polishing
-   - Hydrate update stats (retry logic)
+   - navbar shrink, smooth anchors, hero parallax, hydrate stats
 */
-
 (function () {
   "use strict";
 
@@ -24,7 +19,7 @@
   }
   window.addEventListener('scroll', onScrollNav, { passive: true });
 
-  // Smooth anchor scrolling
+  // Smooth anchor scrolling for local anchors
   document.addEventListener('click', function (e) {
     const a = e.target.closest('a[href^="#"]');
     if (!a) return;
@@ -56,7 +51,7 @@
     }, { passive: true });
   }
 
-  // Hydrate small interactive pieces: update stats fetch (retry once)
+  // Hydrate update/stats with retry
   (function hydrateStats() {
     const url = '/api/update';
     const apply = (data) => {
@@ -64,10 +59,10 @@
       if (data.version && document.getElementById('upd-ver')) document.getElementById('upd-ver').textContent = data.version;
       if (data.changelog && document.getElementById('upd-changelog')) document.getElementById('upd-changelog').textContent = data.changelog;
       if (data.stats){
-        if(data.stats.users) document.getElementById('stat-users').textContent = data.stats.users;
-        if(data.stats.runs) document.getElementById('stat-runs').textContent = data.stats.runs;
-        if(data.stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = data.stats.subs;
-        if(data.stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = data.stats.rates;
+        if (data.stats.users && document.getElementById('stat-users')) document.getElementById('stat-users').textContent = data.stats.users;
+        if (data.stats.runs && document.getElementById('stat-runs')) document.getElementById('stat-runs').textContent = data.stats.runs;
+        if (data.stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = data.stats.subs;
+        if (data.stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = data.stats.rates;
       }
     };
     fetch(url, { cache: 'no-store' }).then(r => {
@@ -75,12 +70,23 @@
       return r.json();
     }).then(apply).catch(() => {
       setTimeout(() => {
-        fetch(url, { cache: 'no-store' }).then(r => r.ok && r.json()).then(apply).catch(() => { /* silent */ });
+        fetch(url, { cache: 'no-store' }).then(r => r.ok && r.json()).then(apply).catch(() => {});
       }, 1200);
     });
   })();
 
-  // Keyboard focus ring helper
+  // navbar toggler behavior
+  const toggler = document.querySelector('.navbar-toggler');
+  const navRight = document.querySelector('.nav-right');
+  if (toggler && navRight) {
+    toggler.addEventListener('click', () => {
+      const expanded = toggler.getAttribute('aria-expanded') === 'true';
+      toggler.setAttribute('aria-expanded', String(!expanded));
+      navRight.style.display = navRight.style.display === 'flex' ? 'none' : 'flex';
+    });
+  }
+
+  // keyboard focus ring helper
   (function manageFocusRing() {
     function handleFirstTab(e) {
       if (e.key === 'Tab') {
