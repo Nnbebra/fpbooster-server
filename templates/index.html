@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
-  <!-- Подключаем внешний CSS -->
+  <!-- Основной CSS для index (вынесён в templates_css) -->
   <link rel="stylesheet" href="/templates_css/index.css">
 </head>
 <body>
@@ -77,7 +77,7 @@
               <div class="visual-frame" role="img" aria-label="Интерфейс FPBooster">
                 <img src="/static/Ui.png?v=2" alt="UI FPBooster" loading="lazy"
                      onerror="this.onerror=null;this.src='/static/Ui.png';"
-                     class="img-center">
+                     class="img-center" data-fallback="/static/Ui.png">
               </div>
               <div class="visual-caption">Красивый интерфейс и премиальные темы; UI адаптирован под тёмную тему сайта</div>
             </div>
@@ -197,26 +197,26 @@
     </div>
   </footer>
 
+  <!-- Скрипты (помести файлы в JavaScript/main.js и JavaScript/ui.js) -->
+  <script defer src="/JavaScript/main.js"></script>
+  <script defer src="/JavaScript/ui.js"></script>
+
   <script>
+    // Лёгкий fallback для подгрузки данных если main.js/ui.js не отработали
     (function(){
       fetch('/api/update', {cache: 'no-store'}).then(r=>{
         if(!r.ok) throw new Error('no update');
         return r.json();
       }).then(data=>{
-        const ver = data.LATEST_VERSION || data.version || data.latest_version || null;
-        const changelog = data.UPDATE_CHANGELOG || data.changelog || data.UPDATE_LOG || null;
-        const stats = data.stats || null;
-
-        if(ver) document.getElementById('upd-ver').textContent = ver;
-        if(changelog) document.getElementById('upd-changelog').textContent = changelog;
-
-        if(stats){
-          if(stats.users) document.getElementById('stat-users').textContent = stats.users;
-          if(stats.runs) document.getElementById('stat-runs').textContent = stats.runs;
-          if(stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = stats.subs;
-          if(stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = stats.rates;
+        if(data.version && document.getElementById('upd-ver')) document.getElementById('upd-ver').textContent = data.version;
+        if(data.changelog && document.getElementById('upd-changelog')) document.getElementById('upd-changelog').textContent = data.changelog;
+        if(data.stats){
+          if(data.stats.users) document.getElementById('stat-users').textContent = data.stats.users;
+          if(data.stats.runs) document.getElementById('stat-runs').textContent = data.stats.runs;
+          if(data.stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = data.stats.subs;
+          if(data.stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = data.stats.rates;
         }
-      }).catch(()=>{ /* keep defaults */ });
+      }).catch(()=>{ /* main.js/ui.js могут заново попытаться */ });
     })();
   </script>
 </body>
