@@ -1,17 +1,15 @@
-/* main.js
+/* JavaScript/main.js
    Responsibilities:
    - Navbar shrink on scroll
-   - Smooth scrolling for anchored links
+   - Smooth anchor scrolling for local anchors
    - Lightweight hero image parallax/visibility polishing
-   - Hydrate update stats (keeps existing fetch fallback)
+   - Hydrate update stats (retry logic)
 */
 
 (function () {
   "use strict";
 
-  // Navbar compacting on scroll
   const navbar = document.querySelector('.navbar');
-  let lastScroll = 0;
   const NAV_SHRINK = 80;
 
   function onScrollNav() {
@@ -23,7 +21,6 @@
       navbar.classList.remove('nav-compact');
       navbar.style.height = '72px';
     }
-    lastScroll = s;
   }
   window.addEventListener('scroll', onScrollNav, { passive: true });
 
@@ -40,16 +37,14 @@
     window.scrollTo({ top: top, behavior: 'smooth' });
   });
 
-  // Hero subtle parallax (runs lightweight)
+  // Hero parallax
   const heroBg = document.querySelector('.hero-bg');
   if (heroBg) {
     let ticking = false;
     function heroParallax() {
       const y = window.scrollY || window.pageYOffset;
       const t = Math.min(1, y / 800);
-      // scale back brightness slightly with scroll to keep contrast
       heroBg.style.filter = `contrast(${0.92 - t * 0.06}) saturate(${1.04 - t * 0.06}) brightness(${0.56 - t * 0.08})`;
-      // small translate for parallax illusion
       heroBg.style.transform = `translateX(-50%) translateY(${Math.round(y * 0.08)}px)`;
       ticking = false;
     }
@@ -68,19 +63,24 @@
       if (!data) return;
       if (data.version && document.getElementById('upd-ver')) document.getElementById('upd-ver').textContent = data.version;
       if (data.changelog && document.getElementById('upd-changelog')) document.getElementById('upd-changelog').textContent = data.changelog;
+      if (data.stats){
+        if(data.stats.users) document.getElementById('stat-users').textContent = data.stats.users;
+        if(data.stats.runs) document.getElementById('stat-runs').textContent = data.stats.runs;
+        if(data.stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = data.stats.subs;
+        if(data.stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = data.stats.rates;
+      }
     };
     fetch(url, { cache: 'no-store' }).then(r => {
       if (!r.ok) throw new Error('no update');
       return r.json();
     }).then(apply).catch(() => {
-      // one retry
       setTimeout(() => {
         fetch(url, { cache: 'no-store' }).then(r => r.ok && r.json()).then(apply).catch(() => { /* silent */ });
       }, 1200);
     });
   })();
 
-  // Small accessibility: add focus outlines for keyboard users
+  // Keyboard focus ring helper
   (function manageFocusRing() {
     function handleFirstTab(e) {
       if (e.key === 'Tab') {
