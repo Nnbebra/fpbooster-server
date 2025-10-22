@@ -1,28 +1,32 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>FPBooster — Лучший софт для FunPay</title>
   <meta name="description" content="FPBooster — автоматизация поднятия лотов на FunPay: автоподъём, расписание, промокоды, апдейтер и премиальный UI." />
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
-  <!-- Основной CSS для index (вынесён в templates_css) -->
+  <!-- CSS -->
   <link rel="stylesheet" href="/templates_css/index.css">
 </head>
 <body>
-  <header class="navbar" role="banner" aria-label="Главная навигация">
-    <div class="container header-inner">
-      <div class="left-group">
-        <a class="brand" href="/" aria-label="FPBooster — главная">
-          <span>FPBooster</span>
-          <span id="version-badge" class="ver">Beta</span>
-        </a>
-      </div>
+  <noscript>Вам нужно включить JavaScript, чтобы пользоваться сайтом.</noscript>
 
-      <div class="right-group">
+  <header class="navbar" role="banner" aria-label="Главная навигация">
+    <div class="container container-xl header-inner">
+      <a class="brand" href="/" aria-label="FPBooster — главная">
+        <span>FPBooster</span>
+        <span id="version-badge" class="ver">Beta</span>
+      </a>
+
+      <button class="navbar-toggler" aria-label="Toggle navigation" aria-expanded="false">
+        <span class="hamburger"></span>
+      </button>
+
+      <nav class="nav-right">
         <a class="nav-link" href="/support" target="_blank" rel="noopener"><i class="fa-solid fa-headset"></i> Поддержка</a>
         <a class="nav-link" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить</a>
 
@@ -32,41 +36,37 @@
           <a class="btn-cta" href="/login"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
           <a class="btn-outline" href="/register"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</a>
         {% endif %}
-      </div>
+      </nav>
     </div>
   </header>
 
-  <main>
+  <main id="root">
     <section class="hero" role="region" aria-labelledby="hero-title">
       <div class="hero-bg" aria-hidden="true"></div>
 
-      <div class="container" style="position:relative;z-index:2;">
+      <div class="container container-xl" style="position:relative;z-index:2;">
         <div class="hero-layout">
           <div class="hero-left-wrap">
             <div class="hero-panel" role="article" aria-labelledby="hero-title">
-              <div class="hero-grid">
-                <div class="hero-left">
-                  <h1 id="hero-title">Лучший софт для сайта Фанпэй</h1>
-                  <p>FPBooster включает автоподъём лотов, гибкое расписание, управление Session ID, поддержку промокодов, встроенный апдейтер и премиальные темы. Инструменты аналитики и диагностики помогут увеличить эффективность работы продавца.</p>
+              <h1 id="hero-title">Лучший софт для сайта Фанпэй</h1>
+              <p class="lead">FPBooster включает автоподъём лотов, гибкое расписание, управление Session ID, поддержку промокодов, встроенный апдейтер и премиальные темы. Инструменты аналитики и диагностики помогут увеличить эффективность работы продавца.</p>
 
-                  <div class="btns" role="group" aria-label="Основные действия">
-                    {% if user %}
-                      <a class="btn-cta" href="/cabinet" role="button"><i class="fa-solid fa-user"></i> Личный кабинет</a>
-                    {% else %}
-                      <a class="btn-cta" href="/login" role="button"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
-                      <a class="btn-outline" href="/register" role="button"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</a>
-                    {% endif %}
-                      <a class="btn-outline" href="https://t.me/funpaybo0sterr" role="button" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
-                  </div>
+              <div class="btns" role="group" aria-label="Основные действия">
+                {% if user %}
+                  <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
+                {% else %}
+                  <a class="btn-cta" href="/login"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
+                  <a class="btn-outline" href="/register"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</a>
+                {% endif %}
+                <a class="btn-outline" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
+              </div>
 
-                  <div class="stats-row">
-                    <div class="card pill">
-                      <strong>Пользователей:</strong> <span id="stat-users">532</span>
-                    </div>
-                    <div class="card pill">
-                      <strong>Запусков клиента:</strong> <span id="stat-runs">5752</span>
-                    </div>
-                  </div>
+              <div class="stats-row">
+                <div class="card pill">
+                  <strong>Пользователей:</strong> <span id="stat-users">532</span>
+                </div>
+                <div class="card pill">
+                  <strong>Запусков клиента:</strong> <span id="stat-runs">5752</span>
                 </div>
               </div>
             </div>
@@ -86,8 +86,8 @@
       </div>
     </section>
 
-    <section aria-labelledby="why-title">
-      <div class="container">
+    <section class="features" aria-labelledby="why-title">
+      <div class="container container-xl">
         <div class="card">
           <h2 id="why-title" class="section-title">Почему выбирают нас?</h2>
           <p class="section-subtitle">Инструмент, созданный продавцами для продавцов на FunPay: простая настройка, быстрый результат и гарантия обновлений.</p>
@@ -127,15 +127,52 @@
       </div>
     </section>
 
-    <section aria-labelledby="update-title">
-      <div class="container">
+    <section class="video" aria-labelledby="video-title">
+      <div class="container container-xl">
+        <h2 id="video-title">Видеообзор</h2>
+        <p class="section-subtitle">Ниже вы можете посмотреть небольшой геймплей с нашим клиентом.</p>
+        <div class="video-wrap">
+          <iframe title="Обзор FPBooster" src="https://www.youtube.com/embed/GNgp5kaQ1ZA" frameborder="0" allowfullscreen></iframe>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats" aria-labelledby="stats-title">
+      <div class="container container-xl">
+        <div class="grid">
+          <div class="stat card">
+            <i class="fa-solid fa-users fa-2x"></i>
+            <div class="stat-num" id="stat-users-hero">532</div>
+            <div class="stat-label">Пользователей</div>
+          </div>
+          <div class="stat card">
+            <i class="fa-solid fa-circle-play fa-2x"></i>
+            <div class="stat-num" id="stat-runs-hero">5752</div>
+            <div class="stat-label">Запусков клиента</div>
+          </div>
+          <div class="stat card">
+            <i class="fa-solid fa-star fa-2x"></i>
+            <div class="stat-num">1752</div>
+            <div class="stat-label">Оценок</div>
+          </div>
+          <div class="stat card">
+            <i class="fa-solid fa-calendar-days fa-2x"></i>
+            <div class="stat-num">1111</div>
+            <div class="stat-label">Дней с открытия</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="update" aria-labelledby="update-title">
+      <div class="container container-xl">
         <div class="card update-flex">
           <div class="update-card update-box">
             <div class="update-title">Последнее обновление</div>
             <div class="update-meta">
               <div><strong>Версия:</strong> <span id="upd-ver">1.4</span></div>
               <div><strong>Доступ к скачиванию:</strong> через личный кабинет после покупки</div>
-              <div class="update-support"><strong>Вопросы и идеи:</strong> пишите гл. кодеру в Telegram: <strong>@Manavoid_228</strong></div>
+              <div class="update-support"><strong>Вопросы и идеи:</strong> <strong>@Manavoid_228</strong></div>
               <details class="mt-6">
                 <summary>Changelog</summary>
                 <div id="upd-changelog" class="changelog">Вся информация об обновлениях ведётся в официальном телеграм‑канале.</div>
@@ -154,8 +191,8 @@
       </div>
     </section>
 
-    <section aria-labelledby="contact-title">
-      <div class="container">
+    <section class="contact" aria-labelledby="contact-title">
+      <div class="container container-xl">
         <div class="card contact-flex">
           <div>
             <h3 id="contact-title" class="contact-title">Поддержка и контакты</h3>
@@ -171,7 +208,7 @@
   </main>
 
   <footer class="footer" role="contentinfo">
-    <div class="footer-inner">
+    <div class="footer-inner container-xl">
       <div class="footer-top">
         <div class="footer-brand">
           <div class="footer-brand-title">FPBooster</div>
@@ -179,14 +216,14 @@
         </div>
 
         <div class="footer-links">
-          <a class="nav-link" href="/support">Связаться</a>
-          <a class="nav-link" href="/buy">Купить</a>
-          <a class="nav-link" href="/docs">Документация</a>
+          <a class="Footer_link" href="/">Главная</a>
+          <a class="Footer_link" href="/buy">Купить</a>
+          <a class="Footer_link" href="/support">Поддержка</a>
         </div>
 
         <div class="footer-stats" aria-hidden="false">
-          <div class="stat-pill"><i class="fa-solid fa-user"></i>&nbsp;Подписчиков: <span id="footer-subs">2 992</span></div>
-          <div class="stat-pill"><i class="fa-solid fa-star"></i>&nbsp;Оценок: <span id="footer-rates">1 752</span></div>
+          <div class="stat-pill"><i class="fa-solid fa-user"></i> <span id="footer-subs">2 992</span></div>
+          <div class="stat-pill"><i class="fa-solid fa-star"></i> <span id="footer-rates">1 752</span></div>
         </div>
       </div>
 
@@ -197,12 +234,12 @@
     </div>
   </footer>
 
-  <!-- Скрипты (помести файлы в JavaScript/main.js и JavaScript/ui.js) -->
+  <!-- Scripts -->
   <script defer src="/JavaScript/main.js"></script>
   <script defer src="/JavaScript/ui.js"></script>
 
   <script>
-    // Лёгкий fallback для подгрузки данных если main.js/ui.js не отработали
+    // fallback fetch if scripts don't hydrate
     (function(){
       fetch('/api/update', {cache: 'no-store'}).then(r=>{
         if(!r.ok) throw new Error('no update');
@@ -216,7 +253,7 @@
           if(data.stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = data.stats.subs;
           if(data.stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = data.stats.rates;
         }
-      }).catch(()=>{ /* main.js/ui.js могут заново попытаться */ });
+      }).catch(()=>{});
     })();
   </script>
 </body>
