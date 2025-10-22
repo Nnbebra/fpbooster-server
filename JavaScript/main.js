@@ -1,96 +1,100 @@
-// main.js
-// 1) Hero background scroll depth effect + blending
-// 2) Ensure interactive hitboxes respond well (small UX helpers)
-// 3) Provide defaults for stats if API doesn't override
+/* JavaScript/main.js
+   - navbar shrink, smooth anchors, hero parallax, hydrate stats
+*/
 (function () {
   "use strict";
 
-  // debounce helper
-  function throttle(fn, wait) {
-    let last = 0;
-    return function () {
-      const now = Date.now();
-      if (now - last >= wait) {
-        last = now;
-        fn.apply(this, arguments);
-      }
-    };
+  const navbar = document.querySelector('.navbar');
+  const NAV_SHRINK = 80;
+
+  function onScrollNav() {
+    const s = window.scrollY || window.pageYOffset;
+    if (s > NAV_SHRINK) {
+      navbar.classList.add('nav-compact');
+      navbar.style.height = '60px';
+    } else {
+      navbar.classList.remove('nav-compact');
+      navbar.style.height = '72px';
+    }
   }
+  window.addEventListener('scroll', onScrollNav, { passive: true });
 
-  // Hero depth effect
-  const heroBg = document.querySelector('.hero-bg');
-  if (heroBg) {
-    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-    const onScroll = throttle(function () {
-      const docH = document.documentElement.scrollHeight - window.innerHeight;
-      const pos = docH > 0 ? window.scrollY / docH : 0;
-      // add / remove class at threshold while also applying smooth transform
-      if (pos > 0.18) heroBg.classList.add('depth-dark'); else heroBg.classList.remove('depth-dark');
-
-      const pct = clamp(pos * 1.2, 0, 1);
-      heroBg.style.filter = `contrast(${1 - 0.12 * pct}) saturate(${1 - 0.04 * pct}) brightness(${1 - 0.42 * pct})`;
-      heroBg.style.transform = `translateY(${ -6 * pct }px) scale(${1 + 0.02 * pct})`;
-      heroBg.style.opacity = `${1 - 0.06 * pct}`;
-    }, 80);
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-    // initial call
-    onScroll();
-  }
-
-  // Small UX: expand clickable area on small controls (adds aria for screen readers)
-  document.querySelectorAll('.pm-method, .nav-link, .btn-outline, .btn-cta, .btn-gradient').forEach(el => {
-    el.setAttribute('tabindex', el.getAttribute('tabindex') || '0');
-    if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+  // Smooth anchor scrolling for local anchors
+  document.addEventListener('click', function (e) {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    const id = a.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (!el) return;
+    e.preventDefault();
+    const offset = navbar ? navbar.offsetHeight : 72;
+    const top = el.getBoundingClientRect().top + window.scrollY - offset - 18;
+    window.scrollTo({ top: top, behavior: 'smooth' });
   });
 
-  // Set conservative default stats to match requested values (will be overwritten by API if available)
-  const defaultValues = {
-    statRuns: '2393',
-    footerRates: '844',
-    daysOpen: '68'
-  };
+  // Hero parallax
+  const heroBg = document.querySelector('.hero-bg');
+  if (heroBg) {
+    let ticking = false;
+    function heroParallax() {
+      const y = window.scrollY || window.pageYOffset;
+      const t = Math.min(1, y / 800);
+      heroBg.style.filter = `contrast(${0.92 - t * 0.06}) saturate(${1.04 - t * 0.06}) brightness(${0.56 - t * 0.08})`;
+      heroBg.style.transform = `translateX(-50%) translateY(${Math.round(y * 0.08)}px)`;
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(heroParallax);
+      }
+    }, { passive: true });
+  }
 
-  (function applyDefaults() {
-    const elRuns = document.getElementById('stat-runs');
-    const elRates = document.getElementById('footer-rates');
-    const elDays = document.getElementById('days-open');
-
-    if (elRuns && (!elRuns.textContent || elRuns.textContent.trim() === '')) elRuns.textContent = defaultValues.statRuns;
-    if (elRuns && elRuns.textContent && elRuns.textContent.trim() === '5752') elRuns.textContent = defaultValues.statRuns; // replace older default if present
-
-    if (elRates && (!elRates.textContent || elRates.textContent.trim() === '')) elRates.textContent = defaultValues.footerRates;
-    if (elRates && elRates.textContent && elRates.textContent.trim() === '1752') elRates.textContent = defaultValues.footerRates; // safe replace
-
-    if (elDays && (!elDays.textContent || elDays.textContent.trim() === '')) elDays.textContent = defaultValues.daysOpen;
-    if (elDays && elDays.textContent && elDays.textContent.trim() === '1111') elDays.textContent = defaultValues.daysOpen; // safe replace
+  // Hydrate update/stats with retry
+  (function hydrateStats() {
+    const url = '/api/update';
+    const apply = (data) => {
+      if (!data) return;
+      if (data.version && document.getElementById('upd-ver')) document.getElementById('upd-ver').textContent = data.version;
+      if (data.changelog && document.getElementById('upd-changelog')) document.getElementById('upd-changelog').textContent = data.changelog;
+      if (data.stats){
+        if (data.stats.users && document.getElementById('stat-users')) document.getElementById('stat-users').textContent = data.stats.users;
+        if (data.stats.runs && document.getElementById('stat-runs')) document.getElementById('stat-runs').textContent = data.stats.runs;
+        if (data.stats.subs && document.getElementById('footer-subs')) document.getElementById('footer-subs').textContent = data.stats.subs;
+        if (data.stats.rates && document.getElementById('footer-rates')) document.getElementById('footer-rates').textContent = data.stats.rates;
+      }
+    };
+    fetch(url, { cache: 'no-store' }).then(r => {
+      if (!r.ok) throw new Error('no update');
+      return r.json();
+    }).then(apply).catch(() => {
+      setTimeout(() => {
+        fetch(url, { cache: 'no-store' }).then(r => r.ok && r.json()).then(apply).catch(() => {});
+      }, 1200);
+    });
   })();
 
-  // Payment modal small behavior (if present on page)
-  (function pmBehavior() {
-    const pmList = document.getElementById('pm-list');
-    const payMethodInput = document.getElementById('pay-method-input');
-    const continueBtn = document.getElementById('continue-btn');
-    if (!pmList) return;
-
-    pmList.addEventListener('click', (e) => {
-      const pm = e.target.closest('.pm-method');
-      if (!pm) return;
-      pmList.querySelectorAll('.pm-method').forEach(el => el.classList.remove('active'));
-      pm.classList.add('active');
-      const method = pm.getAttribute('data-method') || 'card';
-      if (payMethodInput) payMethodInput.value = method;
-      if (continueBtn) continueBtn.innerHTML = '<i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить';
+  // navbar toggler behavior
+  const toggler = document.querySelector('.navbar-toggler');
+  const navRight = document.querySelector('.nav-right');
+  if (toggler && navRight) {
+    toggler.addEventListener('click', () => {
+      const expanded = toggler.getAttribute('aria-expanded') === 'true';
+      toggler.setAttribute('aria-expanded', String(!expanded));
+      navRight.style.display = navRight.style.display === 'flex' ? 'none' : 'flex';
     });
+  }
 
-    // fallback images handling
-    pmList.querySelectorAll('img').forEach(img => {
-      img.addEventListener('error', function () {
-        if (this.dataset._fallbackApplied) return;
-        this.dataset._fallbackApplied = '1';
-        this.src = '/static/img/payments/fallback.png';
-      });
-    });
+  // keyboard focus ring helper
+  (function manageFocusRing() {
+    function handleFirstTab(e) {
+      if (e.key === 'Tab') {
+        document.body.classList.add('user-is-tabbing');
+        window.removeEventListener('keydown', handleFirstTab);
+      }
+    }
+    window.addEventListener('keydown', handleFirstTab);
   })();
 
 })();
