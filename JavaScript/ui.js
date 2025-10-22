@@ -1,20 +1,15 @@
 /* JavaScript/ui.js
-   Responsibilities:
-   - Payment method selection widget (reusable)
-   - Image fallback handler for remote assets (data-fallback attribute)
-   - Lightweight button press micro-interactions
+   - Payment selector, image fallback, button micro-interactions
 */
-
 (function () {
   "use strict";
 
-  // Payment method selector (reusable)
-  function initPaymentSelector(root) {
-    const pmList = document.querySelector('#pm-list');
-    const methodInput = document.querySelector('#pay-method-input');
-    const continueBtn = document.querySelector('#continue-btn');
-
+  // Payment method selector (generic)
+  function initPaymentSelector() {
+    const pmList = document.getElementById('pm-list');
     if (!pmList) return;
+    const methodInput = document.getElementById('pay-method-input');
+    const continueBtn = document.getElementById('continue-btn');
 
     pmList.addEventListener('click', (e) => {
       const pm = e.target.closest('.pm-method');
@@ -24,15 +19,12 @@
       const method = pm.getAttribute('data-method') || 'card';
       if (methodInput) methodInput.value = method;
       if (continueBtn) {
-        continueBtn.innerHTML = '<i class="fa-solid fa-circle-arrow-right mr-2"></i> Продолжить';
         continueBtn.dataset.method = method;
       }
     }, { passive: true });
 
-    // Ensure pm-method elements are focusable and keyboard accessible
-    pmList.querySelectorAll('.pm-method').forEach((el, i) => {
-      el.setAttribute('tabindex', '0');
-    });
+    // keyboard accessible
+    pmList.querySelectorAll('.pm-method').forEach((el) => el.setAttribute('tabindex', '0'));
     pmList.addEventListener('keydown', (e) => {
       const items = Array.from(pmList.querySelectorAll('.pm-method'));
       if (!items.length) return;
@@ -40,33 +32,29 @@
       let idx = items.indexOf(active);
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         idx = (idx + 1) % items.length;
-        items[idx].focus();
-        items[idx].click();
-        e.preventDefault();
+        items[idx].focus(); items[idx].click(); e.preventDefault();
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         idx = (idx - 1 + items.length) % items.length;
-        items[idx].focus();
-        items[idx].click();
-        e.preventDefault();
+        items[idx].focus(); items[idx].click(); e.preventDefault();
       } else if (e.key === 'Enter') {
         active.click();
       }
     });
   }
 
-  // Fallback loader for images with data-fallback attr
+  // image fallback for images with data-fallback
   function initImageFallback(root = document) {
     const imgs = root.querySelectorAll('img[data-fallback]');
     imgs.forEach(img => {
       img.addEventListener('error', function onErr() {
         img.removeEventListener('error', onErr);
-        const fb = img.getAttribute('data-fallback') || '/static/img/fallback.png';
+        const fb = img.getAttribute('data-fallback') || '/static/Ui.png';
         if (img.src !== fb) img.src = fb;
       });
     });
   }
 
-  // Micro interaction on pointer down
+  // button micro interaction
   function initButtonPress() {
     document.addEventListener('pointerdown', (e) => {
       const btn = e.target.closest('.btn, .btn-cta, .btn-outline, .btn-gradient, .btn-light');
@@ -83,7 +71,6 @@
     });
   }
 
-  // Init on DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       initPaymentSelector();
@@ -96,7 +83,6 @@
     initButtonPress();
   }
 
-  // Expose lightweight API for manual hydration
   window.FPBooster = window.FPBooster || {};
   window.FPBooster.hydrateStats = function (data) {
     if (!data) return;
