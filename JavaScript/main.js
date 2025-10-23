@@ -1,6 +1,7 @@
 /* JavaScript/main.js
-   - navbar shrink, smooth anchors, hero parallax + progressive darkening blend
-   - hydrate stats with retry, default replacements
+   - navbar shrink, smooth anchors
+   - hero parallax + progressive darkening + bottom blend
+   - hydrate stats with retry + default replacements
    - small UX helpers
 */
 (function () {
@@ -55,23 +56,25 @@
     const onHeroScroll = throttle(function () {
       const docH = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
       const pos = clamp((window.scrollY || 0) / docH, 0, 1);
-      const pct = clamp(pos * 1.35, 0, 1);
+      const pct = clamp(pos * 1.5, 0, 1);
 
-      // progressively increase dim variable for CSS
+      // progressively increase dim variable for CSS overlay
       heroBg.style.setProperty('--hero-dim', String(pct));
 
-      // slight translate and subtle scale down to feel "farther away"
-      heroBg.style.transform = `translateX(-50%) translateY(${Math.round(-8 * pct)}px) scale(${1 - 0.01 * pct})`;
+      // subtle translate up and scale down to feel "farther"
+      const translateY = Math.round(-12 * pct);
+      const scale = 1 - 0.008 * pct;
+      heroBg.style.transform = `translateX(-50%) translateY(${translateY}px) scale(${scale})`;
 
       // gently darken and desaturate with scroll to highlight foreground
-      const contrast = 0.90 - 0.06 * pct;
-      const saturate = 1.02 - 0.06 * pct;
-      const brightness = 0.50 - 0.12 * pct;
+      const contrast = 0.88 - 0.10 * pct;
+      const saturate = 0.98 - 0.10 * pct;
+      const brightness = 0.48 - 0.16 * pct;
       heroBg.style.filter = `contrast(${contrast}) saturate(${saturate}) brightness(${brightness})`;
 
-      // state toggle near deeper scroll
-      if (pos > 0.22) heroBg.classList.add('depth-dark'); else heroBg.classList.remove('depth-dark');
-    }, 70);
+      // add state near deeper scroll
+      heroBg.classList.toggle('depth-dark', pos > 0.22);
+    }, 60);
     window.addEventListener('scroll', onHeroScroll, { passive: true });
     onHeroScroll();
   }
