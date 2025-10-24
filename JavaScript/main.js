@@ -1,7 +1,7 @@
 /* JavaScript/main.js
    - navbar shrink, smooth anchors
    - hero parallax + progressive darkening + bottom blend
-   - hydrate stats with retry + responsive toggler safety
+   - hydrate stats with retry + small UX helpers
 */
 (function () {
   "use strict";
@@ -46,28 +46,26 @@
   // hero parallax + progressive darkening and distant feel
   const heroBg = document.querySelector('.hero-bg');
   if (heroBg) {
-    // use requestAnimationFrame + throttle for smooth updates
     let raf = null;
     function updateHero(scrollPos) {
       const docH = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
       const pos = clamp(scrollPos / docH, 0, 1);
-      const pct = clamp(pos * 1.5, 0, 1);
+      const pct = clamp(pos * 1.35, 0, 1);
 
-      // update CSS variable used by overlay gradients
+      // css variable used by overlay
       heroBg.style.setProperty('--hero-dim', String(pct));
 
-      // subtle translate up and scale down to feel "farther"
-      const translateY = Math.round(-12 * pct);
+      // translate + small scale change
+      const translateY = Math.round(-10 * pct);
       const scale = 1 - 0.01 * pct;
       heroBg.style.transform = `translateX(-50%) translateY(${translateY}px) scale(${scale})`;
 
-      // progressively darken/desaturate to highlight foreground
-      const contrast = 0.88 - 0.10 * pct;
-      const saturate = 0.98 - 0.14 * pct;
-      const brightness = 0.48 - 0.18 * pct;
+      // tuned filter values
+      const contrast = 0.90 - 0.06 * pct;
+      const saturate = 1.02 - 0.06 * pct;
+      const brightness = 0.50 - 0.12 * pct;
       heroBg.style.filter = `contrast(${contrast}) saturate(${saturate}) brightness(${brightness})`;
 
-      // toggle deeper state for tiny additional polish
       heroBg.classList.toggle('depth-dark', pos > 0.22);
     }
 
@@ -78,13 +76,8 @@
     }, 40);
 
     window.addEventListener('scroll', onScroll, { passive: true });
-    // initialize immediately
     updateHero(window.scrollY || window.pageYOffset);
-
-    // ensure hero updates on resize (document height changes)
-    window.addEventListener('resize', function () {
-      updateHero(window.scrollY || window.pageYOffset);
-    }, { passive: true });
+    window.addEventListener('resize', () => updateHero(window.scrollY || window.pageYOffset), { passive: true });
   }
 
   // focus ring for keyboard users
@@ -98,7 +91,7 @@
     window.addEventListener('keydown', handleFirstTab);
   })();
 
-  // default stat replacements (ensure requested numbers)
+  // default stat replacements
   (function applyStatDefaults() {
     const replacements = [
       { ids: ['stat-runs', 'stat-runs-hero'], from: '5752', to: '2393' },
@@ -140,7 +133,7 @@
     });
   })();
 
-  // responsive navbar toggler: visible only on small screens; safety guard so it won't affect desktop
+  // responsive navbar toggler: visible only on small screens; defensive behavior on resize
   (function navbarToggler() {
     const toggler = document.querySelector('.navbar-toggler');
     const navRight = document.querySelector('.nav-right');
@@ -148,10 +141,8 @@
 
     function sync() {
       if (window.innerWidth <= 880) {
-        // mobile mode: leave navRight controlled by toggler (CSS hides it by default)
         toggler.setAttribute('aria-hidden', 'false');
       } else {
-        // desktop: ensure nav is visible and toggler reset
         navRight.style.display = '';
         toggler.setAttribute('aria-expanded', 'false');
         toggler.setAttribute('aria-hidden', 'true');
@@ -159,7 +150,7 @@
     }
 
     toggler.addEventListener('click', () => {
-      if (window.innerWidth > 880) return; // defensive
+      if (window.innerWidth > 880) return;
       const expanded = toggler.getAttribute('aria-expanded') === 'true';
       toggler.setAttribute('aria-expanded', String(!expanded));
       navRight.style.display = navRight.style.display === 'flex' ? 'none' : 'flex';
