@@ -20,8 +20,13 @@
         <span id="version-badge" class="ver interactive-hitbox">Beta</span>
       </a>
 
+      <!-- исправленная разметка гамбургера: три полоски внутри .hamburger -->
       <button class="navbar-toggler" aria-label="Toggle navigation" aria-expanded="false" aria-hidden="true">
-        <span class="hamburger"><span></span></span>
+        <span class="hamburger">
+          <span class="bar"></span>
+          <span class="bar"></span>
+          <span class="bar"></span>
+        </span>
       </button>
 
       <nav class="nav-right" role="navigation" aria-label="Главное меню">
@@ -196,9 +201,9 @@
             <h3 id="contact-title" class="contact-title">Поддержка и контакты</h3>
             <div class="contact-subtitle">Техническая поддержка(ТГ): <strong>@PeCHeNKa_F</strong></div>
           </div>
-          <div class="contact-actions">
-            <a class="btn-outline interactive-hitbox" href="/cabinet">Личный кабинет</a>
-            <a class="btn-cta interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener">Наш телеграм</a>
+          <div class="contact-actions" role="group" aria-label="Контактные действия">
+            <a class="btn-outline interactive-hitbox" href="/cabinet" role="button" tabindex="0">Личный кабинет</a>
+            <a class="btn-cta interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener" role="button" tabindex="0">Наш телеграм</a>
           </div>
         </div>
       </div>
