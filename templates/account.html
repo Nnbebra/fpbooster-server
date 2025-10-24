@@ -61,6 +61,16 @@
     </table>
   </div>
 
+  <!-- Активация ключа -->
+  <div class="card" style="margin-bottom:18px; padding:18px;">
+    <h3 style="margin-top:0;">Активация лицензии</h3>
+    <form method="post" action="/api/license/activate" style="display:flex; gap:12px; flex-wrap:wrap;">
+      <input type="text" name="key" placeholder="Введите ключ" required
+             style="flex:1; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:#111; color:#fff;">
+      <button type="submit" class="btn-cta"><i class="fa-solid fa-key"></i> Активировать</button>
+    </form>
+  </div>
+
   <!-- Кнопки действий -->
   <div class="card" style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-bottom:18px;">
     <a class="btn-cta" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить клиент</a>
@@ -95,7 +105,20 @@
     {% endif %}
   </div>
 
+  <!-- Кнопка скачивания лаунчера -->
+  {% if licenses and licenses|selectattr("status", "equalto", "active")|list %}
+    <div class="card" style="margin-top:18px; text-align:center; padding:20px;">
+      <a class="btn-cta" href="/static/launcher/FPBoosterLauncher.exe">
+        <i class="fa-solid fa-download"></i> Скачать лаунчер
+      </a>
+    </div>
+  {% endif %}
+
+  <!-- HWID (заглушка) -->
+  <div class="card" style="margin-top:18px; padding:18px;">
+    <h3 style="margin-top:0;">HWID</h3>
+    <div class="muted">Привязка к устройству пока недоступна. Функция появится позже.</div>
+  </div>
+
 </section>
 {% endblock %}
-
-
