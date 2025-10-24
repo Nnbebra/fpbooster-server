@@ -1,13 +1,12 @@
 /* JavaScript/main.js
    - navbar shrink, smooth anchors
    - hero parallax + progressive darkening + bottom blend
-   - mobile-friendly behavior and small UX helpers
+   - responsive toggler sanity check + small UX helpers
 */
 (function () {
   "use strict";
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-
   function throttle(fn, wait) {
     let last = 0;
     return function () {
@@ -44,32 +43,30 @@
     window.scrollTo({ top: top, behavior: 'smooth' });
   });
 
-  // hero parallax + progressive darkening and "farther" feeling
+  // hero parallax + progressive darkening and distant feel
   const heroBg = document.querySelector('.hero-bg');
   if (heroBg) {
-    // use requestAnimationFrame for smooth updates, throttle scroll handler
+    // smoother with rAF and throttle
     let raf = null;
     function updateHero(scrollPos) {
       const docH = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
       const pos = clamp(scrollPos / docH, 0, 1);
-      // amplify factor so effect is visible on normal pages
       const pct = clamp(pos * 1.5, 0, 1);
 
-      // update CSS variable used by overlay gradients
+      // update CSS variable for overlay
       heroBg.style.setProperty('--hero-dim', String(pct));
 
-      // subtle translate up and scale down to feel "farther"
-      const translateY = Math.round(-14 * pct); // a bit stronger
-      const scale = 1 - 0.012 * pct;
+      // translate and subtle scale to feel farther
+      const translateY = Math.round(-12 * pct);
+      const scale = 1 - 0.01 * pct;
       heroBg.style.transform = `translateX(-50%) translateY(${translateY}px) scale(${scale})`;
 
-      // progressively darken/desaturate to highlight foreground
-      const contrast = 0.86 - 0.10 * pct;
-      const saturate = 0.96 - 0.14 * pct;
-      const brightness = 0.46 - 0.18 * pct;
+      // darken/desaturate to highlight foreground
+      const contrast = 0.88 - 0.10 * pct;
+      const saturate = 0.98 - 0.14 * pct;
+      const brightness = 0.48 - 0.18 * pct;
       heroBg.style.filter = `contrast(${contrast}) saturate(${saturate}) brightness(${brightness})`;
 
-      // add class for deeper state tweaks
       heroBg.classList.toggle('depth-dark', pos > 0.22);
     }
 
@@ -80,16 +77,14 @@
     }, 40);
 
     window.addEventListener('scroll', onScroll, { passive: true });
-    // initialize immediately
+    // init
     updateHero(window.scrollY || window.pageYOffset);
-
-    // ensure hero updates on resize (document height changes)
     window.addEventListener('resize', function () {
       updateHero(window.scrollY || window.pageYOffset);
     }, { passive: true });
   }
 
-  // keyboard focus ring helper
+  // keyboard focus ring for accessibility
   (function manageFocusRing() {
     function handleFirstTab(e) {
       if (e.key === 'Tab') {
@@ -98,6 +93,32 @@
       }
     }
     window.addEventListener('keydown', handleFirstTab);
+  })();
+
+  // ensure toggler appears only as UI control on small screens:
+  (function ensureTogglerVisibility() {
+    const toggler = document.querySelector('.navbar-toggler');
+    const navRight = document.querySelector('.nav-right');
+    if (!toggler || !navRight) return;
+    // keep navRight hidden when viewport small, shown otherwise
+    function sync() {
+      if (window.innerWidth <= 880) {
+        // leave nav-right controlled by toggler; default hidden (CSS sets display:none)
+        toggler.setAttribute('aria-hidden', 'false');
+      } else {
+        // ensure desktop shows nav and hides toggler
+        navRight.style.display = '';
+        toggler.setAttribute('aria-expanded', 'false');
+        toggler.setAttribute('aria-hidden', 'true');
+      }
+    }
+    window.addEventListener('resize', throttle(sync, 120));
+    sync();
+    toggler.addEventListener('click', () => {
+      const expanded = toggler.getAttribute('aria-expanded') === 'true';
+      toggler.setAttribute('aria-expanded', String(!expanded));
+      navRight.style.display = navRight.style.display === 'flex' ? 'none' : 'flex';
+    });
   })();
 
   // default stat replacements (ensure requested numbers)
@@ -139,18 +160,6 @@
       setTimeout(() => {
         fetch(url, { cache: 'no-store' }).then(r => r.ok && r.json()).then(apply).catch(() => {});
       }, 1200);
-    });
-  })();
-
-  // navbar toggler (responsive)
-  (function navbarToggler() {
-    const toggler = document.querySelector('.navbar-toggler');
-    const navRight = document.querySelector('.nav-right');
-    if (!toggler || !navRight) return;
-    toggler.addEventListener('click', () => {
-      const expanded = toggler.getAttribute('aria-expanded') === 'true';
-      toggler.setAttribute('aria-expanded', String(!expanded));
-      navRight.style.display = navRight.style.display === 'flex' ? 'none' : 'flex';
     });
   })();
 
