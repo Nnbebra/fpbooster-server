@@ -1,13 +1,11 @@
 /* JavaScript/main.js
    - navbar shrink, smooth anchors
    - hero parallax + progressive darkening + bottom blend
-   - hydrate stats with retry + default replacements
-   - small UX helpers
+   - hydrate stats with retry + small UX helpers
 */
 (function () {
   "use strict";
 
-  // helpers
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   function throttle(fn, wait) {
     let last = 0;
@@ -26,13 +24,8 @@
   function onScrollNav() {
     if (!navbar) return;
     const s = window.scrollY || window.pageYOffset;
-    if (s > NAV_SHRINK) {
-      navbar.classList.add('nav-compact');
-      navbar.style.height = '60px';
-    } else {
-      navbar.classList.remove('nav-compact');
-      navbar.style.height = '72px';
-    }
+    navbar.style.height = s > NAV_SHRINK ? '60px' : '72px';
+    navbar.classList.toggle('nav-compact', s > NAV_SHRINK);
   }
   window.addEventListener('scroll', onScrollNav, { passive: true });
   onScrollNav();
@@ -56,25 +49,26 @@
     const onHeroScroll = throttle(function () {
       const docH = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
       const pos = clamp((window.scrollY || 0) / docH, 0, 1);
-      const pct = clamp(pos * 1.5, 0, 1);
+      const pct = clamp(pos * 1.5, 0, 1); // amplify a bit so effect is noticeable
 
-      // progressively increase dim variable for CSS overlay
+      // update CSS variable used by overlay gradients
       heroBg.style.setProperty('--hero-dim', String(pct));
 
       // subtle translate up and scale down to feel "farther"
       const translateY = Math.round(-12 * pct);
-      const scale = 1 - 0.008 * pct;
+      const scale = 1 - 0.01 * pct;
       heroBg.style.transform = `translateX(-50%) translateY(${translateY}px) scale(${scale})`;
 
-      // gently darken and desaturate with scroll to highlight foreground
+      // progressively darken/desaturate to highlight foreground (values tuned)
       const contrast = 0.88 - 0.10 * pct;
-      const saturate = 0.98 - 0.10 * pct;
-      const brightness = 0.48 - 0.16 * pct;
+      const saturate = 0.98 - 0.14 * pct;
+      const brightness = 0.48 - 0.18 * pct;
       heroBg.style.filter = `contrast(${contrast}) saturate(${saturate}) brightness(${brightness})`;
 
-      // add state near deeper scroll
+      // toggle deeper state for tiny additional polish
       heroBg.classList.toggle('depth-dark', pos > 0.22);
     }, 60);
+
     window.addEventListener('scroll', onHeroScroll, { passive: true });
     onHeroScroll();
   }
