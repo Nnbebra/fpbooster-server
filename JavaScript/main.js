@@ -1,12 +1,13 @@
 /* JavaScript/main.js
    - navbar shrink, smooth anchors
    - hero parallax + progressive darkening + bottom blend
-   - hydrate stats with retry + small UX helpers
+   - mobile-friendly behavior and small UX helpers
 */
 (function () {
   "use strict";
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
   function throttle(fn, wait) {
     let last = 0;
     return function () {
@@ -43,37 +44,52 @@
     window.scrollTo({ top: top, behavior: 'smooth' });
   });
 
-  // hero parallax + progressive darkening and distant feel
+  // hero parallax + progressive darkening and "farther" feeling
   const heroBg = document.querySelector('.hero-bg');
   if (heroBg) {
-    const onHeroScroll = throttle(function () {
+    // use requestAnimationFrame for smooth updates, throttle scroll handler
+    let raf = null;
+    function updateHero(scrollPos) {
       const docH = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-      const pos = clamp((window.scrollY || 0) / docH, 0, 1);
-      const pct = clamp(pos * 1.5, 0, 1); // amplify a bit so effect is noticeable
+      const pos = clamp(scrollPos / docH, 0, 1);
+      // amplify factor so effect is visible on normal pages
+      const pct = clamp(pos * 1.5, 0, 1);
 
       // update CSS variable used by overlay gradients
       heroBg.style.setProperty('--hero-dim', String(pct));
 
       // subtle translate up and scale down to feel "farther"
-      const translateY = Math.round(-12 * pct);
-      const scale = 1 - 0.01 * pct;
+      const translateY = Math.round(-14 * pct); // a bit stronger
+      const scale = 1 - 0.012 * pct;
       heroBg.style.transform = `translateX(-50%) translateY(${translateY}px) scale(${scale})`;
 
-      // progressively darken/desaturate to highlight foreground (values tuned)
-      const contrast = 0.88 - 0.10 * pct;
-      const saturate = 0.98 - 0.14 * pct;
-      const brightness = 0.48 - 0.18 * pct;
+      // progressively darken/desaturate to highlight foreground
+      const contrast = 0.86 - 0.10 * pct;
+      const saturate = 0.96 - 0.14 * pct;
+      const brightness = 0.46 - 0.18 * pct;
       heroBg.style.filter = `contrast(${contrast}) saturate(${saturate}) brightness(${brightness})`;
 
-      // toggle deeper state for tiny additional polish
+      // add class for deeper state tweaks
       heroBg.classList.toggle('depth-dark', pos > 0.22);
-    }, 60);
+    }
 
-    window.addEventListener('scroll', onHeroScroll, { passive: true });
-    onHeroScroll();
+    const onScroll = throttle(function () {
+      const scrollPos = window.scrollY || window.pageYOffset;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => updateHero(scrollPos));
+    }, 40);
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    // initialize immediately
+    updateHero(window.scrollY || window.pageYOffset);
+
+    // ensure hero updates on resize (document height changes)
+    window.addEventListener('resize', function () {
+      updateHero(window.scrollY || window.pageYOffset);
+    }, { passive: true });
   }
 
-  // focus ring for keyboard users
+  // keyboard focus ring helper
   (function manageFocusRing() {
     function handleFirstTab(e) {
       if (e.key === 'Tab') {
