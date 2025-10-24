@@ -75,10 +75,8 @@
     const selectors = ['.nav-link', '.pm-method', '.btn-outline', '.btn-cta', '.btn-gradient'];
     selectors.forEach(sel => {
       document.querySelectorAll(sel).forEach(el => {
-        // ensure accessible
         if (!el.getAttribute('role')) el.setAttribute('role', 'button');
         if (!el.getAttribute('tabindex')) el.setAttribute('tabindex', '0');
-        // add a utility padding class (visual unchanged if CSS handles appearance)
         el.classList.add('interactive-hitbox');
       });
     });
@@ -86,19 +84,16 @@
 
   // --- video placeholder replacement & text tweak
   function prepareVideoPlaceholder() {
-    // change descriptive text if present
     document.querySelectorAll('p').forEach(p => {
       const txt = (p.textContent || '').trim().toLowerCase();
       if (txt.includes('геймплей') || txt.includes('gameplay')) {
         p.textContent = 'Ниже вы можете посмотреть небольшой обзор клиента.';
       }
     });
-    // replace iframe with coming soon placeholder if needed
     document.querySelectorAll('.video-wrap, .Home_video__ZcoNm, .video').forEach(container => {
       if (!container) return;
       const iframe = container.querySelector('iframe');
       if (iframe) {
-        // remove iframe and add placeholder
         iframe.remove();
         const placeholder = document.createElement('div');
         placeholder.className = 'video-coming-soon';
@@ -107,7 +102,6 @@
         placeholder.textContent = 'coming soon';
         container.appendChild(placeholder);
       } else {
-        // if no iframe but text is different, ensure placeholder exists
         if (!container.querySelector('.video-coming-soon')) {
           const placeholder = document.createElement('div');
           placeholder.className = 'video-coming-soon';
