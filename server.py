@@ -15,6 +15,8 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 import pathlib
 from fastapi.responses import RedirectResponse
+from datetime import datetime, timedelta
+from fastapi import Form
 
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
@@ -179,6 +181,39 @@ async def check_license(license: str):
             "created": row["created_at"].isoformat() if row["created_at"] else None,
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
+
+
+@app.post("/api/license/activate")
+async def activate_license(key: str = Form(...), user=Depends(get_current_user)):
+    async with app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key.strip())
+        if not row:
+            raise HTTPException(404, "Ключ не найден")
+        if row["status"] != "pending":
+            raise HTTPException(400, "Ключ уже активирован или недействителен")
+
+        # Продлеваем лицензию пользователя
+        expires = datetime.utcnow().date() + timedelta(days=row["duration_days"] or 30)
+
+        await conn.execute("""
+            UPDATE licenses
+            SET status='active',
+                user_uid=$1,
+                activated_at=NOW(),
+                expires=$2
+            WHERE license_key=$3
+        """, user["uid"], expires, key.strip())
+
+        # Обновляем базовую лицензию, созданную при регистрации
+        await conn.execute("""
+            UPDATE licenses
+            SET status='active',
+                expires=$1
+            WHERE user_uid=$2
+              AND status!='banned'
+        """, expires, user["uid"])
+
+    return RedirectResponse(url="/cabinet", status_code=302)
 
 
 # ========= Админ API =========
@@ -520,6 +555,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
