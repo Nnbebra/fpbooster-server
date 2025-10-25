@@ -187,27 +187,50 @@ async def check_license(license: str):
 async def activate_license(
     request: Request,
     key: str = Form(...),
-    user=Depends(current_user)   # обёртка, не требующая query-параметра `app`
+    user=Depends(current_user)
 ):
     async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key.strip())
-        if not row:
+        # 1. Проверяем ключ
+        activation = await conn.fetchrow(
+            "SELECT * FROM activation_keys WHERE key=$1", key.strip()
+        )
+        if not activation:
             raise HTTPException(404, "Ключ не найден")
-        if row["status"] != "pending":
-            raise HTTPException(400, "Ключ уже активирован или недействителен")
+        if activation["status"] != "unused":
+            raise HTTPException(400, "Ключ уже использован или недействителен")
 
-        expires = datetime.utcnow().date() + timedelta(days=row["duration_days"] or 30)
+        # 2. Находим лицензию пользователя
+        license_row = await conn.fetchrow(
+            "SELECT * FROM licenses WHERE user_uid=$1", user["uid"]
+        )
+        if not license_row:
+            raise HTTPException(404, "Лицензия пользователя не найдена")
 
+        # 3. Считаем новую дату окончания
+        today = datetime.utcnow().date()
+        base_date = license_row["expires"] if license_row["expires"] and license_row["expires"] >= today else today
+        new_expires = base_date + timedelta(days=activation["duration_days"])
+
+        # 4. Обновляем лицензию
         await conn.execute("""
             UPDATE licenses
             SET status='active',
-                user_uid=$1,
-                activated_at=NOW(),
-                expires=$2
-            WHERE license_key=$3
-        """, user["uid"], expires, key.strip())
+                expires=$1,
+                activated_at=NOW()
+            WHERE user_uid=$2
+        """, new_expires, user["uid"])
+
+        # 5. Помечаем ключ как использованный
+        await conn.execute("""
+            UPDATE activation_keys
+            SET status='used',
+                used_at=NOW(),
+                used_by_uid=$1
+            WHERE id=$2
+        """, user["uid"], activation["id"])
 
     return RedirectResponse(url="/cabinet", status_code=302)
+
 
 
 
@@ -550,6 +573,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
