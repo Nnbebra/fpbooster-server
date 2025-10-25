@@ -17,7 +17,7 @@ import pathlib
 from fastapi.responses import RedirectResponse
 from datetime import datetime, timedelta
 from fastapi import Form
-from fastapi import Request, Form, Depends
+from fastapi import Request, Form, Depends, HTTPException
 
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
@@ -188,9 +188,9 @@ from fastapi import Request, Form, Depends
 
 @app.post("/api/license/activate")
 async def activate_license(
-    request: Request,                # обязательно с типом Request
-    key: str = Form(...),            # ключ берём из формы
-    user=Depends(get_current_user)   # текущий пользователь
+    request: Request,                 # обязательно с типом Request
+    key: str = Form(...),             # ключ из формы
+    user=Depends(get_current_user)    # текущий пользователь
 ):
     async with request.app.state.pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key.strip())
@@ -220,7 +220,6 @@ async def activate_license(
         """, expires, user["uid"])
 
     return RedirectResponse(url="/cabinet", status_code=302)
-
 
 
 # ========= Админ API =========
@@ -562,6 +561,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
