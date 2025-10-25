@@ -17,6 +17,7 @@ import pathlib
 from fastapi.responses import RedirectResponse
 from datetime import datetime, timedelta
 from fastapi import Form
+from fastapi import Request, Form, Depends
 
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
@@ -561,6 +562,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
