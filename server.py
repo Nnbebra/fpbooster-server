@@ -184,7 +184,6 @@ async def check_license(license: str):
         }
 
 
-from fastapi import Request, Form, Depends
 
 @app.post("/api/license/activate")
 async def activate_license(
