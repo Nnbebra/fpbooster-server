@@ -10,24 +10,24 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
 
 from guards import admin_guard_ui
-from auth.guards import get_current_user
-
-
-# Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
-def ui_guard(request: Request):
-    return admin_guard_ui(request, app.state.ADMIN_TOKEN)
+from auth.guards import get_current_user   # исправленный вариант
 
 # ========= Создаём приложение =========
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
 templates = Jinja2Templates(directory="templates")
+
+# Заворачиваем UI-guard в Depends
+def ui_guard(request: Request):
+    return admin_guard_ui(request, app.state.ADMIN_TOKEN)
 
 # Публичная главная страница
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     user = None
     try:
-        user = await get_current_user(request.app, request)
-    except:
+        # теперь get_current_user принимает только request
+        user = await get_current_user(request)
+    except Exception:
         user = None
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
@@ -177,13 +177,12 @@ async def check_license(license: str):
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
 
-
-
+# ========= Активация лицензии =========
 @app.post("/api/license/activate")
 async def activate_license(
     request: Request,
     key: str = Form(...),
-    user=Depends(get_current_user)
+    user=Depends(get_current_user)   # сюда теперь придёт user из исправленной функции
 ):
     async with request.app.state.pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key.strip())
@@ -204,7 +203,6 @@ async def activate_license(
         """, user["uid"], expires, key.strip())
 
     return RedirectResponse(url="/cabinet", status_code=302)
-
 
 
 # ========= Админ API =========
@@ -546,6 +544,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
