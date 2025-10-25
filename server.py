@@ -183,16 +183,21 @@ async def check_license(license: str):
         }
 
 
+from fastapi import Request, Form, Depends
+
 @app.post("/api/license/activate")
-async def activate_license(key: str = Form(...), user=Depends(get_current_user)):
-    async with app.state.pool.acquire() as conn:
+async def activate_license(
+    request: Request,
+    key: str = Form(...),
+    user=Depends(get_current_user)
+):
+    async with request.app.state.pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key.strip())
         if not row:
             raise HTTPException(404, "Ключ не найден")
         if row["status"] != "pending":
             raise HTTPException(400, "Ключ уже активирован или недействителен")
 
-        # Продлеваем лицензию пользователя
         expires = datetime.utcnow().date() + timedelta(days=row["duration_days"] or 30)
 
         await conn.execute("""
@@ -204,7 +209,7 @@ async def activate_license(key: str = Form(...), user=Depends(get_current_user))
             WHERE license_key=$3
         """, user["uid"], expires, key.strip())
 
-        # Обновляем базовую лицензию, созданную при регистрации
+        # продлеваем базовую лицензию пользователя
         await conn.execute("""
             UPDATE licenses
             SET status='active',
@@ -214,6 +219,7 @@ async def activate_license(key: str = Form(...), user=Depends(get_current_user))
         """, expires, user["uid"])
 
     return RedirectResponse(url="/cabinet", status_code=302)
+
 
 
 # ========= Админ API =========
@@ -555,6 +561,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
