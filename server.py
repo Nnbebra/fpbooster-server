@@ -10,7 +10,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
 
 from guards import admin_guard_ui
-from auth.guards import get_current_user   # исправленный вариант
+from auth.guards import get_current_user as get_current_user_raw
+
+# Обёртка для Depends: не ломает рабочую сигнатуру и не светит `app` в OpenAPI
+async def current_user(request: Request):
+    return await get_current_user_raw(request.app, request)
+
 
 # ========= Создаём приложение =========
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
@@ -25,11 +30,11 @@ def ui_guard(request: Request):
 async def index(request: Request):
     user = None
     try:
-        # теперь get_current_user принимает только request
-        user = await get_current_user(request)
+        user = await get_current_user_raw(request.app, request)
     except Exception:
         user = None
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
+
 
 
 # server.py (фрагмент)
@@ -182,7 +187,7 @@ async def check_license(license: str):
 async def activate_license(
     request: Request,
     key: str = Form(...),
-    user=Depends(get_current_user)   # сюда теперь придёт user из исправленной функции
+    user=Depends(current_user)   # обёртка, не требующая query-параметра `app`
 ):
     async with request.app.state.pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key.strip())
@@ -203,6 +208,7 @@ async def activate_license(
         """, user["uid"], expires, key.strip())
 
     return RedirectResponse(url="/cabinet", status_code=302)
+
 
 
 # ========= Админ API =========
@@ -544,6 +550,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
