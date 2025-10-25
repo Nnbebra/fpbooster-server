@@ -1,23 +1,17 @@
 import os
+import pathlib
 from typing import Optional, Literal
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import asyncpg
 from fastapi import FastAPI, HTTPException, Request, Depends, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
+
 from guards import admin_guard_ui
-from fastapi import Request
-from fastapi.responses import HTMLResponse
 from auth.guards import get_current_user
-from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
-import pathlib
-from fastapi.responses import RedirectResponse
-from datetime import datetime, timedelta
-from fastapi import Form
-from fastapi import Request, Form, Depends, HTTPException
+
 
 # Заворачиваем UI-guard в Depends, токен берём централизованно из app.state
 def ui_guard(request: Request):
@@ -187,9 +181,9 @@ async def check_license(license: str):
 
 @app.post("/api/license/activate")
 async def activate_license(
-    request: Request,                 # обязательно с типом Request
-    key: str = Form(...),             # ключ из формы
-    user=Depends(get_current_user)    # текущий пользователь
+    request: Request,
+    key: str = Form(...),
+    user=Depends(get_current_user)
 ):
     async with request.app.state.pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key.strip())
@@ -209,16 +203,8 @@ async def activate_license(
             WHERE license_key=$3
         """, user["uid"], expires, key.strip())
 
-        # продлеваем базовую лицензию пользователя
-        await conn.execute("""
-            UPDATE licenses
-            SET status='active',
-                expires=$1
-            WHERE user_uid=$2
-              AND status!='banned'
-        """, expires, user["uid"])
-
     return RedirectResponse(url="/cabinet", status_code=302)
+
 
 
 # ========= Админ API =========
@@ -560,6 +546,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
