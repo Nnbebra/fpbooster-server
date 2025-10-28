@@ -202,46 +202,74 @@ async def activate_license(
         raise HTTPException(status_code=400, detail="Token is required")
 
     async with request.app.state.pool.acquire() as conn:
-        # 1. Проверяем токен
-        activation = await conn.fetchrow(
-            "SELECT * FROM activation_tokens WHERE token=$1", token_value
-        )
-        if not activation:
-            raise HTTPException(404, "Токен не найден")
-        if activation["status"] != "unused":
-            raise HTTPException(400, "Токен уже использован или недействителен")
+        async with conn.transaction():
+            # 1. Проверяем токен
+            activation = await conn.fetchrow(
+                "SELECT * FROM activation_tokens WHERE token=$1", token_value
+            )
+            if not activation:
+                raise HTTPException(404, "Токен не найден")
+            if activation["status"] != "unused":
+                raise HTTPException(400, "Токен уже использован или недействителен")
 
-        # 2. Находим лицензию пользователя
-        license_row = await conn.fetchrow(
-            "SELECT * FROM licenses WHERE user_uid=$1", user["uid"]
-        )
-        if not license_row:
-            raise HTTPException(404, "Лицензия пользователя не найдена")
+            # 2. Находим лицензию пользователя
+            license_row = await conn.fetchrow(
+                "SELECT * FROM licenses WHERE user_uid=$1", user["uid"]
+            )
+            if not license_row:
+                raise HTTPException(404, "Лицензия пользователя не найдена")
 
-        # 3. Считаем новую дату окончания
-        today = datetime.utcnow().date()
-        base_date = license_row["expires"] if license_row["expires"] and license_row["expires"] >= today else today
-        new_expires = base_date + timedelta(days=activation["duration_days"])
+            # 3. Считаем новую дату окончания
+            today = datetime.utcnow().date()
+            base_date = (
+                license_row["expires"]
+                if license_row["expires"] and license_row["expires"] >= today
+                else today
+            )
+            new_expires = base_date + timedelta(days=activation["duration_days"])
 
-        # 4. Обновляем лицензию
-        await conn.execute("""
-            UPDATE licenses
-            SET status='active',
-                expires=$1,
-                activated_at=NOW()
-            WHERE user_uid=$2
-        """, new_expires, user["uid"])
+            # 4. Обновляем лицензию
+            await conn.execute(
+                """
+                UPDATE licenses
+                SET status='active',
+                    expires=$1,
+                    activated_at=NOW()
+                WHERE user_uid=$2
+                """,
+                new_expires,
+                user["uid"],
+            )
 
-        # 5. Помечаем токен как использованный
-        await conn.execute("""
-            UPDATE activation_tokens
-            SET status='used',
-                used_at=NOW(),
-                used_by_uid=$1
-            WHERE id=$2
-        """, user["uid"], activation["id"])
+            # 5. Помечаем токен как использованный
+            await conn.execute(
+                """
+                UPDATE activation_tokens
+                SET status='used',
+                    used_at=NOW(),
+                    used_by_uid=$1
+                WHERE id=$2
+                """,
+                user["uid"],
+                activation["id"],
+            )
+
+            # 6. Логируем покупку в purchases (источник: token)
+            # amount=0, currency='TOKEN' — токен уже куплен на стороне магазина/маркетплейса
+            await conn.execute(
+                """
+                INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code)
+                VALUES ($1, $2, $3, $4, 'token', $5)
+                """,
+                user["uid"],
+                str(activation["duration_days"]),  # план = 30/90/365
+                0,
+                'TOKEN',
+                token_value,
+            )
 
     return RedirectResponse(url="/cabinet", status_code=302)
+
 
 
 # ========= Админ API =========
@@ -583,6 +611,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
