@@ -105,11 +105,12 @@
     {% endif %}
   </div>
 
-  <!-- Кнопка скачивания лаунчера -->
-  {% if licenses and licenses|selectattr("status", "equalto", "active")|list %}
+  <!-- Кнопка скачивания клиента (по активной лицензии) -->
+  {% set has_active = licenses|selectattr("status", "equalto", "active")|list %}
+  {% if has_active and download_url %}
     <div class="card" style="margin-top:18px; text-align:center; padding:20px;">
-      <a class="btn-cta" href="/static/launcher/FPBoosterLauncher.exe">
-        <i class="fa-solid fa-download"></i> Скачать лаунчер
+      <a class="btn-cta" href="{{ download_url }}">
+        <i class="fa-solid fa-download"></i> Скачать клиент
       </a>
     </div>
   {% endif %}
@@ -122,4 +123,3 @@
 
 </section>
 {% endblock %}
-
