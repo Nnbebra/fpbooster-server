@@ -44,6 +44,12 @@ from auth.email_confirm import router as email_confirm_router
 app.include_router(users_router, tags=["auth"])
 app.include_router(email_confirm_router, tags=["email"])
 
+# ===== ссылка на скачивание =====
+
+DOWNLOAD_URL = os.getenv("DOWNLOAD_URL", "").strip()
+app.state.DOWNLOAD_URL = DOWNLOAD_URL
+
+
 
 # ===== Админ токен =====
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
@@ -577,6 +583,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
