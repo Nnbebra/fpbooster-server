@@ -186,13 +186,19 @@ async def check_license(license: str):
 @app.post("/api/license/activate")
 async def activate_license(
     request: Request,
-    token: str = Form(...),   # теперь это токен, а не ключ лицензии
+    token: Optional[str] = Form(None),
+    key: Optional[str] = Form(None),
     user=Depends(current_user)
 ):
+    # Совместимость: используем token, если нет — key
+    token_value = (token or key or "").strip()
+    if not token_value:
+        raise HTTPException(status_code=400, detail="Token is required")
+
     async with request.app.state.pool.acquire() as conn:
         # 1. Проверяем токен
         activation = await conn.fetchrow(
-            "SELECT * FROM activation_tokens WHERE token=$1", token.strip()
+            "SELECT * FROM activation_tokens WHERE token=$1", token_value
         )
         if not activation:
             raise HTTPException(404, "Токен не найден")
@@ -230,6 +236,7 @@ async def activate_license(
         """, user["uid"], activation["id"])
 
     return RedirectResponse(url="/cabinet", status_code=302)
+
 
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
@@ -570,6 +577,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
