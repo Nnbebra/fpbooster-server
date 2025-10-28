@@ -2,13 +2,19 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from auth.guards import get_current_user
+
+# Import the raw guard and wrap it for Depends
+from auth.guards import get_current_user as get_current_user_raw
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
+async def current_user(request: Request):
+    # wrapper so Depends doesn't look for "app" param
+    return await get_current_user_raw(request.app, request)
+
 @router.get("/purchases", response_class=HTMLResponse)
-async def purchases_page(request: Request, user=Depends(get_current_user)):
+async def purchases_page(request: Request, user=Depends(current_user)):
     async with request.app.state.pool.acquire() as conn:
         rows = await conn.fetch(
             """
