@@ -12,11 +12,14 @@ async def purchases_page(request: Request, user=Depends(get_current_user)):
     async with request.app.state.pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT p.id, p.plan, p.amount, p.currency, p.created_at
-            FROM purchases p
-            WHERE p.user_uid = $1
-            ORDER BY p.created_at DESC
+            SELECT id, plan, amount, currency, source, token_code, created_at
+            FROM purchases
+            WHERE user_uid = $1
+            ORDER BY created_at DESC
             """,
             user["uid"],
         )
-    return templates.TemplateResponse("purchases.html", {"request": request, "user": user, "purchases": rows})
+    return templates.TemplateResponse(
+        "purchases.html",
+        {"request": request, "user": user, "purchases": rows}
+    )
