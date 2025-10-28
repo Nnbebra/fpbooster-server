@@ -11,6 +11,7 @@
           <th style="padding:8px;">ID</th>
           <th style="padding:8px;">Тариф</th>
           <th style="padding:8px;">Сумма</th>
+          <th style="padding:8px;">Источник</th>
           <th style="padding:8px;">Дата</th>
         </tr>
         {% for p in purchases %}
@@ -18,6 +19,7 @@
           <td style="padding:8px;">{{ p.id }}</td>
           <td style="padding:8px;">{{ p.plan }}</td>
           <td style="padding:8px;">{{ p.amount }} {{ p.currency }}</td>
+          <td style="padding:8px;">{{ p.source }}{% if p.token_code %} ({{ p.token_code }}){% endif %}</td>
           <td style="padding:8px;">{{ p.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
         </tr>
         {% endfor %}
