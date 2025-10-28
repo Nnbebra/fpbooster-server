@@ -157,7 +157,6 @@ async def payment_start(request: Request, plan: str = Query(...), method: str = 
 async def payment_result(request: Request):
     """
     Postback от PayPalych на Result URL (после оплаты):
-    Пример формата:
     {
       "Status": "SUCCESS" | "FAIL",
       "InvId": "...",
@@ -168,8 +167,8 @@ async def payment_result(request: Request):
     }
     Логика:
     - Проверяем подпись.
-    - Если SUCCESS: активируем/продлеваем лицензию.
-    - Если FAIL: статуса лицензии не меняем (или помечаем как expired — на твоё усмотрение).
+    - Если SUCCESS: активируем/продлеваем лицензию и логируем покупку в purchases.
+    - Если FAIL: просто возвращаем FAIL (по желанию можно логировать).
     """
     data = await request.form()
 
@@ -196,30 +195,47 @@ async def payment_result(request: Request):
         plan = None
 
     # 3) Приведение плана к дням
-    days = {"30": 30, "90": 90, "365": 365}.get(plan or "", 30)
+    days_map = {"30": 30, "90": 90, "365": 365}
+    days = days_map.get(plan or "", 30)
 
-    # 4) Смена статуса в нашей БД
+    # 4) Смена статуса в нашей БД и логирование покупки
     if status == "SUCCESS" and uid:
         async with request.app.state.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT expires FROM licenses WHERE user_uid=$1",
-                uid,
-            )
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT expires FROM licenses WHERE user_uid=$1",
+                    uid,
+                )
 
-            if row and row["expires"] and row["expires"] > date.today():
-                new_expires = row["expires"] + timedelta(days=days)
-            else:
-                new_expires = date.today() + timedelta(days=days)
+                today = date.today()
+                if row and row["expires"] and row["expires"] > today:
+                    new_expires = row["expires"] + timedelta(days=days)
+                else:
+                    new_expires = today + timedelta(days=days)
 
-            await conn.execute(
-                """
-                UPDATE licenses
-                SET status='active', expires=$1
-                WHERE user_uid=$2
-                """,
-                new_expires,
-                uid,
-            )
+                # Обновляем лицензию
+                await conn.execute(
+                    """
+                    UPDATE licenses
+                    SET status='active', expires=$1
+                    WHERE user_uid=$2
+                    """,
+                    new_expires,
+                    uid,
+                )
+
+                # Логируем покупку в purchases (источник: payment)
+                # Приводим сумму к NUMERIC через ::numeric на стороне SQL при необходимости
+                await conn.execute(
+                    """
+                    INSERT INTO purchases (user_uid, plan, amount, currency, source)
+                    VALUES ($1, $2, $3, $4, 'payment')
+                    """,
+                    uid,
+                    plan,
+                    out_sum,       # строка; таблица purchases принимает NUMERIC(10,2) — Postgres приведёт сам при вставке
+                    currency_in,
+                )
 
         return {
             "ok": True,
@@ -233,8 +249,6 @@ async def payment_result(request: Request):
         }
 
     elif status == "FAIL":
-        # можешь логировать неуспешную оплату/пытаться повторно
         return {"ok": False, "status": "FAIL", "inv_id": inv_id}
 
-    # Неизвестный статус — просто логируем
     return {"ok": False, "status": status or "UNKNOWN", "inv_id": inv_id}
