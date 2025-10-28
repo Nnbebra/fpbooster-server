@@ -61,11 +61,11 @@
     </table>
   </div>
 
-  <!-- Активация ключа -->
+  <!-- Активация токена -->
   <div class="card" style="margin-bottom:18px; padding:18px;">
     <h3 style="margin-top:0;">Активация лицензии</h3>
     <form method="post" action="/api/license/activate" style="display:flex; gap:12px; flex-wrap:wrap;">
-      <input type="text" name="key" placeholder="Введите ключ" required
+      <input type="text" name="token" placeholder="Введите токен активации" required
              style="flex:1; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:#111; color:#fff;">
       <button type="submit" class="btn-cta"><i class="fa-solid fa-key"></i> Активировать</button>
     </form>
@@ -122,3 +122,4 @@
 
 </section>
 {% endblock %}
+
