@@ -72,7 +72,7 @@ async def register_submit(
             email, pw_hash, username.strip()
         )
 
-        # создаём лицензию сразу
+        # создаём лицензию сразу (истекшую по умолчанию)
         license_key = generate_license_key()
         await conn.execute(
             """
@@ -90,8 +90,6 @@ async def register_submit(
     resp = RedirectResponse(url="/cabinet", status_code=302)
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
-
-
 
 @router.get("/login", response_class=HTMLResponse)
 async def user_login_page(request: Request):
@@ -134,9 +132,12 @@ async def account_page(request: Request):
             user["uid"],
         )
 
+    # передаём ссылку загрузки из переменных окружения (пробрасывается в app.state)
+    download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
+
     return templates.TemplateResponse(
         "account.html",
-        {"request": request, "user": user, "licenses": licenses}
+        {"request": request, "user": user, "licenses": licenses, "download_url": download_url}
     )
 
 @router.get("/logout")
@@ -144,10 +145,3 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
-
-
-
-
-
-
-
