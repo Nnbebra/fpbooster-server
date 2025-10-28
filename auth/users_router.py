@@ -125,12 +125,13 @@ async def account_page(request: Request):
 
     async with request.app.state.pool.acquire() as conn:
         licenses = await conn.fetch(
-            """SELECT l.license_key, l.status, l.expires
-               FROM licenses l
-               LEFT JOIN user_licenses ul ON ul.license_key = l.license_key
-               WHERE ul.user_id = $1
-               ORDER BY l.created_at DESC""",
-            user["id"],
+            """
+            SELECT license_key, status, expires
+            FROM licenses
+            WHERE user_uid = $1
+            ORDER BY created_at DESC
+            """,
+            user["uid"],
         )
 
     return templates.TemplateResponse(
@@ -143,6 +144,7 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
 
 
 
