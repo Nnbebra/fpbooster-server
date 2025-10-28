@@ -42,8 +42,9 @@ async def index(request: Request):
 # server.py (фрагмент)
 from auth.users_router import router as users_router
 from auth.email_confirm import router as email_confirm_router
-from purchases_router import router as purchases_router
-app.include_router(purchases_router, tags=["purchases"])
+
+
+
 
 
 
@@ -70,6 +71,7 @@ app.state.ADMIN_TOKEN = ADMIN_TOKEN
 from creators import router as creators_router
 from admin_creators import router as admin_creators_router
 from referrals import router as referrals_router
+from purchases_router import router as purchases_router
 
 
 # ВАЖНО: импорт buy_router
@@ -84,6 +86,7 @@ app.include_router(buy_router, tags=["buy"])
 app.include_router(creators_router)
 app.include_router(admin_creators_router)
 app.include_router(referrals_router)
+app.include_router(purchases_router, tags=["purchases"])
 
 
 
@@ -619,6 +622,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
