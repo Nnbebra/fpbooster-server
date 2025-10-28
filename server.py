@@ -12,6 +12,8 @@ from pydantic import BaseModel, validator
 from guards import admin_guard_ui
 from auth.guards import get_current_user as get_current_user_raw
 
+
+
 # Обёртка для Depends: не ломает рабочую сигнатуру и не светит `app` в OpenAPI
 async def current_user(request: Request):
     return await get_current_user_raw(request.app, request)
@@ -40,6 +42,10 @@ async def index(request: Request):
 # server.py (фрагмент)
 from auth.users_router import router as users_router
 from auth.email_confirm import router as email_confirm_router
+from purchases_router import router as purchases_router
+app.include_router(purchases_router, tags=["purchases"])
+
+
 
 app.include_router(users_router, tags=["auth"])
 app.include_router(email_confirm_router, tags=["email"])
@@ -48,6 +54,8 @@ app.include_router(email_confirm_router, tags=["email"])
 
 DOWNLOAD_URL = os.getenv("DOWNLOAD_URL", "").strip()
 app.state.DOWNLOAD_URL = DOWNLOAD_URL
+
+
 
 
 
@@ -611,6 +619,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
