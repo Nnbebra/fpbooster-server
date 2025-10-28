@@ -186,18 +186,18 @@ async def check_license(license: str):
 @app.post("/api/license/activate")
 async def activate_license(
     request: Request,
-    key: str = Form(...),
+    token: str = Form(...),   # теперь это токен, а не ключ лицензии
     user=Depends(current_user)
 ):
     async with request.app.state.pool.acquire() as conn:
-        # 1. Проверяем ключ
+        # 1. Проверяем токен
         activation = await conn.fetchrow(
-            "SELECT * FROM activation_keys WHERE key=$1", key.strip()
+            "SELECT * FROM activation_tokens WHERE token=$1", token.strip()
         )
         if not activation:
-            raise HTTPException(404, "Ключ не найден")
+            raise HTTPException(404, "Токен не найден")
         if activation["status"] != "unused":
-            raise HTTPException(400, "Ключ уже использован или недействителен")
+            raise HTTPException(400, "Токен уже использован или недействителен")
 
         # 2. Находим лицензию пользователя
         license_row = await conn.fetchrow(
@@ -220,9 +220,9 @@ async def activate_license(
             WHERE user_uid=$2
         """, new_expires, user["uid"])
 
-        # 5. Помечаем ключ как использованный
+        # 5. Помечаем токен как использованный
         await conn.execute("""
-            UPDATE activation_keys
+            UPDATE activation_tokens
             SET status='used',
                 used_at=NOW(),
                 used_by_uid=$1
@@ -230,9 +230,6 @@ async def activate_license(
         """, user["uid"], activation["id"])
 
     return RedirectResponse(url="/cabinet", status_code=302)
-
-
-
 
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
@@ -573,6 +570,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
