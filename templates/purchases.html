@@ -1,0 +1,30 @@
+{% extends "account_base.html" %}
+{% block title %}Купленные товары{% endblock %}
+
+{% block content %}
+<section style="padding:30px 0;">
+  <div class="card">
+    <h3>Ваши покупки</h3>
+    {% if purchases and purchases|length > 0 %}
+      <table style="width:100%; border-collapse:collapse; margin-top:12px;">
+        <tr>
+          <th style="padding:8px;">ID</th>
+          <th style="padding:8px;">Тариф</th>
+          <th style="padding:8px;">Сумма</th>
+          <th style="padding:8px;">Дата</th>
+        </tr>
+        {% for p in purchases %}
+        <tr>
+          <td style="padding:8px;">{{ p.id }}</td>
+          <td style="padding:8px;">{{ p.plan }}</td>
+          <td style="padding:8px;">{{ p.amount }} {{ p.currency }}</td>
+          <td style="padding:8px;">{{ p.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <div class="muted">У вас пока нет покупок.</div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
