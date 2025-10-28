@@ -6,6 +6,8 @@ from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
 from .email_service import create_and_send_confirmation
 import secrets, string
+from fastapi import Form
+from .jwt_utils import verify_password, hash_password
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -145,3 +147,43 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
+
+
+
+
+@router.get("/change-password", response_class=HTMLResponse)
+async def change_password_page(request: Request):
+    try:
+        user = await get_current_user(request.app, request)
+    except:
+        return RedirectResponse(url="/login", status_code=302)
+    return templates.TemplateResponse("change_password.html", {"request": request, "user": user, "error": None})
+
+@router.post("/change-password", response_class=HTMLResponse)
+async def change_password_submit(
+    request: Request,
+    old_password: str = Form(...),
+    new_password: str = Form(...),
+    new_password2: str = Form(...),
+):
+    try:
+        user = await get_current_user(request.app, request)
+    except:
+        return RedirectResponse(url="/login", status_code=302)
+
+    if new_password != new_password2:
+        return templates.TemplateResponse("change_password.html", {"request": request, "user": user, "error": "Пароли не совпадают"})
+
+    if len(new_password) < 6:
+        return templates.TemplateResponse("change_password.html", {"request": request, "user": user, "error": "Пароль должен быть ≥ 6 символов"})
+
+    async with request.app.state.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT password_hash FROM users WHERE id=$1", user["id"])
+        if not row or not verify_password(old_password, row["password_hash"]):
+            return templates.TemplateResponse("change_password.html", {"request": request, "user": user, "error": "Старый пароль неверен"})
+
+        new_hash = hash_password(new_password)
+        await conn.execute("UPDATE users SET password_hash=$1 WHERE id=$2", new_hash, user["id"])
+
+    return RedirectResponse(url="/cabinet", status_code=302)
+
