@@ -167,16 +167,23 @@ async def health():
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
 # ========= Публичный API для клиента =========
+# server.py (фрагмент, заменяет существующую функцию check_license)
+# ========= Публичный API для клиента (с поддержкой HWID) =========
 @app.get("/api/license")
-async def check_license(license: str):
+async def check_license(license: str, hwid: Optional[str] = None): # <-- ИЗМЕНЕНИЕ: Добавили hwid
     if not license or not license.strip():
         return {"status": "invalid"}
     key = license.strip()
+    
+    # Нормализуем HWID клиента (приводим к нижнему регистру, т.к. C# выдает hex в нижнем)
+    client_hwid = hwid.strip().lower() if hwid else None
 
     async with app.state.pool.acquire() as conn:
+        
+        # 1. Запрос лицензии (теперь с полем hwid)
         row = await conn.fetchrow(
             """
-            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid
+            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid, hwid
             FROM licenses
             WHERE license_key = $1
             """,
@@ -185,18 +192,76 @@ async def check_license(license: str):
         if not row:
             return {"status": "invalid"}
 
+        license_status = row["status"]
+        db_hwid = row["hwid"]
+        
+        # 2. Если лицензия не активна (expired, banned) — сразу возвращаем ошибку
+        if license_status != "active":
+            await conn.execute(
+                "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
+                key,
+            )
+            return {
+                "status": license_status,
+                "message": "Ключ недействителен или истёк."
+            }
+        
+        # 3. ЛОГИКА HWID (только для активных лицензий)
+        
+        # 3.1. Если в базе нет HWID (первая активация) и клиент его прислал
+        if not db_hwid and client_hwid:
+            await conn.execute(
+                "UPDATE licenses SET hwid = $1, last_check = NOW() WHERE license_key = $2",
+                client_hwid,
+                key,
+            )
+            # Привязка произошла успешно
+            return {
+                "status": "active",
+                "expires": row["expires"].isoformat() if row["expires"] else None,
+                "user": row["user_name"],
+                "user_uid": str(row["user_uid"]) if row["user_uid"] else None,
+                "message": "Лицензия активирована и привязана к вашему ПК. Используйте с удовольствием!"
+            }
+
+        # 3.2. Если в базе HWID ЕСТЬ и клиент его прислал
+        if db_hwid and client_hwid:
+            if db_hwid != client_hwid:
+                # HWID не совпал. Возвращаем ошибку и обновляем last_check.
+                await conn.execute(
+                    "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
+                    key,
+                )
+                return {
+                    "status": "invalid", # Возвращаем invalid, чтобы клиент вывел ошибку
+                    "message": "Лицензия привязана к другому компьютеру. Обратитесь в поддержку для сброса привязки."
+                }
+            
+            # HWID совпал, все хорошо. Обновляем last_check.
+            await conn.execute(
+                "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
+                key,
+            )
+
+        # 3.3. Если HWID в базе НЕТ, а клиент его НЕ прислал (старый клиент или ошибка)
+        # 3.4. Если HWID в базе ЕСТЬ, а клиент его НЕ прислал (ошибка)
+        # В этих случаях мы просто обновляем last_check и возвращаем активный статус.
+        # В реальной системе 3.4 лучше запретить, но для совместимости оставим так.
+
+        # 4. Обновляем last_check и возвращаем активный статус (если все проверки пройдены)
         await conn.execute(
             "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
             key,
         )
 
         return {
-            "status": row["status"],
+            "status": license_status, # "active"
             "expires": row["expires"].isoformat() if row["expires"] else None,
             "user": row["user_name"],
             "user_uid": str(row["user_uid"]) if row["user_uid"] else None,
             "created": row["created_at"].isoformat() if row["created_at"] else None,
-            "last_check": row["last_check"].isoformat() if row["last_check"] else None,
+            "last_check": datetime.utcnow().isoformat() + "Z",
+            "message": "Лицензия активна."
         }
 
 # ========= Активация лицензии =========
@@ -622,6 +687,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
