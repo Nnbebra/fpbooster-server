@@ -212,11 +212,21 @@ async def check_license(license: str, hwid: Optional[str] = None): # <-- Доб�
         
         # 3.1. Если в базе нет HWID (первая активация) и клиент его прислал
         if not db_hwid and client_hwid:
-            await conn.execute(
-                "UPDATE licenses SET hwid = $1, last_check = NOW() WHERE license_key = $2",
-                client_hwid,
-                key,
-            )
+            
+            # --- ИЗМЕНЁННЫЙ БЛОК: ДОБАВЛЯЕМ try/except ДЛЯ ДИАГНОСТИКИ ---
+            try:
+                print(f"DEBUG: ACTIVATION PATH HIT! Attempting to write HWID: {client_hwid}")
+                await conn.execute(
+                    "UPDATE licenses SET hwid = $1, last_check = NOW() WHERE license_key = $2",
+                    client_hwid,
+                    key,
+                )
+                print("DEBUG: Database UPDATE executed successfully.")
+            except Exception as e:
+                # Эта строка покажет причину, по которой HWID не записался.
+                print(f"FATAL ERROR: DB update failed for key {key}: {e}")
+            # -------------------------------------------------------------
+                
             return {
                 "status": "active",
                 "expires": row["expires"].isoformat() if row["expires"] else None,
@@ -676,6 +686,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
