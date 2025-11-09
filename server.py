@@ -166,11 +166,8 @@ async def health():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
-# ========= Публичный API для клиента =========
-# server.py (фрагмент, заменяет существующую функцию check_license)
 # ========= Публичный API для клиента (с поддержкой HWID) =========
 # server.py (фрагмент, заменяет существующую функцию check_license)
-
 @app.get("/api/license")
 async def check_license(license: str, hwid: Optional[str] = None):
     if not license or not license.strip():
@@ -198,6 +195,20 @@ async def check_license(license: str, hwid: Optional[str] = None):
 
         # 2. Логика привязки и валидации HWID (только если ключ активен)
         if license_status == "active":
+            
+            # !!! КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Блокировка обхода HWID !!!
+            # Если в базе есть HWID (лицензия привязана), но клиент не прислал его (client_hwid == None) - это обход.
+            if db_hwid and not client_hwid:
+                await conn.execute(
+                    "UPDATE licenses SET last_check = NOW() WHERE license_key = $1", 
+                    key,
+                )
+                return {
+                    "status": "invalid",
+                    "message": "Лицензия привязана к оборудованию. Обновите клиентское приложение.",
+                }
+
+            # 2a/2b. Старая логика проверки, которая выполняется только при наличии client_hwid
             if client_hwid:
                 # 2a. Первая активация: в базе HWID нет, клиент прислал HWID. Сохраняем его.
                 if not db_hwid:
@@ -237,7 +248,7 @@ async def check_license(license: str, hwid: Optional[str] = None):
             "last_check": datetime.utcnow().isoformat() + "Z",
             "message": "Лицензия активна." if license_status == "active" else f"Лицензия: {license_status}"
         }
-
+        
 # ========= Активация лицензии =========
 @app.post("/api/license/activate")
 async def activate_license(
@@ -661,6 +672,7 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
 
