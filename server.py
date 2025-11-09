@@ -166,63 +166,39 @@ async def health():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
-# ========= Публичный API для клиента (с поддержкой HWID) =========
-# server.py (фрагмент, заменяет существующую функцию check_license)
+# ========= Публичный API для клиента =========
 @app.get("/api/license")
-@app.get("/api/license")
-async def check_license(request: Request):
-    license_key = request.query_params.get('license')
-    hwid = request.query_params.get('hwid') # <-- НОВАЯ ПЕРЕМЕННАЯ HWID
-    
-    if not license_key or not hwid: # <-- ОБНОВЛЕННАЯ ПРОВЕРКА
-        raise HTTPException(status_code=400, detail="Missing license key or HWID.")
+async def check_license(license: str):
+    if not license or not license.strip():
+        return {"status": "invalid"}
+    key = license.strip()
 
     async with app.state.pool.acquire() as conn:
-        # 1. Получаем лицензию
-        license_data = await conn.fetchrow(
-            "SELECT * FROM licenses WHERE key = $1", license_key
+        row = await conn.fetchrow(
+            """
+            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid
+            FROM licenses
+            WHERE license_key = $1
+            """,
+            key,
         )
-        
-        if not license_data:
-            return {"status": "error", "message": "Invalid license key"}
+        if not row:
+            return {"status": "invalid"}
 
-        # 2. Проверка срока и активности
-        if not license_data['is_active'] or license_data['expires'] < datetime.now():
-            return {"status": "error", "message": "License expired or inactive"}
-        
-        db_hwid = license_data['hwid']
-        current_time = datetime.now()
-        
-        if db_hwid is None:
-            # 3. HWID НЕ привязан: ПРИВЯЗЫВАЕМ и обновляем last_check
-            await conn.execute(
-                "UPDATE licenses SET hwid = $1, last_check = $2 WHERE key = $3", 
-                hwid, current_time, license_key
-            )
-            # Перечитываем данные, чтобы вернуть корректный last_check
-            license_data = await conn.fetchrow("SELECT * FROM licenses WHERE key = $1", license_key)
-            
-        elif db_hwid != hwid:
-            # 4. HWID привязан, но НЕ СОВПАДАЕТ
-            return {"status": "error", "message": "License is bound to another PC."}
+        await conn.execute(
+            "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
+            key,
+        )
 
-        else:
-            # 5. HWID привязан и СОВПАДАЕТ: Просто обновляем last_check
-            await conn.execute(
-                "UPDATE licenses SET last_check = $1 WHERE key = $2", 
-                current_time, license_key
-            )
-            
-        # 6. Возвращаем успешный ответ
         return {
-            "status": "active",
-            "expires": license_data['expires'].isoformat(),
-            "user": license_data['username'],
-            "user_uid": license_data['user_uid'],
-            "created": license_data['created'].isoformat(),
-            "last_check": current_time.isoformat(), # Используем текущее время
+            "status": row["status"],
+            "expires": row["expires"].isoformat() if row["expires"] else None,
+            "user": row["user_name"],
+            "user_uid": str(row["user_uid"]) if row["user_uid"] else None,
+            "created": row["created_at"].isoformat() if row["created_at"] else None,
+            "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
-        
+
 # ========= Активация лицензии =========
 @app.post("/api/license/activate")
 async def activate_license(
@@ -646,38 +622,4 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
