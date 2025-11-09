@@ -238,6 +238,15 @@ async def check_license(request: Request):
             "last_check": current_time.isoformat(), 
         }
 
+@app.post("/api/promocode/use")
+async def use_promocode_stub(request: Request):
+    # Клиент ждёт ok: True или ok: False. Отправляем ok: True, чтобы он продолжил работу.
+    return {"ok": True, "message": "Промокоды временно отключены."}
+
+@app.get("/api/promocode/info")
+async def get_promocode_info_stub(request: Request):
+    return {"ok": True, "info": "Промокоды временно отключены."}
+
 # ========= Активация лицензии =========
 @app.post("/api/license/activate")
 async def activate_license(
@@ -661,5 +670,6 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
 
