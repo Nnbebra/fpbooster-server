@@ -167,36 +167,75 @@ async def health():
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
 # ========= Публичный API для клиента =========
+# ========= Публичный API для клиента =========
 @app.get("/api/license")
-async def check_license(license: str):
-    if not license or not license.strip():
-        return {"status": "invalid"}
-    key = license.strip()
+async def check_license(request: Request):
+    # --- 1. Получаем данные от C# клиента ---
+    # Мы изменили (license: str) на (request: Request), чтобы получить оба параметра
+    license_key = request.query_params.get('license')
+    hwid = request.query_params.get('hwid') # <-- Наш новый SHA256 HWID
+
+    # --- 2. Проверяем, что клиент всё прислал ---
+    if not license_key or not hwid:
+        raise HTTPException(status_code=400, detail="Missing license key or HWID.")
 
     async with app.state.pool.acquire() as conn:
+        # --- 3. Получаем лицензию из БД (добавили поле hwid в SELECT) ---
         row = await conn.fetchrow(
             """
-            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid
+            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid, hwid
             FROM licenses
             WHERE license_key = $1
             """,
-            key,
+            license_key,
         )
+        
         if not row:
-            return {"status": "invalid"}
+            return {"status": "error", "message": "Invalid license key"}
 
-        await conn.execute(
-            "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
-            key,
-        )
+        # --- 4. Проверка срока действия ---
+        # (Логика из твоего файла, но используем 'status' и 'expires')
+        current_status = row["status"]
+        expires_date = row["expires"]
+        
+        if current_status != 'active' or (expires_date and expires_date < datetime.utcnow().date()):
+             return {"status": "error", "message": "License expired or inactive"}
 
+        # --- 5. ГЛАВНАЯ ЛОГИКА HWID ---
+        db_hwid = row['hwid']
+        current_time = datetime.now()
+
+        if db_hwid is None:
+            # СЛУЧАЙ 1: Лицензия чистая (hwid = NULL). 
+            # Привязываем присланный HWID и обновляем время проверки.
+            await conn.execute(
+                "UPDATE licenses SET hwid = $1, last_check = NOW() WHERE license_key = $2",
+                hwid, license_key
+            )
+            
+        elif db_hwid != hwid:
+            # СЛУЧАЙ 2: HWID привязан, но НЕ совпадает. 
+            # Блокируем вход.
+            return {"status": "error", "message": "License is bound to another PC."}
+        
+        else:
+            # СЛУЧАЙ 3: HWID привязан и СОВПАДАЕТ.
+            # Просто обновляем время последней проверки.
+            await conn.execute(
+                "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
+                license_key
+            )
+        
+        # --- 6. Успешный ответ ---
+        # (Формат ответа соответствует твоему старому коду)
         return {
             "status": row["status"],
             "expires": row["expires"].isoformat() if row["expires"] else None,
             "user": row["user_name"],
             "user_uid": str(row["user_uid"]) if row["user_uid"] else None,
             "created": row["created_at"].isoformat() if row["created_at"] else None,
-            "last_check": row["last_check"].isoformat() if row["last_check"] else None,
+            # Отправляем актуальное время, а не старое
+            "last_check": current_time.isoformat(), 
         }
 
 # ========= Активация лицензии =========
@@ -622,4 +661,5 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
+
 
