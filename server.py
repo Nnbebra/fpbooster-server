@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
+from auth.jwt_utils import verify_password
 
 from guards import admin_guard_ui
 from auth.guards import get_current_user as get_current_user_raw
@@ -671,5 +672,70 @@ async def verification_file():
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
 
+# Модель данных, которые пришлет лаунчер
+class LauncherLogin(BaseModel):
+    email: str
+    password: str
+    hwid: str
+
+@app.post("/api/launcher/login")
+async def launcher_login(data: LauncherLogin, request: Request):
+    # 1. Ищем пользователя по Email
+    async with request.app.state.pool.acquire() as conn:
+        user = await conn.fetchrow(
+            "SELECT id, uid, password_hash, username FROM users WHERE email=$1", 
+            data.email.strip().lower()
+        )
+        
+        # 2. Проверяем пароль
+        if not user or not verify_password(data.password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+
+        # 3. Ищем лицензию, привязанную к этому user_uid
+        # (В твоем коде licenses.user_uid ссылается на users.uid)
+        license_row = await conn.fetchrow(
+            """
+            SELECT license_key, status, expires, hwid 
+            FROM licenses 
+            WHERE user_uid = $1 
+            """,
+            user["uid"]
+        )
+
+        if not license_row:
+            raise HTTPException(status_code=403, detail="Лицензия не найдена (обратитесь в поддержку)")
+
+        # 4. Проверяем статус подписки
+        import datetime
+        if license_row['status'] != 'active':
+             raise HTTPException(status_code=402, detail="Подписка не активна или истекла")
+             
+        if license_row['expires'] and license_row['expires'] < datetime.date.today():
+             raise HTTPException(status_code=402, detail="Срок подписки истек")
+
+        # 5. Проверяем HWID (Привязка к железу)
+        db_hwid = license_row['hwid']
+        
+        if db_hwid is None:
+            # Если HWID еще нет — привязываем текущий
+            await conn.execute(
+                "UPDATE licenses SET hwid=$1 WHERE license_key=$2",
+                data.hwid, license_row['license_key']
+            )
+        elif db_hwid != data.hwid:
+            # Если HWID есть, но он другой — ошибка
+            raise HTTPException(status_code=403, detail="Заход с другого ПК запрещен (Сбросьте HWID)")
+
+        # 6. Если всё круто — возвращаем токен или сразу байты файла
+        # Для примера вернем успешный статус и токен, который потом лаунчер обменяет на файл
+        from auth.jwt_utils import make_jwt
+        token = make_jwt(user["id"], data.email)
+        
+        return {
+            "status": "success",
+            "username": user["username"],
+            "token": token,
+            "expires": str(license_row["expires"])
+        }
 
 
