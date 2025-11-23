@@ -11,8 +11,8 @@ from pydantic import BaseModel, validator
 
 from guards import admin_guard_ui
 from auth.guards import get_current_user as get_current_user_raw
-
-
+# === ВАЖНО: Добавили импорты для Лаунчера ===
+from auth.jwt_utils import verify_password, make_jwt 
 
 # Обёртка для Depends: не ломает рабочую сигнатуру и не светит `app` в OpenAPI
 async def current_user(request: Request):
@@ -38,14 +38,9 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
-
 # server.py (фрагмент)
 from auth.users_router import router as users_router
 from auth.email_confirm import router as email_confirm_router
-
-
-
-
 
 
 app.include_router(users_router, tags=["auth"])
@@ -55,9 +50,6 @@ app.include_router(email_confirm_router, tags=["email"])
 
 DOWNLOAD_URL = os.getenv("DOWNLOAD_URL", "").strip()
 app.state.DOWNLOAD_URL = DOWNLOAD_URL
-
-
-
 
 
 # ===== Админ токен =====
@@ -89,15 +81,11 @@ app.include_router(referrals_router)
 app.include_router(purchases_router, tags=["purchases"])
 
 
-
-
 from fastapi.staticfiles import StaticFiles
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/templates_css", StaticFiles(directory="templates_css"), name="templates_css")
 app.mount("/JavaScript", StaticFiles(directory="JavaScript"), name="javascript")
-
-
 
 
 # ========= Конфигурация =========
@@ -130,6 +118,12 @@ class LicenseAdmin(BaseModel):
             return date.fromisoformat(str(v))
         except Exception as e:
             raise ValueError(f"expires must be ISO date (YYYY-MM-DD), got {v!r}: {e}")
+
+# === Модель для входа через Лаунчер ===
+class LauncherLogin(BaseModel):
+    email: str
+    password: str
+    hwid: str
 
 # ========= База данных =========
 @app.on_event("startup")
@@ -166,7 +160,7 @@ async def health():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
-# ========= Публичный API для клиента =========
+# ========= Публичный API для клиента (Старый метод по ключу) =========
 @app.get("/api/license")
 async def check_license(license: str):
     if not license or not license.strip():
@@ -198,6 +192,100 @@ async def check_license(license: str):
             "created": row["created_at"].isoformat() if row["created_at"] else None,
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
+
+# ==========================================================
+#             НОВЫЕ ЭНДПОИНТЫ ДЛЯ C# ЛАУНЧЕРА
+# ==========================================================
+
+@app.post("/api/launcher/login")
+async def launcher_login(data: LauncherLogin, request: Request):
+    # 1. Ищем пользователя по Email
+    email = data.email.strip().lower()
+    async with request.app.state.pool.acquire() as conn:
+        user = await conn.fetchrow(
+            "SELECT id, uid, password_hash, username FROM users WHERE email=$1", 
+            email
+        )
+        
+        # 2. Проверяем пароль
+        if not user or not verify_password(data.password, user["password_hash"]):
+            # Используем 401 для ошибки авторизации
+            raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+
+        # 3. Ищем лицензию
+        license_row = await conn.fetchrow(
+            "SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid = $1",
+            user["uid"]
+        )
+
+        if not license_row:
+             raise HTTPException(status_code=403, detail="Лицензия не найдена")
+
+        # 4. Проверяем статус подписки
+        if license_row['status'] != 'active':
+             raise HTTPException(status_code=402, detail="Подписка не активна")
+             
+        if license_row['expires'] and license_row['expires'] < date.today():
+             raise HTTPException(status_code=402, detail="Срок подписки истек")
+
+        # 5. Проверяем HWID
+        db_hwid = license_row['hwid']
+        
+        if db_hwid is None:
+            # HWID еще нет — привязываем текущий
+            await conn.execute(
+                "UPDATE licenses SET hwid=$1 WHERE license_key=$2",
+                data.hwid, license_row['license_key']
+            )
+        elif db_hwid != data.hwid:
+            # HWID есть, но он другой
+            raise HTTPException(status_code=403, detail="Ошибка HWID: Заход с другого ПК запрещен")
+
+        # 6. Возвращаем токен
+        token = make_jwt(user["id"], email)
+        
+        return {
+            "status": "success",
+            "username": user["username"],
+            "token": token,
+            "expires": str(license_row["expires"])
+        }
+
+@app.get("/api/client/get-core")
+async def get_client_core(
+    request: Request, 
+    user_data = Depends(current_user) # Используем твою функцию проверки токена
+):
+    # 1. Снова проверяем лицензию (на всякий случай)
+    async with request.app.state.pool.acquire() as conn:
+        license_row = await conn.fetchrow(
+            "SELECT status, expires FROM licenses WHERE user_uid=$1", 
+            user_data["uid"]
+        )
+        
+        if not license_row or license_row['status'] != 'active':
+            raise HTTPException(status_code=403, detail="No active license")
+            
+        if license_row['expires'] and license_row['expires'] < date.today():
+            raise HTTPException(status_code=403, detail="License expired")
+
+    # 2. Отдаем файл
+    # ВАЖНО: Убедись, что папка protected_builds существует рядом с server.py
+    file_path = "protected_builds/FPBooster.dll" 
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=500, detail="Server Error: Build file not found")
+
+    with open(file_path, "rb") as f:
+        file_bytes = f.read()
+    
+    # Отдаем как поток байтов
+    return Response(content=file_bytes, media_type="application/octet-stream")
+
+# ==========================================================
+#             КОНЕЦ ЭНДПОИНТОВ ЛАУНЧЕРА
+# ==========================================================
+
 
 # ========= Активация лицензии =========
 @app.post("/api/license/activate")
@@ -622,7 +710,3 @@ async def verification_file():
 @app.get("/support")
 async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
-
-
-
-
