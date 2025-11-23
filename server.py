@@ -8,11 +8,11 @@ from fastapi import FastAPI, HTTPException, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
-from auth.jwt_utils import verify_password
 
 from guards import admin_guard_ui
 from auth.guards import get_current_user as get_current_user_raw
-from auth.jwt_utils import get_current_user
+
+
 
 # Обёртка для Depends: не ломает рабочую сигнатуру и не светит `app` в OpenAPI
 async def current_user(request: Request):
@@ -23,11 +23,9 @@ async def current_user(request: Request):
 app = FastAPI(title="FPBooster License Server", version="1.3.0")
 templates = Jinja2Templates(directory="templates")
 
-
 # Заворачиваем UI-guard в Depends
 def ui_guard(request: Request):
     return admin_guard_ui(request, app.state.ADMIN_TOKEN)
-
 
 # Публичная главная страница
 @app.get("/", response_class=HTMLResponse)
@@ -40,9 +38,15 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
+
 # server.py (фрагмент)
 from auth.users_router import router as users_router
 from auth.email_confirm import router as email_confirm_router
+
+
+
+
+
 
 app.include_router(users_router, tags=["auth"])
 app.include_router(email_confirm_router, tags=["email"])
@@ -51,6 +55,10 @@ app.include_router(email_confirm_router, tags=["email"])
 
 DOWNLOAD_URL = os.getenv("DOWNLOAD_URL", "").strip()
 app.state.DOWNLOAD_URL = DOWNLOAD_URL
+
+
+
+
 
 # ===== Админ токен =====
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
@@ -65,12 +73,13 @@ from admin_creators import router as admin_creators_router
 from referrals import router as referrals_router
 from purchases_router import router as purchases_router
 
+
 # ВАЖНО: импорт buy_router
 from buy import router as buy_router
 
 from payments import router as payments_router
-
 app.include_router(payments_router, tags=["payments"])
+
 
 # Подключение
 app.include_router(buy_router, tags=["buy"])
@@ -79,11 +88,17 @@ app.include_router(admin_creators_router)
 app.include_router(referrals_router)
 app.include_router(purchases_router, tags=["purchases"])
 
+
+
+
 from fastapi.staticfiles import StaticFiles
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/templates_css", StaticFiles(directory="templates_css"), name="templates_css")
 app.mount("/JavaScript", StaticFiles(directory="JavaScript"), name="javascript")
+
+
+
 
 # ========= Конфигурация =========
 DB_URL = os.getenv("DATABASE_URL", "").strip()
@@ -95,11 +110,9 @@ UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
 UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
 UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
 
-
 # ========= Модели =========
 class LicenseIn(BaseModel):
     license: str
-
 
 class LicenseAdmin(BaseModel):
     license_key: str
@@ -118,7 +131,6 @@ class LicenseAdmin(BaseModel):
         except Exception as e:
             raise ValueError(f"expires must be ISO date (YYYY-MM-DD), got {v!r}: {e}")
 
-
 # ========= База данных =========
 @app.on_event("startup")
 async def startup():
@@ -129,13 +141,11 @@ async def startup():
         command_timeout=10
     )
 
-
 @app.on_event("shutdown")
 async def shutdown():
     pool = app.state.pool
     if pool:
         await pool.close()
-
 
 # ========= Защита =========
 def admin_guard_api(request: Request):
@@ -145,7 +155,6 @@ def admin_guard_api(request: Request):
     if token != app.state.ADMIN_TOKEN:
         raise HTTPException(status_code=403, detail="Forbidden: invalid admin token")
     return True
-
 
 # ========= Health =========
 @app.get("/api/health")
@@ -157,98 +166,46 @@ async def health():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
-
-# ========= Публичный API для клиента =========
 # ========= Публичный API для клиента =========
 @app.get("/api/license")
-async def check_license(request: Request):
-    # --- 1. Получаем данные от C# клиента ---
-    # Мы изменили (license: str) на (request: Request), чтобы получить оба параметра
-    license_key = request.query_params.get('license')
-    hwid = request.query_params.get('hwid')  # <-- Наш новый SHA256 HWID
-
-    # --- 2. Проверяем, что клиент всё прислал ---
-    if not license_key or not hwid:
-        raise HTTPException(status_code=400, detail="Missing license key or HWID.")
+async def check_license(license: str):
+    if not license or not license.strip():
+        return {"status": "invalid"}
+    key = license.strip()
 
     async with app.state.pool.acquire() as conn:
-        # --- 3. Получаем лицензию из БД (добавили поле hwid в SELECT) ---
         row = await conn.fetchrow(
             """
-            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid, hwid
+            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid
             FROM licenses
             WHERE license_key = $1
             """,
-            license_key,
+            key,
+        )
+        if not row:
+            return {"status": "invalid"}
+
+        await conn.execute(
+            "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
+            key,
         )
 
-        if not row:
-            return {"status": "error", "message": "Invalid license key"}
-
-        # --- 4. Проверка срока действия ---
-        # (Логика из твоего файла, но используем 'status' и 'expires')
-        current_status = row["status"]
-        expires_date = row["expires"]
-
-        if current_status != 'active' or (expires_date and expires_date < datetime.utcnow().date()):
-            return {"status": "error", "message": "License expired or inactive"}
-
-        # --- 5. ГЛАВНАЯ ЛОГИКА HWID ---
-        db_hwid = row['hwid']
-        current_time = datetime.now()
-
-        if db_hwid is None:
-            # СЛУЧАЙ 1: Лицензия чистая (hwid = NULL).
-            # Привязываем присланный HWID и обновляем время проверки.
-            await conn.execute(
-                "UPDATE licenses SET hwid = $1, last_check = NOW() WHERE license_key = $2",
-                hwid, license_key
-            )
-
-        elif db_hwid != hwid:
-            # СЛУЧАЙ 2: HWID привязан, но НЕ совпадает.
-            # Блокируем вход.
-            return {"status": "error", "message": "License is bound to another PC."}
-
-        else:
-            # СЛУЧАЙ 3: HWID привязан и СОВПАДАЕТ.
-            # Просто обновляем время последней проверки.
-            await conn.execute(
-                "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
-                license_key
-            )
-
-        # --- 6. Успешный ответ ---
-        # (Формат ответа соответствует твоему старому коду)
         return {
             "status": row["status"],
             "expires": row["expires"].isoformat() if row["expires"] else None,
             "user": row["user_name"],
             "user_uid": str(row["user_uid"]) if row["user_uid"] else None,
             "created": row["created_at"].isoformat() if row["created_at"] else None,
-            # Отправляем актуальное время, а не старое
-            "last_check": current_time.isoformat(),
+            "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
-
-
-@app.post("/api/promocode/use")
-async def use_promocode_stub(request: Request):
-    # Клиент ждёт ok: True или ok: False. Отправляем ok: True, чтобы он продолжил работу.
-    return {"ok": True, "message": "Промокоды временно отключены."}
-
-
-@app.get("/api/promocode/info")
-async def get_promocode_info_stub(request: Request):
-    return {"ok": True, "info": "Промокоды временно отключены."}
-
 
 # ========= Активация лицензии =========
 @app.post("/api/license/activate")
 async def activate_license(
-        request: Request,
-        token: Optional[str] = Form(None),
-        key: Optional[str] = Form(None),
-        user=Depends(current_user)
+    request: Request,
+    token: Optional[str] = Form(None),
+    key: Optional[str] = Form(None),
+    user=Depends(current_user)
 ):
     # Совместимость: используем token, если нет — key
     token_value = (token or key or "").strip()
@@ -325,6 +282,7 @@ async def activate_license(
     return RedirectResponse(url="/cabinet", status_code=302)
 
 
+
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
 async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
@@ -346,7 +304,6 @@ async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(ad
         )
         return {"ok": True}
 
-
 @app.post("/api/admin/license/delete")
 async def delete_license(data: LicenseIn, _guard: bool = Depends(admin_guard_api)):
     async with app.state.pool.acquire() as conn:
@@ -355,7 +312,6 @@ async def delete_license(data: LicenseIn, _guard: bool = Depends(admin_guard_api
             data.license.strip(),
         )
         return {"ok": True, "result": result}
-
 
 @app.get("/api/admin/license/get")
 async def get_license_api(license: str, _guard: bool = Depends(admin_guard_api)):
@@ -379,7 +335,6 @@ async def get_license_api(license: str, _guard: bool = Depends(admin_guard_api))
             "last_check": row["last_check"].isoformat() if row["last_check"] else None,
         }
 
-
 # ========= Автообновления =========
 @app.get("/api/update")
 async def update_meta():
@@ -395,17 +350,14 @@ async def update_meta():
         "changelog": UPDATE_CHANGELOG or "Без описания изменений",
     }
 
-
 # ========= Веб-админка =========
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_root(request: Request, _=Depends(ui_guard)):
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
-
 
 @app.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...)):
@@ -428,17 +380,15 @@ async def admin_login(request: Request, password: str = Form(...)):
         httponly=True,
         samesite="lax",
         secure=True,
-        max_age=7 * 24 * 3600
+        max_age=7*24*3600
     )
     return resp
-
 
 @app.get("/admin/logout")
 async def admin_logout():
     resp = RedirectResponse(url="/admin/login", status_code=302)
     resp.delete_cookie("admin_auth")
     return resp
-
 
 # /admin/licenses — список
 @app.get("/admin/licenses", response_class=HTMLResponse)
@@ -464,22 +414,20 @@ async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_gua
             )
     return templates.TemplateResponse("licenses.html", {"request": request, "rows": rows, "q": q or ""})
 
-
 # GET /admin/licenses/new — форма создания
 @app.get("/admin/licenses/new", response_class=HTMLResponse)
 async def admin_new_form(request: Request, _=Depends(ui_guard)):
     return templates.TemplateResponse("license_form.html", {"request": request, "row": None, "error": None})
 
-
 # POST /admin/licenses/new — создание
 @app.post("/admin/licenses/new")
 async def admin_create(
-        request: Request,
-        license_key: str = Form(...),
-        status: str = Form(...),
-        expires: str = Form(None),
-        user: str = Form(None),
-        _=Depends(ui_guard),
+    request: Request,
+    license_key: str = Form(...),
+    status: str = Form(...),
+    expires: str = Form(None),
+    user: str = Form(None),
+    _=Depends(ui_guard),
 ):
     try:
         exp = date.fromisoformat(expires) if expires else None
@@ -508,7 +456,6 @@ async def admin_create(
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
 # GET /admin/licenses/edit (по query ?license_key=...)
 @app.get("/admin/licenses/edit", response_class=HTMLResponse)
 async def admin_edit_form(request: Request, license_key: str, _=Depends(ui_guard)):
@@ -525,17 +472,16 @@ async def admin_edit_form(request: Request, license_key: str, _=Depends(ui_guard
         return Response("License not found", status_code=404)
     return templates.TemplateResponse("license_form.html", {"request": request, "row": row, "error": None})
 
-
 # POST /admin/licenses/edit (form с original_key)
 @app.post("/admin/licenses/edit")
 async def admin_update(
-        request: Request,
-        original_key: str = Form(...),
-        license_key: str = Form(...),
-        status: str = Form(...),
-        expires: str = Form(None),
-        user: str = Form(None),
-        _=Depends(ui_guard),
+    request: Request,
+    original_key: str = Form(...),
+    license_key: str = Form(...),
+    status: str = Form(...),
+    expires: str = Form(None),
+    user: str = Form(None),
+    _=Depends(ui_guard),
 ):
     try:
         exp = date.fromisoformat(expires) if expires else None
@@ -568,7 +514,6 @@ async def admin_update(
                 )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
 # GET /admin/licenses/edit/{license_key}
 @app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
 async def edit_license_form(request: Request, license_key: str, _=Depends(ui_guard)):
@@ -578,16 +523,15 @@ async def edit_license_form(request: Request, license_key: str, _=Depends(ui_gua
         return Response("License not found", status_code=404)
     return templates.TemplateResponse("license_form.html", {"request": request, "row": row, "error": None})
 
-
 # POST /admin/licenses/edit/{license_key}
 @app.post("/admin/licenses/edit/{license_key}")
 async def edit_license(
-        request: Request,
-        license_key: str,
-        status: str = Form(...),
-        expires: str = Form(None),
-        user: str = Form(None),
-        _=Depends(ui_guard),
+    request: Request,
+    license_key: str,
+    status: str = Form(...),
+    expires: str = Form(None),
+    user: str = Form(None),
+    _=Depends(ui_guard),
 ):
     try:
         exp = date.fromisoformat(expires) if expires else None
@@ -604,7 +548,6 @@ async def edit_license(
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
 # POST /admin/licenses/delete (через форму)
 @app.post("/admin/licenses/delete")
 async def admin_delete(request: Request, license_key: str = Form(...), _=Depends(ui_guard)):
@@ -612,14 +555,12 @@ async def admin_delete(request: Request, license_key: str = Form(...), _=Depends
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-
 # GET /admin/licenses/delete/{license_key} (быстрое удаление, подтверждение в JS)
 @app.get("/admin/licenses/delete/{license_key}")
 async def delete_license_get(request: Request, license_key: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
-
 
 # /admin/users — список пользователей
 @app.get("/admin/users", response_class=HTMLResponse)
@@ -654,7 +595,6 @@ async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
         return Response("User not found", status_code=404)
     return templates.TemplateResponse("user_form.html", {"request": request, "row": row, "error": None})
 
-
 @app.post("/admin/users/edit/{uid}")
 async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
@@ -662,14 +602,15 @@ async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
     return RedirectResponse(url="/admin/users", status_code=302)
 
 
+
 @app.get("/eula", response_class=HTMLResponse)
 async def eula_page(request: Request):
     return templates.TemplateResponse("eula.html", {"request": request})
 
-
 @app.get("/datahandle", response_class=HTMLResponse)
 async def datahandle_page(request: Request):
     return templates.TemplateResponse("datahandle.html", {"request": request})
+
 
 
 @app.get("/shop-verification-9PmRxnl75J.txt", response_class=PlainTextResponse)
@@ -683,99 +624,5 @@ async def support_redirect():
     return RedirectResponse(url="https://t.me/funpaybo0sterr")
 
 
-# Модель данных, которые пришлет лаунчер
-class LauncherLogin(BaseModel):
-    email: str
-    password: str
-    hwid: str
 
-
-@app.get("/api/client/get-core")
-async def get_client_core(
-        request: Request,
-        user_data=Depends(current_user)  # Используем твою функцию проверки токена
-):
-    # 1. Снова проверяем лицензию (на случай, если токен старый, а подписка кончилась 5 минут назад)
-    async with request.app.state.pool.acquire() as conn:
-        license_row = await conn.fetchrow(
-            "SELECT status, hwid FROM licenses WHERE user_uid=$1",
-            user_data["uid"]
-        )
-
-        # Строгая проверка перед выдачей файла
-        if not license_row or license_row['status'] != 'active':
-            raise HTTPException(status_code=403, detail="No active license")
-
-    # 2. Читаем файл и отдаем байты
-    # ВАЖНО: Создай папку 'protected_builds' рядом с server.py и положи туда файл
-    file_path = "protected_builds/FPBooster.dll"
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=500, detail="Build not found on server")
-
-    with open(file_path, "rb") as f:
-        file_bytes = f.read()
-
-    # Отдаем как поток байтов
-    return Response(content=file_bytes, media_type="application/octet-stream")
-
-@app.post("/api/launcher/login")
-async def launcher_login(data: LauncherLogin, request: Request):
-    # 1. Ищем пользователя по Email
-    async with request.app.state.pool.acquire() as conn:
-        user = await conn.fetchrow(
-            "SELECT id, uid, password_hash, username FROM users WHERE email=$1",
-            data.email.strip().lower()
-        )
-
-        # 2. Проверяем пароль
-        if not user or not verify_password(data.password, user["password_hash"]):
-            raise HTTPException(status_code=401, detail="Неверный логин или пароль")
-
-        # 3. Ищем лицензию, привязанную к этому user_uid
-        # (В твоем коде licenses.user_uid ссылается на users.uid)
-        license_row = await conn.fetchrow(
-            """
-            SELECT license_key, status, expires, hwid 
-            FROM licenses 
-            WHERE user_uid = $1 
-            """,
-            user["uid"]
-        )
-
-        if not license_row:
-            raise HTTPException(status_code=403, detail="Лицензия не найдена (обратитесь в поддержку)")
-
-        # 4. Проверяем статус подписки
-        import datetime
-        if license_row['status'] != 'active':
-            raise HTTPException(status_code=402, detail="Подписка не активна или истекла")
-
-        if license_row['expires'] and license_row['expires'] < datetime.date.today():
-            raise HTTPException(status_code=402, detail="Срок подписки истек")
-
-        # 5. Проверяем HWID (Привязка к железу)
-        db_hwid = license_row['hwid']
-
-        if db_hwid is None:
-            # Если HWID еще нет — привязываем текущий
-            await conn.execute(
-                "UPDATE licenses SET hwid=$1 WHERE license_key=$2",
-                data.hwid, license_row['license_key']
-            )
-        elif db_hwid != data.hwid:
-            # Если HWID есть, но он другой — ошибка
-            raise HTTPException(status_code=403, detail="Заход с другого ПК запрещен (Сбросьте HWID)")
-
-        # 6. Если всё круто — возвращаем токен или сразу байты файла
-        # Для примера вернем успешный статус и токен, который потом лаунчер обменяет на файл
-        from auth.jwt_utils import make_jwt
-        token = make_jwt(user["id"], data.email)
-
-        return {
-            "status": "success",
-            "username": user["username"],
-            "token": token,
-            "expires": str(license_row["expires"])
-        }
 
