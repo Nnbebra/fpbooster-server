@@ -11,16 +11,15 @@ from pydantic import BaseModel, validator
 
 from guards import admin_guard_ui
 from auth.guards import get_current_user as get_current_user_raw
-# === ВАЖНО: Добавили импорты для Лаунчера ===
+# === Импорты для Лаунчера ===
 from auth.jwt_utils import verify_password, make_jwt 
 
-# Обёртка для Depends: не ломает рабочую сигнатуру и не светит `app` в OpenAPI
+# Обёртка для Depends
 async def current_user(request: Request):
     return await get_current_user_raw(request.app, request)
 
-
 # ========= Создаём приложение =========
-app = FastAPI(title="FPBooster License Server", version="1.3.0")
+app = FastAPI(title="FPBooster License Server", version="1.4.0")
 templates = Jinja2Templates(directory="templates")
 
 # Заворачиваем UI-guard в Depends
@@ -37,66 +36,48 @@ async def index(request: Request):
         user = None
     return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
-
-# server.py (фрагмент)
+# Подключение роутеров
 from auth.users_router import router as users_router
 from auth.email_confirm import router as email_confirm_router
-
 
 app.include_router(users_router, tags=["auth"])
 app.include_router(email_confirm_router, tags=["email"])
 
-# ===== ссылка на скачивание =====
-
+# ===== Ссылка на скачивание Лаунчера =====
+# Берется из переменных окружения
 DOWNLOAD_URL = os.getenv("DOWNLOAD_URL", "").strip()
 app.state.DOWNLOAD_URL = DOWNLOAD_URL
-
 
 # ===== Админ токен =====
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "").strip()
 if not ADMIN_TOKEN:
-    # В продакшне лучше требовать наличия переменной окружения
     raise RuntimeError("ADMIN_TOKEN is not set")
 app.state.ADMIN_TOKEN = ADMIN_TOKEN
 
-# ===== Подключение роутеров (один раз) =====
+# ===== Подключение остальных роутеров =====
 from creators import router as creators_router
 from admin_creators import router as admin_creators_router
 from referrals import router as referrals_router
 from purchases_router import router as purchases_router
-
-
-# ВАЖНО: импорт buy_router
 from buy import router as buy_router
-
 from payments import router as payments_router
+
 app.include_router(payments_router, tags=["payments"])
-
-
-# Подключение
 app.include_router(buy_router, tags=["buy"])
 app.include_router(creators_router)
 app.include_router(admin_creators_router)
 app.include_router(referrals_router)
 app.include_router(purchases_router, tags=["purchases"])
 
-
 from fastapi.staticfiles import StaticFiles
-
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/templates_css", StaticFiles(directory="templates_css"), name="templates_css")
 app.mount("/JavaScript", StaticFiles(directory="JavaScript"), name="javascript")
 
-
-# ========= Конфигурация =========
+# ========= Конфигурация БД =========
 DB_URL = os.getenv("DATABASE_URL", "").strip()
 if not DB_URL:
     raise RuntimeError("DATABASE_URL is not set")
-
-UPDATE_VERSION = os.getenv("LATEST_VERSION", "").strip()
-UPDATE_URL = os.getenv("DOWNLOAD_URL", "").strip()
-UPDATE_SHA256 = os.getenv("UPDATE_SHA256", "").strip()
-UPDATE_CHANGELOG = os.getenv("UPDATE_CHANGELOG", "").strip()
 
 # ========= Модели =========
 class LicenseIn(BaseModel):
@@ -160,7 +141,7 @@ async def health():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
-# ========= Публичный API для клиента (Старый метод по ключу) =========
+# ========= Публичный API (Legacy check) =========
 @app.get("/api/license")
 async def check_license(license: str):
     if not license or not license.strip():
@@ -169,20 +150,13 @@ async def check_license(license: str):
 
     async with app.state.pool.acquire() as conn:
         row = await conn.fetchrow(
-            """
-            SELECT license_key, status, expires, user_name, created_at, last_check, user_uid
-            FROM licenses
-            WHERE license_key = $1
-            """,
+            "SELECT license_key, status, expires, user_name, created_at, last_check, user_uid FROM licenses WHERE license_key = $1",
             key,
         )
         if not row:
             return {"status": "invalid"}
 
-        await conn.execute(
-            "UPDATE licenses SET last_check = NOW() WHERE license_key = $1",
-            key,
-        )
+        await conn.execute("UPDATE licenses SET last_check = NOW() WHERE license_key = $1", key)
 
         return {
             "status": row["status"],
@@ -194,54 +168,41 @@ async def check_license(license: str):
         }
 
 # ==========================================================
-#             НОВЫЕ ЭНДПОИНТЫ ДЛЯ C# ЛАУНЧЕРА
+#             ЭНДПОИНТЫ ДЛЯ C# ЛАУНЧЕРА
 # ==========================================================
 
 @app.post("/api/launcher/login")
 async def launcher_login(data: LauncherLogin, request: Request):
-    # 1. Ищем пользователя по Email
+    # 1. Ищем пользователя
     email = data.email.strip().lower()
     async with request.app.state.pool.acquire() as conn:
-        user = await conn.fetchrow(
-            "SELECT id, uid, password_hash, username FROM users WHERE email=$1", 
-            email
-        )
+        user = await conn.fetchrow("SELECT id, uid, password_hash, username FROM users WHERE email=$1", email)
         
         # 2. Проверяем пароль
         if not user or not verify_password(data.password, user["password_hash"]):
-            # Используем 401 для ошибки авторизации
             raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
         # 3. Ищем лицензию
-        license_row = await conn.fetchrow(
-            "SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid = $1",
-            user["uid"]
-        )
+        license_row = await conn.fetchrow("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid = $1", user["uid"])
 
         if not license_row:
              raise HTTPException(status_code=403, detail="Лицензия не найдена")
 
-        # 4. Проверяем статус подписки
+        # 4. Статус подписки
         if license_row['status'] != 'active':
              raise HTTPException(status_code=402, detail="Подписка не активна")
              
         if license_row['expires'] and license_row['expires'] < date.today():
              raise HTTPException(status_code=402, detail="Срок подписки истек")
 
-        # 5. Проверяем HWID
+        # 5. HWID
         db_hwid = license_row['hwid']
-        
         if db_hwid is None:
-            # HWID еще нет — привязываем текущий
-            await conn.execute(
-                "UPDATE licenses SET hwid=$1 WHERE license_key=$2",
-                data.hwid, license_row['license_key']
-            )
+            await conn.execute("UPDATE licenses SET hwid=$1 WHERE license_key=$2", data.hwid, license_row['license_key'])
         elif db_hwid != data.hwid:
-            # HWID есть, но он другой
             raise HTTPException(status_code=403, detail="Ошибка HWID: Заход с другого ПК запрещен")
 
-        # 6. Возвращаем токен
+        # 6. Токен
         token = make_jwt(user["id"], email)
         
         return {
@@ -252,16 +213,10 @@ async def launcher_login(data: LauncherLogin, request: Request):
         }
 
 @app.get("/api/client/get-core")
-async def get_client_core(
-    request: Request, 
-    user_data = Depends(current_user) # Используем твою функцию проверки токена
-):
-    # 1. Снова проверяем лицензию (на всякий случай)
+async def get_client_core(request: Request, user_data = Depends(current_user)):
+    # 1. Проверка лицензии
     async with request.app.state.pool.acquire() as conn:
-        license_row = await conn.fetchrow(
-            "SELECT status, expires FROM licenses WHERE user_uid=$1", 
-            user_data["uid"]
-        )
+        license_row = await conn.fetchrow("SELECT status, expires FROM licenses WHERE user_uid=$1", user_data["uid"])
         
         if not license_row or license_row['status'] != 'active':
             raise HTTPException(status_code=403, detail="No active license")
@@ -269,107 +224,46 @@ async def get_client_core(
         if license_row['expires'] and license_row['expires'] < date.today():
             raise HTTPException(status_code=403, detail="License expired")
 
-    # 2. Отдаем файл
-    # ВАЖНО: Убедись, что папка protected_builds существует рядом с server.py
+    # 2. Отдача файла (Protected Build)
     file_path = "protected_builds/FPBooster.dll" 
-    
     if not os.path.exists(file_path):
         raise HTTPException(status_code=500, detail="Server Error: Build file not found")
 
     with open(file_path, "rb") as f:
         file_bytes = f.read()
-    
-    # Отдаем как поток байтов
     return Response(content=file_bytes, media_type="application/octet-stream")
 
 # ==========================================================
-#             КОНЕЦ ЭНДПОИНТОВ ЛАУНЧЕРА
-# ==========================================================
-
 
 # ========= Активация лицензии =========
 @app.post("/api/license/activate")
-async def activate_license(
-    request: Request,
-    token: Optional[str] = Form(None),
-    key: Optional[str] = Form(None),
-    user=Depends(current_user)
-):
-    # Совместимость: используем token, если нет — key
+async def activate_license(request: Request, token: Optional[str] = Form(None), key: Optional[str] = Form(None), user=Depends(current_user)):
     token_value = (token or key or "").strip()
     if not token_value:
         raise HTTPException(status_code=400, detail="Token is required")
 
     async with request.app.state.pool.acquire() as conn:
         async with conn.transaction():
-            # 1. Проверяем токен
-            activation = await conn.fetchrow(
-                "SELECT * FROM activation_tokens WHERE token=$1", token_value
-            )
+            activation = await conn.fetchrow("SELECT * FROM activation_tokens WHERE token=$1", token_value)
             if not activation:
                 raise HTTPException(404, "Токен не найден")
             if activation["status"] != "unused":
-                raise HTTPException(400, "Токен уже использован или недействителен")
+                raise HTTPException(400, "Токен уже использован")
 
-            # 2. Находим лицензию пользователя
-            license_row = await conn.fetchrow(
-                "SELECT * FROM licenses WHERE user_uid=$1", user["uid"]
-            )
+            license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
             if not license_row:
                 raise HTTPException(404, "Лицензия пользователя не найдена")
 
-            # 3. Считаем новую дату окончания
             today = datetime.utcnow().date()
-            base_date = (
-                license_row["expires"]
-                if license_row["expires"] and license_row["expires"] >= today
-                else today
-            )
+            base_date = (license_row["expires"] if license_row["expires"] and license_row["expires"] >= today else today)
             new_expires = base_date + timedelta(days=activation["duration_days"])
 
-            # 4. Обновляем лицензию
-            await conn.execute(
-                """
-                UPDATE licenses
-                SET status='active',
-                    expires=$1,
-                    activated_at=NOW()
-                WHERE user_uid=$2
-                """,
-                new_expires,
-                user["uid"],
-            )
-
-            # 5. Помечаем токен как использованный
-            await conn.execute(
-                """
-                UPDATE activation_tokens
-                SET status='used',
-                    used_at=NOW(),
-                    used_by_uid=$1
-                WHERE id=$2
-                """,
-                user["uid"],
-                activation["id"],
-            )
-
-            # 6. Логируем покупку в purchases (источник: token)
-            # amount=0, currency='TOKEN' — токен уже куплен на стороне магазина/маркетплейса
-            await conn.execute(
-                """
-                INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code)
-                VALUES ($1, $2, $3, $4, 'token', $5)
-                """,
-                user["uid"],
-                str(activation["duration_days"]),  # план = 30/90/365
-                0,
-                'TOKEN',
-                token_value,
-            )
+            await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE user_uid=$2", new_expires, user["uid"])
+            await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user["uid"], activation["id"])
+            await conn.execute("INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code) VALUES ($1, $2, $3, $4, 'token', $5)",
+                user["uid"], str(activation["duration_days"]), 0, 'TOKEN', token_value)
 
     return RedirectResponse(url="/cabinet", status_code=302)
-
-
 
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
@@ -377,66 +271,26 @@ async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(ad
     async with app.state.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO licenses (license_key, status, expires, user_name)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (license_key)
-            DO UPDATE
-            SET status = EXCLUDED.status,
-                expires = EXCLUDED.expires,
-                user_name = EXCLUDED.user_name
+            INSERT INTO licenses (license_key, status, expires, user_name) VALUES ($1, $2, $3, $4)
+            ON CONFLICT (license_key) DO UPDATE SET status=EXCLUDED.status, expires=EXCLUDED.expires, user_name=EXCLUDED.user_name
             """,
-            data.license_key.strip(),
-            data.status,
-            data.expires,
-            data.user.strip() if data.user else None,
+            data.license_key.strip(), data.status, data.expires, data.user.strip() if data.user else None
         )
         return {"ok": True}
 
 @app.post("/api/admin/license/delete")
 async def delete_license(data: LicenseIn, _guard: bool = Depends(admin_guard_api)):
     async with app.state.pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM licenses WHERE license_key = $1",
-            data.license.strip(),
-        )
+        result = await conn.execute("DELETE FROM licenses WHERE license_key = $1", data.license.strip())
         return {"ok": True, "result": result}
 
 @app.get("/api/admin/license/get")
 async def get_license_api(license: str, _guard: bool = Depends(admin_guard_api)):
     async with app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT license_key, status, expires, user_name, created_at, last_check
-            FROM licenses
-            WHERE license_key = $1
-            """,
-            license.strip(),
-        )
+        row = await conn.fetchrow("SELECT license_key, status, expires, user_name, created_at, last_check FROM licenses WHERE license_key = $1", license.strip())
         if not row:
             raise HTTPException(status_code=404, detail="License not found")
-        return {
-            "license_key": row["license_key"],
-            "status": row["status"],
-            "expires": row["expires"].isoformat() if row["expires"] else None,
-            "user": row["user_name"],
-            "created": row["created_at"].isoformat() if row["created_at"] else None,
-            "last_check": row["last_check"].isoformat() if row["last_check"] else None,
-        }
-
-# ========= Автообновления =========
-@app.get("/api/update")
-async def update_meta():
-    if not UPDATE_VERSION or not UPDATE_URL or not UPDATE_SHA256:
-        raise HTTPException(
-            status_code=500,
-            detail="Update metadata is not configured (check LATEST_VERSION, DOWNLOAD_URL, UPDATE_SHA256)"
-        )
-    return {
-        "version": UPDATE_VERSION,
-        "url": UPDATE_URL,
-        "sha256": UPDATE_SHA256,
-        "changelog": UPDATE_CHANGELOG or "Без описания изменений",
-    }
+        return dict(row)
 
 # ========= Веб-админка =========
 @app.get("/admin", response_class=HTMLResponse)
@@ -450,26 +304,11 @@ async def admin_login_page(request: Request):
 @app.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...)):
     if not app.state.ADMIN_TOKEN:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "ADMIN_TOKEN не настроен"},
-            status_code=500,
-        )
+        return templates.TemplateResponse("login.html", {"request": request, "error": "ADMIN_TOKEN не настроен"}, status_code=500)
     if password != app.state.ADMIN_TOKEN:
-        return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Неверный токен"},
-            status_code=401,
-        )
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный токен"}, status_code=401)
     resp = RedirectResponse(url="/admin/licenses", status_code=302)
-    resp.set_cookie(
-        "admin_auth",
-        app.state.ADMIN_TOKEN,
-        httponly=True,
-        samesite="lax",
-        secure=True,
-        max_age=7*24*3600
-    )
+    resp.set_cookie("admin_auth", app.state.ADMIN_TOKEN, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
 
 @app.get("/admin/logout")
@@ -478,131 +317,32 @@ async def admin_logout():
     resp.delete_cookie("admin_auth")
     return resp
 
-# /admin/licenses — список
 @app.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         if q:
-            rows = await conn.fetch(
-                """
-                SELECT license_key, status, expires, user_name, created_at, last_check
-                FROM licenses
-                WHERE license_key ILIKE $1 OR COALESCE(user_name,'') ILIKE $1
-                ORDER BY created_at DESC
-                """,
-                f"%{q}%",
-            )
+            rows = await conn.fetch("SELECT license_key, status, expires, user_name, created_at, last_check FROM licenses WHERE license_key ILIKE $1 OR COALESCE(user_name,'') ILIKE $1 ORDER BY created_at DESC", f"%{q}%")
         else:
-            rows = await conn.fetch(
-                """
-                SELECT license_key, status, expires, user_name, created_at, last_check
-                FROM licenses
-                ORDER BY created_at DESC
-                """
-            )
+            rows = await conn.fetch("SELECT license_key, status, expires, user_name, created_at, last_check FROM licenses ORDER BY created_at DESC")
     return templates.TemplateResponse("licenses.html", {"request": request, "rows": rows, "q": q or ""})
 
-# GET /admin/licenses/new — форма создания
 @app.get("/admin/licenses/new", response_class=HTMLResponse)
 async def admin_new_form(request: Request, _=Depends(ui_guard)):
     return templates.TemplateResponse("license_form.html", {"request": request, "row": None, "error": None})
 
-# POST /admin/licenses/new — создание
 @app.post("/admin/licenses/new")
-async def admin_create(
-    request: Request,
-    license_key: str = Form(...),
-    status: str = Form(...),
-    expires: str = Form(None),
-    user: str = Form(None),
-    _=Depends(ui_guard),
-):
+async def admin_create_form(request: Request, license_key: str = Form(...), status: str = Form(...), expires: str = Form(None), user: str = Form(None), _=Depends(ui_guard)):
     try:
         exp = date.fromisoformat(expires) if expires else None
     except Exception:
-        return templates.TemplateResponse(
-            "license_form.html",
-            {"request": request, "row": None, "error": "Неверный формат даты (YYYY-MM-DD)"},
-            status_code=400,
-        )
-
+        return templates.TemplateResponse("license_form.html", {"request": request, "row": None, "error": "Неверный формат даты"}, status_code=400)
     async with app.state.pool.acquire() as conn:
         await conn.execute(
-            """
-            INSERT INTO licenses (license_key, status, expires, user_name)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (license_key)
-            DO UPDATE
-            SET status=EXCLUDED.status,
-                expires=EXCLUDED.expires,
-                user_name=EXCLUDED.user_name
-            """,
-            license_key.strip(),
-            status,
-            exp,
-            (user or "").strip() or None,
+            "INSERT INTO licenses (license_key, status, expires, user_name) VALUES ($1, $2, $3, $4) ON CONFLICT (license_key) DO UPDATE SET status=EXCLUDED.status, expires=EXCLUDED.expires, user_name=EXCLUDED.user_name",
+            license_key.strip(), status, exp, (user or "").strip() or None
         )
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-# GET /admin/licenses/edit (по query ?license_key=...)
-@app.get("/admin/licenses/edit", response_class=HTMLResponse)
-async def admin_edit_form(request: Request, license_key: str, _=Depends(ui_guard)):
-    async with app.state.pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT license_key, status, expires, user_name, user_uid, created_at, last_check
-            FROM licenses
-            WHERE license_key=$1
-            """,
-            license_key,
-        )
-    if not row:
-        return Response("License not found", status_code=404)
-    return templates.TemplateResponse("license_form.html", {"request": request, "row": row, "error": None})
-
-# POST /admin/licenses/edit (form с original_key)
-@app.post("/admin/licenses/edit")
-async def admin_update(
-    request: Request,
-    original_key: str = Form(...),
-    license_key: str = Form(...),
-    status: str = Form(...),
-    expires: str = Form(None),
-    user: str = Form(None),
-    _=Depends(ui_guard),
-):
-    try:
-        exp = date.fromisoformat(expires) if expires else None
-    except Exception:
-        async with app.state.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT license_key, status, expires, user_name, created_at, last_check FROM licenses WHERE license_key=$1",
-                original_key,
-            )
-        return templates.TemplateResponse(
-            "license_form.html",
-            {"request": request, "row": row, "error": "Неверный формат даты (YYYY-MM-DD)"},
-            status_code=400,
-        )
-
-    async with app.state.pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(
-                "UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4",
-                status,
-                exp,
-                (user or "").strip() or None,
-                original_key,
-            )
-            if license_key.strip() != original_key:
-                await conn.execute(
-                    "UPDATE licenses SET license_key=$1 WHERE license_key=$2",
-                    license_key.strip(),
-                    original_key,
-                )
-    return RedirectResponse(url="/admin/licenses", status_code=302)
-
-# GET /admin/licenses/edit/{license_key}
 @app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
 async def edit_license_form(request: Request, license_key: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
@@ -611,69 +351,36 @@ async def edit_license_form(request: Request, license_key: str, _=Depends(ui_gua
         return Response("License not found", status_code=404)
     return templates.TemplateResponse("license_form.html", {"request": request, "row": row, "error": None})
 
-# POST /admin/licenses/edit/{license_key}
 @app.post("/admin/licenses/edit/{license_key}")
-async def edit_license(
-    request: Request,
-    license_key: str,
-    status: str = Form(...),
-    expires: str = Form(None),
-    user: str = Form(None),
-    _=Depends(ui_guard),
-):
+async def edit_license(request: Request, license_key: str, status: str = Form(...), expires: str = Form(None), user: str = Form(None), _=Depends(ui_guard)):
     try:
         exp = date.fromisoformat(expires) if expires else None
     except Exception:
         return RedirectResponse(url=f"/admin/licenses/edit/{license_key}", status_code=303)
-
     async with app.state.pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4",
-            status,
-            exp,
-            (user or "").strip() or None,
-            license_key,
-        )
+        await conn.execute("UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4", status, exp, (user or "").strip() or None, license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-# POST /admin/licenses/delete (через форму)
 @app.post("/admin/licenses/delete")
-async def admin_delete(request: Request, license_key: str = Form(...), _=Depends(ui_guard)):
+async def admin_delete_post(request: Request, license_key: str = Form(...), _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-# GET /admin/licenses/delete/{license_key} (быстрое удаление, подтверждение в JS)
 @app.get("/admin/licenses/delete/{license_key}")
 async def delete_license_get(request: Request, license_key: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-# /admin/users — список пользователей
 @app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         if q:
-            rows = await conn.fetch(
-                """
-                SELECT id, email, username, uid, user_group, created_at, last_login
-                FROM users
-                WHERE email ILIKE $1 OR username ILIKE $1 OR CAST(uid AS TEXT) ILIKE $1
-                ORDER BY created_at DESC
-                """,
-                f"%{q}%"
-            )
+            rows = await conn.fetch("SELECT id, email, username, uid, user_group, created_at, last_login FROM users WHERE email ILIKE $1 OR username ILIKE $1 OR CAST(uid AS TEXT) ILIKE $1 ORDER BY created_at DESC", f"%{q}%")
         else:
-            rows = await conn.fetch(
-                """
-                SELECT id, email, username, uid, user_group, created_at, last_login
-                FROM users
-                ORDER BY created_at DESC
-                """
-            )
+            rows = await conn.fetch("SELECT id, email, username, uid, user_group, created_at, last_login FROM users ORDER BY created_at DESC")
     return templates.TemplateResponse("users.html", {"request": request, "rows": rows, "q": q or ""})
-
 
 @app.get("/admin/users/edit/{uid}", response_class=HTMLResponse)
 async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
@@ -689,8 +396,6 @@ async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
         await conn.execute("UPDATE users SET user_group=$1 WHERE uid=$2", user_group, uid)
     return RedirectResponse(url="/admin/users", status_code=302)
 
-
-
 @app.get("/eula", response_class=HTMLResponse)
 async def eula_page(request: Request):
     return templates.TemplateResponse("eula.html", {"request": request})
@@ -699,13 +404,9 @@ async def eula_page(request: Request):
 async def datahandle_page(request: Request):
     return templates.TemplateResponse("datahandle.html", {"request": request})
 
-
-
 @app.get("/shop-verification-9PmRxnl75J.txt", response_class=PlainTextResponse)
 async def verification_file():
-    file_path = pathlib.Path("templates/shop-verification-9PmRxnl75J.txt")
-    return file_path.read_text(encoding="utf-8")
-
+    return pathlib.Path("templates/shop-verification-9PmRxnl75J.txt").read_text(encoding="utf-8")
 
 @app.get("/support")
 async def support_redirect():
