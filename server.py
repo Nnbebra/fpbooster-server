@@ -320,10 +320,20 @@ async def admin_logout():
 @app.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
+        # JOIN с users чтобы видеть email, и выборка hwid
+        query_base = """
+            SELECT l.license_key, l.status, l.expires, l.user_name, l.user_uid, l.hwid, l.created_at, l.last_check, u.email
+            FROM licenses l
+            LEFT JOIN users u ON l.user_uid = u.uid
+        """
         if q:
-            rows = await conn.fetch("SELECT license_key, status, expires, user_name, created_at, last_check FROM licenses WHERE license_key ILIKE $1 OR COALESCE(user_name,'') ILIKE $1 ORDER BY created_at DESC", f"%{q}%")
+            rows = await conn.fetch(
+                f"{query_base} WHERE l.license_key ILIKE $1 OR COALESCE(l.user_name,'') ILIKE $1 OR u.email ILIKE $1 ORDER BY l.created_at DESC", 
+                f"%{q}%"
+            )
         else:
-            rows = await conn.fetch("SELECT license_key, status, expires, user_name, created_at, last_check FROM licenses ORDER BY created_at DESC")
+            rows = await conn.fetch(f"{query_base} ORDER BY l.created_at DESC")
+            
     return templates.TemplateResponse("licenses.html", {"request": request, "rows": rows, "q": q or ""})
 
 @app.get("/admin/licenses/new", response_class=HTMLResponse)
@@ -361,6 +371,14 @@ async def edit_license(request: Request, license_key: str, status: str = Form(..
         await conn.execute("UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4", status, exp, (user or "").strip() or None, license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
+# === НОВЫЙ МЕТОД: СБРОС HWID ===
+@app.get("/admin/licenses/reset_hwid/{license_key}")
+async def reset_hwid(request: Request, license_key: str, _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        await conn.execute("UPDATE licenses SET hwid = NULL WHERE license_key=$1", license_key)
+    # Возвращаемся обратно на список
+    return RedirectResponse(url="/admin/licenses", status_code=302)
+
 @app.post("/admin/licenses/delete")
 async def admin_delete_post(request: Request, license_key: str = Form(...), _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
@@ -395,19 +413,3 @@ async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE users SET user_group=$1 WHERE uid=$2", user_group, uid)
     return RedirectResponse(url="/admin/users", status_code=302)
-
-@app.get("/eula", response_class=HTMLResponse)
-async def eula_page(request: Request):
-    return templates.TemplateResponse("eula.html", {"request": request})
-
-@app.get("/datahandle", response_class=HTMLResponse)
-async def datahandle_page(request: Request):
-    return templates.TemplateResponse("datahandle.html", {"request": request})
-
-@app.get("/shop-verification-9PmRxnl75J.txt", response_class=PlainTextResponse)
-async def verification_file():
-    return pathlib.Path("templates/shop-verification-9PmRxnl75J.txt").read_text(encoding="utf-8")
-
-@app.get("/support")
-async def support_redirect():
-    return RedirectResponse(url="https://t.me/funpaybo0sterr")
