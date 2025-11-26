@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="mb-4">
-    <h2><i class="fas fa-users text-purple"></i> Пользователи</h2>
+    <h2 class="text-white"><i class="fas fa-users text-purple"></i> Пользователи</h2>
 </div>
 
 <div class="card-dark mb-4">
   <form method="get" action="/admin/users" class="d-flex gap-2">
-    <input type="text" class="form-control bg-dark text-light border-secondary" name="q" placeholder="Поиск: Email, Login, UID" value="{{ q }}">
+    <input type="text" class="form-control bg-dark text-white border-secondary" name="q" placeholder="🔍 Поиск: Email, Login, UID" value="{{ q }}">
     <button type="submit" class="btn btn-outline-light">Искать</button>
   </form>
 </div>
@@ -16,12 +16,11 @@
     <table class="table table-dark table-hover mb-0 align-middle">
       <thead>
         <tr>
-          <th>Пользователь</th>
-          <th>Группа</th>
-          <th>Email Статус</th>
-          <th>Регистрация</th>
-          <th>Вход</th>
-          <th class="text-end">Действия</th>
+          <th style="color: #D6BCFA;">Пользователь</th>
+          <th style="color: #D6BCFA;">Статус</th>
+          <th style="color: #D6BCFA;">LTV (Покупки)</th>
+          <th style="color: #D6BCFA;">Инфо</th>
+          <th style="color: #D6BCFA;" class="text-end">Действия</th>
         </tr>
       </thead>
       <tbody>
@@ -29,39 +28,50 @@
         <tr>
           <td>
               <div class="fw-bold text-white font-size-lg">{{ row.username or "Без имени" }}</div>
-              <div class="small" style="color: #aaa;">{{ row.email }}</div>
-              <div class="small text-muted font-monospace">UID: {{ row.uid }}</div>
+              <div style="color: #b0b0b0; font-size: 0.9rem;">{{ row.email }}</div>
+              <div class="small font-monospace" style="color: #666;">UID: {{ row.uid }}</div>
           </td>
           
           <td>
-              {% if row.user_group == 'admin' %}
-                  <span class="badge bg-danger">ADMIN</span>
-              {% elif row.user_group == 'premium' %}
-                  <span class="badge bg-warning text-dark">PREMIUM</span>
-              {% else %}
-                  <span class="badge bg-secondary">USER</span>
-              {% endif %}
+              <div class="mb-1">
+                {% if row.user_group == 'admin' %}
+                    <span class="badge bg-danger">ADMIN</span>
+                {% elif row.user_group == 'premium' %}
+                    <span class="badge bg-warning text-dark">PREMIUM</span>
+                {% else %}
+                    <span class="badge bg-secondary">USER</span>
+                {% endif %}
+              </div>
+              <div>
+                {% if row.email_confirmed %}
+                    <span style="color: #4ade80; font-size: 0.85rem;"><i class="fas fa-check-circle"></i> Email OK</span>
+                {% else %}
+                    <span style="color: #f87171; font-size: 0.85rem;"><i class="fas fa-times-circle"></i> Не подтвержден</span>
+                {% endif %}
+              </div>
           </td>
 
           <td>
-              {% if row.email_confirmed %}
-                  <span class="text-success small"><i class="fas fa-check-circle"></i> Подтвержден</span>
+              {% if row.total_spent > 0 %}
+                <span class="fw-bold text-success">+{{ row.total_spent }} ₽</span>
               {% else %}
-                  <span class="text-danger small"><i class="fas fa-times-circle"></i> Не подтвержден</span>
+                <span class="text-muted">—</span>
               {% endif %}
           </td>
 
-          <td>{{ row.created_at.strftime("%d.%m.%Y") if row.created_at else "—" }}</td>
-          <td>{{ row.last_login.strftime("%d.%m %H:%M") if row.last_login else "—" }}</td>
+          <td style="color: #b0b0b0; font-size: 0.9rem;">
+              <div>Рег: {{ row.created_at.strftime("%d.%m.%y") if row.created_at else "-" }}</div>
+              <div>Вход: {{ row.last_login.strftime("%d.%m %H:%M") if row.last_login else "-" }}</div>
+          </td>
 
           <td class="text-end">
-            <a href="/admin/users/edit/{{ row.uid }}" class="btn btn-sm btn-primary" title="Настройки аккаунта">
+            <a href="/admin/users/edit/{{ row.uid }}" class="btn btn-sm btn-primary" title="Полная инфо">
               <i class="fas fa-cog"></i>
             </a>
             <a href="/admin/users/delete/{{ row.uid }}" class="btn btn-sm btn-danger" 
-               onclick="return confirm('ВНИМАНИЕ: Удаление пользователя удалит все его покупки и лицензии! Продолжить?')"
+               onclick="return confirm('ВНИМАНИЕ: Удаление пользователя удалит все его данные! Продолжить?')"
                title="Удалить аккаунт">
-              <i class="fas fa-user-times"></i>
+              <i class="fas fa-trash"></i>
             </a>
           </td>
         </tr>
