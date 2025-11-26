@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mb-4 d-flex justify-content-between align-items-center">
+    <h2 class="text-white"><i class="fas fa-ticket-alt text-purple"></i> Токены пополнения</h2>
+    
+    <form method="post" action="/admin/tokens/delete_used" onsubmit="return confirm('Удалить все использованные токены? Это очистит историю.')">
+        <button class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-broom"></i> Очистить использованные
+        </button>
+    </form>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card-dark h-100">
+            <h4 class="text-white mb-3"><i class="fas fa-plus-circle"></i> Создать токены</h4>
+            <form method="post" action="/admin/tokens/create">
+                <div class="mb-3">
+                    <label class="form-label text-muted">Срок действия (дней)</label>
+                    <select class="form-select bg-dark text-white border-secondary" name="days">
+                        <option value="1">1 день (Пробный)</option>
+                        <option value="3">3 дня</option>
+                        <option value="7">7 дней</option>
+                        <option value="30" selected>30 дней (Месяц)</option>
+                        <option value="90">90 дней</option>
+                        <option value="365">365 дней</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label text-muted">Количество ключей</label>
+                    <input type="number" class="form-control bg-dark text-white border-secondary" name="count" value="1" min="1" max="50">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label text-muted">Префикс (необязательно)</label>
+                    <input type="text" class="form-control bg-dark text-white border-secondary" name="prefix" placeholder="Например: EVENT-">
+                    <div class="form-text text-muted">Будет добавлен в начало ключа</div>
+                </div>
+
+                <button type="submit" class="btn btn-purple w-100">
+                    <i class="fas fa-magic"></i> Сгенерировать
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card-dark mb-3">
+            <form method="get" action="/admin/tokens" class="d-flex gap-2">
+                <input type="text" class="form-control bg-dark text-white border-secondary" name="q" placeholder="Поиск токена..." value="{{ q }}">
+                <button type="submit" class="btn btn-outline-light">Найти</button>
+            </form>
+        </div>
+
+        <div class="card-dark p-0 overflow-hidden" style="max-height: 600px; overflow-y: auto;">
+            <table class="table table-dark table-hover mb-0 align-middle">
+                <thead class="sticky-top bg-dark">
+                    <tr>
+                        <th>Токен</th>
+                        <th>Дни</th>
+                        <th>Статус</th>
+                        <th>Использован кем</th>
+                        <th class="text-end"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <code class="text-info user-select-all">{{ row.token }}</code>
+                                <button class="btn btn-sm btn-link text-muted p-0" onclick="navigator.clipboard.writeText('{{ row.token }}')">
+                                    <i class="far fa-copy"></i>
+                                </button>
+                            </div>
+                            <div class="small text-muted">{{ row.created_at.strftime("%d.%m %H:%M") }}</div>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">+{{ row.duration_days }} дн.</span>
+                        </td>
+                        <td>
+                            {% if row.status == 'unused' %}
+                                <span class="badge bg-success">Свободен</span>
+                            {% else %}
+                                <span class="badge bg-dark text-muted">Использован</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.used_by %}
+                                <span class="text-warning">{{ row.used_by }}</span>
+                                <div class="small text-muted">{{ row.used_at.strftime("%d.%m") }}</div>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if row.status == 'unused' %}
+                            <a href="/admin/tokens/delete/{{ row.id }}" class="text-danger" onclick="return confirm('Удалить?')" title="Удалить">
+                                <i class="fas fa-times"></i>
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
