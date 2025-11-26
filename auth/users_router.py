@@ -115,7 +115,7 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
 
-@router.get("/cabinet", response_class=HTMLResponse)
+@app.get("/cabinet", response_class=HTMLResponse)
 async def account_page(request: Request):
     try:
         user = await get_current_user(request.app, request)
@@ -124,22 +124,36 @@ async def account_page(request: Request):
         return RedirectResponse(url="/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
+        # 1. Получаем лицензии
         licenses = await conn.fetch(
             """
-            SELECT license_key, status, expires
+            SELECT license_key, status, expires, hwid
             FROM licenses
             WHERE user_uid = $1
             ORDER BY created_at DESC
             """,
             user["uid"],
         )
+        
+        # [cite_start]2. Получаем общую сумму трат (LTV) [cite: 594]
+        # (Используем COALESCE, чтобы вернуть 0, если покупок нет)
+        total_spent = await conn.fetchval(
+            "SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1",
+            user["uid"]
+        )
 
-    # передаём ссылку загрузки из переменных окружения (пробрасывается в app.state)
+    # передаём ссылку загрузки из переменных окружения
     download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
 
     return templates.TemplateResponse(
         "account.html",
-        {"request": request, "user": user, "licenses": licenses, "download_url": download_url}
+        {
+            "request": request, 
+            "user": user, 
+            "licenses": licenses, 
+            "download_url": download_url,
+            "total_spent": total_spent # <-- Передаем сумму в шаблон
+        }
     )
 
 @router.get("/logout")
@@ -186,4 +200,5 @@ async def change_password_submit(
         await conn.execute("UPDATE users SET password_hash=$1 WHERE id=$2", new_hash, user["id"])
 
     return RedirectResponse(url="/cabinet", status_code=302)
+
 
