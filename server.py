@@ -317,10 +317,10 @@ async def admin_logout():
     resp.delete_cookie("admin_auth")
     return resp
 
+# --- ЛИЦЕНЗИИ ---
 @app.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        # JOIN с users чтобы видеть email, и выборка hwid
         query_base = """
             SELECT l.license_key, l.status, l.expires, l.user_name, l.user_uid, l.hwid, l.created_at, l.last_check, u.email
             FROM licenses l
@@ -371,18 +371,10 @@ async def edit_license(request: Request, license_key: str, status: str = Form(..
         await conn.execute("UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4", status, exp, (user or "").strip() or None, license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-# === НОВЫЙ МЕТОД: СБРОС HWID ===
 @app.get("/admin/licenses/reset_hwid/{license_key}")
 async def reset_hwid(request: Request, license_key: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE licenses SET hwid = NULL WHERE license_key=$1", license_key)
-    # Возвращаемся обратно на список
-    return RedirectResponse(url="/admin/licenses", status_code=302)
-
-@app.post("/admin/licenses/delete")
-async def admin_delete_post(request: Request, license_key: str = Form(...), _=Depends(ui_guard)):
-    async with app.state.pool.acquire() as conn:
-        await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
 @app.get("/admin/licenses/delete/{license_key}")
@@ -391,25 +383,64 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
+# --- ПОЛЬЗОВАТЕЛИ ---
+
 @app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
+        query = """
+            SELECT id, email, username, uid, user_group, created_at, last_login, email_confirmed 
+            FROM users 
+        """
         if q:
-            rows = await conn.fetch("SELECT id, email, username, uid, user_group, created_at, last_login FROM users WHERE email ILIKE $1 OR username ILIKE $1 OR CAST(uid AS TEXT) ILIKE $1 ORDER BY created_at DESC", f"%{q}%")
+            rows = await conn.fetch(f"{query} WHERE email ILIKE $1 OR username ILIKE $1 OR CAST(uid AS TEXT) ILIKE $1 ORDER BY created_at DESC", f"%{q}%")
         else:
-            rows = await conn.fetch("SELECT id, email, username, uid, user_group, created_at, last_login FROM users ORDER BY created_at DESC")
+            rows = await conn.fetch(f"{query} ORDER BY created_at DESC")
     return templates.TemplateResponse("users.html", {"request": request, "rows": rows, "q": q or ""})
 
 @app.get("/admin/users/edit/{uid}", response_class=HTMLResponse)
 async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT id, email, username, uid, user_group FROM users WHERE uid=$1", uid)
+        row = await conn.fetchrow("SELECT id, email, username, uid, user_group, email_confirmed FROM users WHERE uid=$1", uid)
     if not row:
         return Response("User not found", status_code=404)
     return templates.TemplateResponse("user_form.html", {"request": request, "row": row, "error": None})
 
 @app.post("/admin/users/edit/{uid}")
-async def edit_user(uid: str, user_group: str = Form(...), _=Depends(ui_guard)):
+async def edit_user(
+    uid: str, 
+    user_group: str = Form(...), 
+    new_password: str = Form(None),
+    email_confirmed: bool = Form(False), # Чекбокс
+    _ = Depends(ui_guard)
+):
     async with app.state.pool.acquire() as conn:
-        await conn.execute("UPDATE users SET user_group=$1 WHERE uid=$2", user_group, uid)
+        # Обновляем группу и статус почты
+        await conn.execute(
+            "UPDATE users SET user_group=$1, email_confirmed=$2 WHERE uid=$3", 
+            user_group, email_confirmed, uid
+        )
+        
+        # Если админ ввел новый пароль — меняем его
+        if new_password and len(new_password.strip()) >= 6:
+            from auth.jwt_utils import hash_password
+            new_hash = hash_password(new_password.strip())
+            await conn.execute("UPDATE users SET password_hash=$1 WHERE uid=$2", new_hash, uid)
+
     return RedirectResponse(url="/admin/users", status_code=302)
+
+@app.get("/admin/users/delete/{uid}")
+async def delete_user_get(request: Request, uid: str, _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        # Сначала удаляем зависимости, чтобы не было ошибок БД
+        # 1. Лицензии
+        await conn.execute("DELETE FROM licenses WHERE user_uid=$1", uid)
+        # 2. Токены активации
+        await conn.execute("DELETE FROM activation_tokens WHERE used_by_uid=$1", uid)
+        # 3. Покупки
+        await conn.execute("DELETE FROM purchases WHERE user_uid=$1", uid)
+        # 4. Сам пользователь
+        await conn.execute("DELETE FROM users WHERE uid=$1", uid)
+        
+    return RedirectResponse(url="/admin/users", status_code=302)
+
