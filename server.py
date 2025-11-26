@@ -461,20 +461,19 @@ async def delete_user_get(request: Request, uid: str, _=Depends(ui_guard)):
 @app.get("/admin/tokens", response_class=HTMLResponse)
 async def admin_tokens_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        # Показываем токены и кто их использовал (если использованы)
+        # ИСПРАВЛЕНО: Убрали t.created_at, так как его нет в базе. Сортируем по ID.
         query = """
-            SELECT t.id, t.token, t.duration_days, t.status, t.created_at, t.used_at, u.username as used_by
+            SELECT t.id, t.token, t.duration_days, t.status, t.used_at, u.username as used_by
             FROM activation_tokens t
             LEFT JOIN users u ON t.used_by_uid = u.uid
         """
         if q:
-            # Поиск по самому токену или по юзернейму использовавшего
             rows = await conn.fetch(
-                f"{query} WHERE t.token ILIKE $1 OR u.username ILIKE $1 ORDER BY t.created_at DESC", 
+                f"{query} WHERE t.token ILIKE $1 OR u.username ILIKE $1 ORDER BY t.id DESC", 
                 f"%{q}%"
             )
         else:
-            rows = await conn.fetch(f"{query} ORDER BY t.created_at DESC")
+            rows = await conn.fetch(f"{query} ORDER BY t.id DESC")
             
     return templates.TemplateResponse("tokens.html", {"request": request, "rows": rows, "q": q or ""})
 
@@ -516,4 +515,5 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
