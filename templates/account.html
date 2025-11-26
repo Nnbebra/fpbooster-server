@@ -1,272 +1,125 @@
 {% extends "account_base.html" %}
 {% block title %}Кабинет — FPBooster{% endblock %}
 
-{% block head_extra %}
-<style>
-    /* === ПЕРЕОПРЕДЕЛЕНИЕ СТИЛЕЙ ДЛЯ КАБИНЕТА (Как в твоем примере) === */
-    
-    :root {
-        --background-color: #121214;
-        --navbar-color: #1b1b1e;
-        --border-color: #2e2e33;
-        --card-bg: #202024;
-        
-        --gradient-primary: linear-gradient(330deg, #9929ea 0%, #5808fb 100%);
-        --gradient-hover: linear-gradient(330deg, #8825cf 0%, #4d09d6 100%);
-        
-        --text-primary: #e1e1e6;
-        --text-secondary: #a8a8b3;
-    }
-
-    /* Перебиваем фон из base.html */
-    body {
-        background: var(--background-color) !important;
-        background-image: none !important;
-        color: var(--text-primary);
-        font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    /* Кастомный скроллбар */
-    ::-webkit-scrollbar { width: 10px; }
-    ::-webkit-scrollbar-thumb {
-        background-color: #323238;
-        border-radius: 5px;
-        border: 2px solid var(--background-color);
-    }
-    ::-webkit-scrollbar-track { background-color: var(--background-color); }
-
-    /* Карточки в стиле Flat/Dark */
-    .flat-card {
-        background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        padding: 24px;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-
-    /* Градиентный текст и кнопки */
-    .text-gradient {
-        background: var(--gradient-primary);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 800;
-    }
-
-    .btn-flat-primary {
-        background: var(--gradient-primary);
-        border: 0;
-        color: #fff;
-        font-weight: 600;
-        padding: 10px 24px;
-        border-radius: 6px;
-        transition: 0.2s;
-        display: inline-flex; align-items: center; gap: 8px;
-    }
-    .btn-flat-primary:hover {
-        background: var(--gradient-hover);
-        color: #fff;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(88, 8, 251, 0.4);
-    }
-
-    .btn-flat-secondary {
-        background: transparent;
-        border: 1px solid var(--border-color);
-        color: var(--text-secondary);
-        padding: 8px 16px;
-        border-radius: 6px;
-        font-weight: 500;
-        transition: 0.2s;
-        display: block;
-        text-align: center;
-        margin-bottom: 8px;
-    }
-    .btn-flat-secondary:hover {
-        border-color: #5808fb;
-        color: #fff;
-        background: rgba(88, 8, 251, 0.1);
-    }
-
-    /* Статистика */
-    .stat-box {
-        display: flex;
-        flex-direction: column;
-    }
-    .stat-label { font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 1.5rem; font-weight: 700; color: #fff; }
-
-    /* Таблица/Список лицензий */
-    .license-item {
-        background: rgba(255,255,255,0.03);
-        border: 1px solid var(--border-color);
-        border-radius: 6px;
-        padding: 16px;
-        margin-bottom: 12px;
-        display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
-    }
-    .license-key-text { font-family: 'Courier New', monospace; font-size: 1.1rem; font-weight: bold; color: #fff; }
-    
-    .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
-    .status-active { background: rgba(4, 211, 97, 0.1); color: #04d361; }
-    .status-expired { background: rgba(247, 90, 104, 0.1); color: #f75a68; }
-</style>
-{% endblock %}
-
 {% block content %}
-<div style="padding-top: 20px;">
-    
-    <div class="row g-4">
-        <!-- ЛЕВАЯ КОЛОНКА -->
-        <div class="col-lg-8">
-            
-            <!-- 1. Профиль и Статистика -->
-            <div class="flat-card d-flex justify-content-between align-items-center flex-wrap gap-3">
-                <div class="d-flex align-items-center gap-3">
-                    <!-- Аватар с градиентом -->
-                    <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--gradient-primary); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; font-weight: 700; color: white;">
-                        {{ user.username[0]|upper }}
-                    </div>
-                    <div>
-                        <h2 class="h4 mb-1 fw-bold text-white">{{ user.username }}</h2>
-                        <div class="d-flex gap-2 text-secondary small font-monospace">
-                            <span>UID: {{ user.uid }}</span>
-                            <span style="color: #5808fb;">•</span>
-                            <span>{{ user.user_group|upper }}</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="d-flex gap-4">
-                    <div class="stat-box text-end">
-                        <span class="stat-label">Потрачено</span>
-                        <span class="stat-value">{{ total_spent }} ₽</span>
-                    </div>
-                </div>
-            </div>
+<section style="padding:30px 0;">
 
-            <!-- Предупреждение Email -->
-            {% if not user.email_confirmed %}
-            <div class="alert alert-warning d-flex align-items-center gap-3" style="background: rgba(255, 205, 30, 0.1); color: #ffcd1e; border: 1px solid rgba(255, 205, 30, 0.2);">
-                <i class="fas fa-exclamation-triangle fs-4"></i>
-                <div>
-                    <strong>Подтвердите Email!</strong>
-                    <div class="small">Письмо отправлено на {{ user.email }}. Без этого восстановление пароля невозможно.</div>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- 2. Главная кнопка (Скачать) -->
-            {% set has_active = licenses|selectattr("status", "equalto", "active")|list %}
-            
-            {% if has_active %}
-                <div class="flat-card text-center py-5" style="border-color: #5808fb; background: linear-gradient(180deg, rgba(88,8,251,0.05) 0%, rgba(18,18,20,0) 100%);">
-                    <div class="mb-3">
-                        <i class="fa-brands fa-windows text-gradient" style="font-size: 3.5rem;"></i>
-                    </div>
-                    <h3 class="fw-bold text-white">Ваша подписка активна</h3>
-                    <p class="text-secondary mb-4">Скачайте наш лаунчер, чтобы начать работу.</p>
-                    
-                    {% if download_url %}
-                        <a href="{{ download_url }}" class="btn-flat-primary fs-5 px-5 py-3">
-                            <i class="fas fa-download"></i> СКАЧАТЬ LAUNCHER
-                        </a>
-                        <div class="mt-3 small text-secondary">v1.0 для Windows 10/11</div>
-                    {% else %}
-                        <button class="btn btn-secondary disabled">Ссылка недоступна</button>
-                    {% endif %}
-                </div>
-            {% else %}
-                <div class="flat-card text-center py-5">
-                    <h3 class="fw-bold text-white">Нет активной подписки</h3>
-                    <p class="text-secondary mb-4">Купите лицензию, чтобы получить доступ к софту.</p>
-                    <a href="/buy" class="btn-flat-primary px-4">
-                        <i class="fas fa-shopping-bag"></i> Перейти в магазин
-                    </a>
-                </div>
-            {% endif %}
-
-            <!-- 3. Список лицензий -->
-            <h5 class="mb-3 text-secondary text-uppercase fw-bold small ls-1">Мои Лицензии</h5>
-            {% if licenses %}
-                {% for lic in licenses %}
-                <div class="license-item">
-                    <div>
-                        <div class="d-flex align-items-center gap-2 mb-1">
-                            <span class="license-key-text">{{ lic.license_key }}</span>
-                            <button class="btn btn-link text-secondary p-0" onclick="navigator.clipboard.writeText('{{ lic.license_key }}')" title="Копировать">
-                                <i class="far fa-copy"></i>
-                            </button>
-                        </div>
-                        <div class="small text-secondary">
-                            {% if lic.hwid %}
-                                <i class="fas fa-desktop text-success"></i> Привязан к ПК
-                            {% else %}
-                                <i class="fas fa-laptop text-muted"></i> Ожидает входа
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="text-end">
-                        {% if lic.status == 'active' %}
-                            <div class="status-badge status-active mb-1">ACTIVE</div>
-                            <div class="small text-white">до {{ lic.expires.strftime('%d.%m.%Y') }}</div>
-                        {% elif lic.status == 'expired' %}
-                            <div class="status-badge status-expired mb-1">EXPIRED</div>
-                            <div class="small text-secondary">Истекла</div>
-                        {% else %}
-                            <div class="status-badge status-expired mb-1">BANNED</div>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endfor %}
-            {% else %}
-                <div class="text-center py-4 text-secondary border border-dashed border-secondary rounded">
-                    История лицензий пуста
-                </div>
-            {% endif %}
-
+  <!-- Приветствие и статус email -->
+  <div class="panel-glass card" style="margin-bottom:18px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0 0 6px;">Привет, {{ user.username }}</h2>
+        <div class="muted">
+          Статус email:
+          {% if user.email_confirmed %}
+            <span style="color:#b6ffb6;"><i class="fa-solid fa-circle-check"></i> подтверждён</span>
+          {% else %}
+            <span style="color:#ffd1a6;"><i class="fa-solid fa-circle-exclamation"></i> не подтверждён</span>
+          {% endif %}
         </div>
-
-        <!-- ПРАВАЯ КОЛОНКА -->
-        <div class="col-lg-4">
-            
-            <!-- Активация -->
-            <div class="flat-card">
-                <h5 class="mb-3 fw-bold text-white"><i class="fas fa-code me-2 text-primary"></i>Активация</h5>
-                <form method="post" action="/api/license/activate">
-                    <div class="input-group">
-                        <input type="text" name="token" class="form-control bg-dark text-white border-secondary" placeholder="Вставьте токен" required style="background: #121214; border-color: #2e2e33;">
-                        <button class="btn btn-outline-secondary" type="submit">OK</button>
-                    </div>
-                    <div class="mt-2 small text-secondary">Активируйте код пополнения здесь.</div>
-                </form>
-            </div>
-
-            <!-- Меню -->
-            <div class="flat-card p-3">
-                <h6 class="text-secondary text-uppercase small fw-bold mb-3 ps-2">Меню</h6>
-                <nav>
-                    <a href="/buy" class="btn-flat-secondary text-start">
-                        <i class="fas fa-shopping-cart me-2" style="width:20px"></i> Магазин
-                    </a>
-                    <a href="/purchases" class="btn-flat-secondary text-start">
-                        <i class="fas fa-history me-2" style="width:20px"></i> История покупок
-                    </a>
-                    <a href="/creators/login" class="btn-flat-secondary text-start">
-                        <i class="fas fa-users me-2" style="width:20px"></i> Партнерская программа
-                    </a>
-                    <a href="/change-password" class="btn-flat-secondary text-start">
-                        <i class="fas fa-lock me-2" style="width:20px"></i> Сменить пароль
-                    </a>
-                </nav>
-            </div>
-
-            <!-- Выход -->
-            <a href="/logout" class="btn btn-outline-danger w-100" style="border-color: #2e2e33;">
-                <i class="fas fa-sign-out-alt me-2"></i> Выйти
-            </a>
-
-        </div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <a class="btn-outline" href="/logout"><i class="fa-solid fa-arrow-right-from-bracket"></i> Выйти</a>
+        <a class="btn-cta" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить лицензии</a>
+      </div>
     </div>
-</div>
+    {% if not user.email_confirmed %}
+      <div class="card" style="margin-top:12px; background:rgba(255,255,0,0.06); border:1px solid rgba(255,255,0,0.18); color:#ffe9a8;">
+        Чтобы подтвердить адрес, проверьте почту и перейдите по ссылке из письма. Если письмо не пришло, повторно зарегистрируйте или свяжитесь с поддержкой.
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Таблица с данными пользователя -->
+  <div class="panel-glass card" style="margin-bottom:18px;">
+    <h3 style="margin-top:0;">Данные аккаунта</h3>
+    <table style="width:100%; border-collapse:collapse; margin-top:12px;">
+      <tr>
+        <td style="padding:8px; font-weight:600;">UID</td>
+        <td style="padding:8px;">{{ user.uid }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Логин</td>
+        <td style="padding:8px;">{{ user.username or "-" }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Группа</td>
+        <td style="padding:8px;">{{ user.user_group }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Дата регистрации</td>
+        <td style="padding:8px;">{{ user.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">Последний вход</td>
+        <td style="padding:8px;">{{ user.last_login.strftime("%d.%m.%Y %H:%M") if user.last_login else "—" }}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px; font-weight:600;">E-mail</td>
+        <td style="padding:8px;">{{ user.email }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Активация токена -->
+  <div class="card" style="margin-bottom:18px; padding:18px;">
+    <h3 style="margin-top:0;">Активация лицензии</h3>
+    <form method="post" action="/api/license/activate" style="display:flex; gap:12px; flex-wrap:wrap;">
+      <input type="text" name="token" placeholder="Введите токен активации" required
+             style="flex:1; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:#111; color:#fff;">
+      <button type="submit" class="btn-cta"><i class="fa-solid fa-key"></i> Активировать</button>
+    </form>
+  </div>
+
+  <!-- Кнопки действий -->
+  <div class="card" style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-bottom:18px;">
+    <a class="btn-cta" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить клиент</a>
+    <a class="btn-outline" href="/creators/login"><i class="fa-solid fa-ticket"></i> Мои промокоды</a>
+    <a class="btn-outline" href="/purchases"><i class="fa-solid fa-box"></i> Купленные товары</a>
+    <a class="btn-outline" href="/change-password"><i class="fa-solid fa-key"></i> Сменить пароль</a>
+    <a class="btn-outline" href="/logout"><i class="fa-solid fa-arrow-right-from-bracket"></i> Выйти</a>
+  </div>
+
+  <!-- Лицензии -->
+  <div class="card">
+    <h3 style="margin-top:0;">Ваши лицензии</h3>
+    {% if licenses and licenses|length > 0 %}
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px;">
+        {% for lic in licenses %}
+          <div class="card" style="background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:1px solid rgba(255,255,255,0.04);">
+            <div style="font-weight:700; margin-bottom:6px; color:#ffd9ff;">
+              <i class="fa-solid fa-key"></i> {{ lic.license_key }}
+            </div>
+            <div class="muted">Статус:
+              {% if lic.status == 'active' %}<span style="color:#b6ffb6;">Активна</span>
+              {% elif lic.status == 'expired' %}<span style="color:#ffb2b2;">Истекла</span>
+              {% elif lic.status == 'banned' %}<span style="color:#ff9f9f;">Заблокирована</span>
+              {% else %}{{ lic.status }}{% endif %}
+            </div>
+            <div class="muted">Истекает: {% if lic.expires %}{{ lic.expires.strftime("%d.%m.%Y %H:%M") }}{% else %}—{% endif %}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">Лицензии не найдены. Приобретите лицензию, чтобы начать пользоваться софтом.</div>
+    {% endif %}
+  </div>
+
+  <!-- Кнопка скачивания клиента (по активной лицензии) -->
+  {% set has_active = licenses|selectattr("status", "equalto", "active")|list %}
+  {% if has_active and download_url %}
+    <div class="card" style="margin-top:18px; text-align:center; padding:20px;">
+      <a class="btn-cta" href="{{ download_url }}">
+        <i class="fa-solid fa-download"></i> Скачать клиент
+      </a>
+    </div>
+  {% endif %}
+
+  <!-- HWID (заглушка) -->
+  <div class="card" style="margin-top:18px; padding:18px;">
+    <h3 style="margin-top:0;">HWID</h3>
+    <div class="muted">Привязка к устройству пока недоступна. Функция появится позже.</div>
+  </div>
+
+</section>
 {% endblock %}
