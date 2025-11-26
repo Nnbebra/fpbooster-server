@@ -1,76 +1,95 @@
 {% extends "base.html" %}
 {% block content %}
-<h2 class="mb-4">Лицензии</h2>
-
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <form method="get" action="/admin/licenses" class="d-flex w-50">
-    <input type="text" class="form-control me-2" name="q" placeholder="Поиск по ключу/пользователю/UID" value="{{ q }}">
-    <button type="submit" class="btn btn-purple">Искать</button>
-  </form>
-  <a href="/admin/licenses/new" class="btn btn-purple">
-    <i class="fas fa-plus"></i> Создать лицензию
-  </a>
+    <h2><i class="fas fa-key text-purple"></i> Управление лицензиями</h2>
+    <a href="/admin/licenses/new" class="btn btn-purple">
+        <i class="fas fa-plus-circle"></i> Выдать лицензию
+    </a>
 </div>
 
-<div class="card-dark">
-  <table class="table table-dark table-striped table-hover rounded overflow-hidden mb-0">
-    <thead>
-      <tr>
-        <th>Пользователь</th>
-        <th>Статус</th>
-        <th>Срок действия</th>
-        <th>HWID</th>
-        <th>Действия</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-      <tr>
-        <td>
-            <div class="fw-bold text-white">{{ row.user_name or "—" }}</div>
-            <div class="small text-muted">{{ row.email or "" }}</div>
-            <div class="small text-muted" style="opacity:0.5">{{ row.license_key[:8] }}...</div>
-        </td>
-        <td>
-          {% if row.status == "active" %}
-            <span class="badge bg-success text-white">Активна</span>
-          {% elif row.status == "expired" %}
-            <span class="badge bg-warning text-dark">Истекла</span>
-          {% else %}
-            <span class="badge bg-danger text-white">Бан</span>
-          {% endif %}
-        </td>
-        <td>
+<div class="card-dark mb-4">
+  <form method="get" action="/admin/licenses" class="d-flex gap-2">
+    <input type="text" class="form-control bg-dark text-light border-secondary" name="q" placeholder="🔍 Поиск по ключу, логину, почте или UID" value="{{ q }}">
+    <button type="submit" class="btn btn-outline-light">Найти</button>
+  </form>
+</div>
+
+<div class="card-dark p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Пользователь</th>
+          <th>Статус</th>
+          <th>HWID (Железо)</th>
+          <th>Лицензия</th>
+          <th>Создана / Вход</th>
+          <th class="text-end">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+              <div class="fw-bold text-white" style="font-size: 1.05rem;">{{ row.user_name or "—" }}</div>
+              <div class="small" style="color: #aaa;">{{ row.email or "Без почты" }}</div>
+              <div class="small text-muted font-monospace">UID: {{ row.user_uid or "?" }}</div>
+          </td>
+
+          <td>
+            {% if row.status == "active" %}
+              <span class="badge bg-success"><i class="fas fa-check-circle"></i> Активна</span>
+            {% elif row.status == "expired" %}
+              <span class="badge bg-warning text-dark"><i class="fas fa-clock"></i> Истекла</span>
+            {% else %}
+              <span class="badge bg-danger"><i class="fas fa-ban"></i> Бан</span>
+            {% endif %}
+            
             {% if row.expires %}
-                <span class="badge" style="background-color: #D6BCFA; color: #2D2D3A;">
-                    до {{ row.expires }}
-                </span>
-            {% else %}
-                <span class="text-muted">—</span>
+              <div class="mt-1 small" style="color: #D6BCFA;">
+                 до {{ row.expires.strftime('%d.%m.%Y') }}
+              </div>
             {% endif %}
-        </td>
-        <td>
-            {% if row.hwid %}
-                <code class="text-warning">{{ row.hwid[:8] }}...</code>
-                <a href="/admin/licenses/reset_hwid/{{ row.license_key }}" class="text-decoration-none ms-2" title="Сброс HWID">
-                    ❌
-                </a>
-            {% else %}
-                <span class="text-muted small">Нет</span>
-            {% endif %}
-        </td>
-        <td>
-          <a href="/admin/licenses/edit/{{ row.license_key }}" class="btn btn-sm btn-purple">
-            <i class="fas fa-edit"></i>
-          </a>
-          <a href="/admin/licenses/delete/{{ row.license_key }}" class="btn btn-sm btn-danger"
-             onclick="return confirm('Удалить?')">
-            <i class="fas fa-trash"></i>
-          </a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          </td>
+
+          <td>
+              {% if row.hwid %}
+                  <div class="d-flex align-items-center gap-2">
+                      <code class="text-warning" title="{{ row.hwid }}">{{ row.hwid[:10] }}...</code>
+                      <a href="/admin/licenses/reset_hwid/{{ row.license_key }}" 
+                         class="btn btn-sm btn-outline-secondary py-0" 
+                         title="Сбросить привязку"
+                         onclick="return confirm('Сбросить HWID для этого пользователя?')">
+                         <i class="fas fa-sync-alt"></i>
+                      </a>
+                  </div>
+              {% else %}
+                  <span class="badge bg-secondary">Не привязан</span>
+              {% endif %}
+          </td>
+
+          <td>
+              <code class="text-white-50">{{ row.license_key[:12] }}...</code>
+          </td>
+
+          <td>
+              <div class="small text-white">{{ row.created_at.strftime("%d.%m.%Y") if row.created_at else "-" }}</div>
+              <div class="small text-muted">Вход: {{ row.last_check.strftime("%H:%M") if row.last_check else "-" }}</div>
+          </td>
+
+          <td class="text-end">
+            <a href="/admin/licenses/edit/{{ row.license_key }}" class="btn btn-sm btn-primary mb-1" title="Редактировать">
+              <i class="fas fa-pen"></i>
+            </a>
+            <a href="/admin/licenses/delete/{{ row.license_key }}" class="btn btn-sm btn-danger mb-1"
+               onclick="return confirm('Удалить лицензию навсегда?')" title="Удалить">
+              <i class="fas fa-trash"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}
