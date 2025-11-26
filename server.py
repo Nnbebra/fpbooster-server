@@ -453,3 +453,67 @@ async def delete_user_get(request: Request, uid: str, _=Depends(ui_guard)):
     return RedirectResponse(url="/admin/users", status_code=302)
 
 
+
+
+
+# --- УПРАВЛЕНИЕ ТОКЕНАМИ АКТИВАЦИИ ---
+
+@app.get("/admin/tokens", response_class=HTMLResponse)
+async def admin_tokens_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        # Показываем токены и кто их использовал (если использованы)
+        query = """
+            SELECT t.id, t.token, t.duration_days, t.status, t.created_at, t.used_at, u.username as used_by
+            FROM activation_tokens t
+            LEFT JOIN users u ON t.used_by_uid = u.uid
+        """
+        if q:
+            # Поиск по самому токену или по юзернейму использовавшего
+            rows = await conn.fetch(
+                f"{query} WHERE t.token ILIKE $1 OR u.username ILIKE $1 ORDER BY t.created_at DESC", 
+                f"%{q}%"
+            )
+        else:
+            rows = await conn.fetch(f"{query} ORDER BY t.created_at DESC")
+            
+    return templates.TemplateResponse("tokens.html", {"request": request, "rows": rows, "q": q or ""})
+
+@app.post("/admin/tokens/create")
+async def admin_create_tokens(
+    request: Request,
+    days: int = Form(...),
+    count: int = Form(1),
+    prefix: str = Form(""),
+    _=Depends(ui_guard)
+):
+    if count < 1 or count > 100:
+        return Response("Количество должно быть от 1 до 100", status_code=400)
+        
+    import secrets
+    
+    async with app.state.pool.acquire() as conn:
+        async with conn.transaction():
+            for _ in range(count):
+                # Генерируем случайный хвост
+                random_part = secrets.token_hex(8).upper()
+                token = f"{prefix}{random_part}" if prefix else random_part
+                
+                await conn.execute(
+                    "INSERT INTO activation_tokens (token, duration_days, status) VALUES ($1, $2, 'unused')",
+                    token, days
+                )
+                
+    return RedirectResponse(url="/admin/tokens", status_code=302)
+
+@app.get("/admin/tokens/delete/{id}")
+async def admin_delete_token(request: Request, id: int, _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        await conn.execute("DELETE FROM activation_tokens WHERE id=$1", id)
+    return RedirectResponse(url="/admin/tokens", status_code=302)
+
+@app.post("/admin/tokens/delete_used")
+async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
+    async with app.state.pool.acquire() as conn:
+        await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
+    return RedirectResponse(url="/admin/tokens", status_code=302)
+
