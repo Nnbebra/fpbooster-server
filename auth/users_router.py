@@ -70,7 +70,7 @@ async def register_submit(
             license_key, row["username"], row["uid"]
         )
 
-    # Отправка письма подтверждения (в блоке try, чтобы ошибка почты не ломала регистрацию)
+    # Отправка письма подтверждения
     try:
         await create_and_send_confirmation(request.app, row["id"], row["email"])
     except:
@@ -111,7 +111,7 @@ async def account_page(request: Request):
         return RedirectResponse(url="/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
-        # 1. Получаем лицензии (включая HWID для отображения привязки)
+        # 1. Получаем лицензии (добавил поле hwid)
         licenses = await conn.fetch(
             """
             SELECT license_key, status, expires, hwid
@@ -122,13 +122,13 @@ async def account_page(request: Request):
             user["uid"],
         )
         
-        # 2. Получаем общую сумму трат (LTV) для статистики в шапке
+        # 2. Получаем общую сумму трат (LTV)
         total_spent = await conn.fetchval(
             "SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1",
             user["uid"]
         )
 
-    # Ссылка на скачивание из глобального стейта (загружается из .env)
+    # Ссылка на скачивание
     download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
 
     return templates.TemplateResponse(
