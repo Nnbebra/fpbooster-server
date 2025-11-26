@@ -321,8 +321,10 @@ async def admin_logout():
 @app.get("/admin/licenses", response_class=HTMLResponse)
 async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
+        # Добавили promocode_used в выборку
         query_base = """
-            SELECT l.license_key, l.status, l.expires, l.user_name, l.user_uid, l.hwid, l.created_at, l.last_check, u.email
+            SELECT l.license_key, l.status, l.expires, l.user_name, l.user_uid, l.hwid, 
+                   l.created_at, l.last_check, l.promocode_used, u.email
             FROM licenses l
             LEFT JOIN users u ON l.user_uid = u.uid
         """
@@ -388,40 +390,52 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
 @app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
+        # Считаем общую сумму покупок (LTV) для каждого юзера
         query = """
-            SELECT id, email, username, uid, user_group, created_at, last_login, email_confirmed 
-            FROM users 
+            SELECT u.id, u.email, u.username, u.uid, u.user_group, u.created_at, u.last_login, u.email_confirmed,
+                   COALESCE((SELECT SUM(amount) FROM purchases p WHERE p.user_uid = u.uid), 0) as total_spent
+            FROM users u
         """
         if q:
-            rows = await conn.fetch(f"{query} WHERE email ILIKE $1 OR username ILIKE $1 OR CAST(uid AS TEXT) ILIKE $1 ORDER BY created_at DESC", f"%{q}%")
+            rows = await conn.fetch(f"{query} WHERE u.email ILIKE $1 OR u.username ILIKE $1 OR CAST(u.uid AS TEXT) ILIKE $1 ORDER BY u.created_at DESC", f"%{q}%")
         else:
-            rows = await conn.fetch(f"{query} ORDER BY created_at DESC")
+            rows = await conn.fetch(f"{query} ORDER BY u.created_at DESC")
     return templates.TemplateResponse("users.html", {"request": request, "rows": rows, "q": q or ""})
 
 @app.get("/admin/users/edit/{uid}", response_class=HTMLResponse)
 async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT id, email, username, uid, user_group, email_confirmed FROM users WHERE uid=$1", uid)
-    if not row:
-        return Response("User not found", status_code=404)
-    return templates.TemplateResponse("user_form.html", {"request": request, "row": row, "error": None})
+        row = await conn.fetchrow("SELECT * FROM users WHERE uid=$1", uid)
+        if not row:
+            return Response("User not found", status_code=404)
+        
+        # Подтягиваем историю покупок
+        purchases = await conn.fetch("SELECT * FROM purchases WHERE user_uid=$1 ORDER BY created_at DESC", uid)
+        
+        # Подтягиваем информацию о лицензии
+        license_info = await conn.fetchrow("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid=$1", uid)
+
+    return templates.TemplateResponse("user_form.html", {
+        "request": request, 
+        "row": row, 
+        "purchases": purchases, 
+        "lic": license_info,
+        "error": None
+    })
 
 @app.post("/admin/users/edit/{uid}")
 async def edit_user(
     uid: str, 
     user_group: str = Form(...), 
     new_password: str = Form(None),
-    email_confirmed: bool = Form(False), # Чекбокс
+    email_confirmed: bool = Form(False),
     _ = Depends(ui_guard)
 ):
     async with app.state.pool.acquire() as conn:
-        # Обновляем группу и статус почты
         await conn.execute(
             "UPDATE users SET user_group=$1, email_confirmed=$2 WHERE uid=$3", 
             user_group, email_confirmed, uid
         )
-        
-        # Если админ ввел новый пароль — меняем его
         if new_password and len(new_password.strip()) >= 6:
             from auth.jwt_utils import hash_password
             new_hash = hash_password(new_password.strip())
@@ -432,15 +446,10 @@ async def edit_user(
 @app.get("/admin/users/delete/{uid}")
 async def delete_user_get(request: Request, uid: str, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        # Сначала удаляем зависимости, чтобы не было ошибок БД
-        # 1. Лицензии
         await conn.execute("DELETE FROM licenses WHERE user_uid=$1", uid)
-        # 2. Токены активации
         await conn.execute("DELETE FROM activation_tokens WHERE used_by_uid=$1", uid)
-        # 3. Покупки
         await conn.execute("DELETE FROM purchases WHERE user_uid=$1", uid)
-        # 4. Сам пользователь
         await conn.execute("DELETE FROM users WHERE uid=$1", uid)
-        
     return RedirectResponse(url="/admin/users", status_code=302)
+
 
