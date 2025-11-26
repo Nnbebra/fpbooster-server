@@ -1,50 +1,57 @@
 {% extends "base.html" %}
 {% block content %}
-<h2 class="mb-4">Редактировать пользователя</h2>
+<h2 class="mb-4">Редактирование пользователя</h2>
 
 <div class="card-dark w-75 mx-auto">
   <form method="post" action="/admin/users/edit/{{ row.uid }}">
+    
     <div class="mb-3">
-      <label>Email</label>
-      <input type="text" class="form-control" value="{{ row.email }}" readonly>
+      <label class="form-label text-muted">Email</label>
+      <input type="text" class="form-control bg-dark text-white" value="{{ row.email }}" readonly disabled>
     </div>
 
     <div class="mb-3">
-      <label>Логин</label>
-      <input type="text" class="form-control" value="{{ row.username or '—' }}" readonly>
+      <label class="form-label text-muted">Логин</label>
+      <input type="text" class="form-control bg-dark text-white" value="{{ row.username }}" readonly disabled>
     </div>
 
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label for="user_group" class="form-label">Группа прав</label>
+            <select class="form-select" id="user_group" name="user_group">
+                <option value="user" {% if row.user_group == 'user' %}selected{% endif %}>User (Обычный)</option>
+                <option value="premium" {% if row.user_group == 'premium' %}selected{% endif %}>Premium</option>
+                <option value="admin" {% if row.user_group == 'admin' %}selected{% endif %}>Admin (Доступ к панели)</option>
+            </select>
+        </div>
+        
+        <div class="col-md-6 mb-3 d-flex align-items-center">
+            <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" value="true" id="email_confirmed" name="email_confirmed" 
+                       {% if row.email_confirmed %}checked{% endif %}>
+                <label class="form-check-label" for="email_confirmed">
+                    Email подтвержден
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <hr class="border-secondary my-4">
+    
     <div class="mb-3">
-      <label>UID</label>
-      <input type="text" class="form-control" value="{{ row.uid }}" readonly>
+        <label for="new_password" class="form-label text-warning">Смена пароля (Оставьте пустым, если не меняете)</label>
+        <input type="text" class="form-control" id="new_password" name="new_password" placeholder="Введите новый пароль...">
+        <div class="form-text text-muted">Старый пароль зашифрован, увидеть его нельзя. Можно только задать новый.</div>
     </div>
-
-    <div class="mb-3">
-      <label for="user_group">Группа</label>
-      <select class="form-select" id="user_group" name="user_group">
-        <option value="Пользователь" {% if row.user_group=="Пользователь" %}selected{% endif %}>Пользователь</option>
-        <option value="Сотрудник" {% if row.user_group=="Сотрудник" %}selected{% endif %}>Сотрудник</option>
-        <option value="Ст.Сотрудник" {% if row.user_group=="Ст.Сотрудник" %}selected{% endif %}>Ст.Сотрудник</option>
-        <option value="Контент Мэйкер" {% if row.user_group=="Контент Мэйкер" %}selected{% endif %}>Контент Мэйкер</option>
-        <option value="Кодер" {% if row.user_group=="Кодер" %}selected{% endif %}>Кодер</option>
-        <option value="Гл.Кодер" {% if row.user_group=="Гл.Кодер" %}selected{% endif %}>Гл.Кодер</option>
-      </select>
-    </div>
-
-
-    {% if error %}
-      <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
 
     <div class="d-flex justify-content-between mt-4">
       <a href="/admin/users" class="btn btn-secondary-custom">
         <i class="fas fa-arrow-left"></i> Назад
       </a>
       <button type="submit" class="btn btn-purple">
-        <i class="fas fa-save"></i> Сохранить изменения
+        <i class="fas fa-save"></i> Сохранить
       </button>
     </div>
   </form>
 </div>
 {% endblock %}
-
