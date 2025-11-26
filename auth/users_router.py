@@ -1,4 +1,3 @@
-# auth/users_router.py
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -6,8 +5,6 @@ from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
 from .email_service import create_and_send_confirmation
 import secrets, string
-from fastapi import Form
-from .jwt_utils import verify_password, hash_password
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -34,37 +31,26 @@ async def register_submit(
     accept_terms: str = Form(None),
 ):
     if not accept_terms:
-        return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Необходимо принять соглашение"},
-            status_code=400,
-        )
+        return templates.TemplateResponse("register.html", {"request": request, "error": "Необходимо принять соглашение"}, status_code=400)
 
     if not username.strip():
-        return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Имя пользователя обязательно"},
-            status_code=400,
-        )
+        return templates.TemplateResponse("register.html", {"request": request, "error": "Имя пользователя обязательно"}, status_code=400)
 
     if password != password2:
-        return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Пароли не совпадают"},
-            status_code=400,
-        )
+        return templates.TemplateResponse("register.html", {"request": request, "error": "Пароли не совпадают"}, status_code=400)
 
     if len(password) < 6:
-        return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "Пароль должен быть ≥ 6 символов"},
-            status_code=400,
-        )
+        return templates.TemplateResponse("register.html", {"request": request, "error": "Пароль должен быть ≥ 6 символов"}, status_code=400)
 
     email = email.strip().lower()
     pw_hash = hash_password(password)
 
     async with request.app.state.pool.acquire() as conn:
+        # Проверяем, не занят ли email
+        exist = await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email)
+        if exist:
+             return templates.TemplateResponse("register.html", {"request": request, "error": "Email уже зарегистрирован"}, status_code=400)
+
         row = await conn.fetchrow(
             """
             INSERT INTO users (email, password_hash, username)
@@ -74,19 +60,21 @@ async def register_submit(
             email, pw_hash, username.strip()
         )
 
-        # создаём лицензию сразу (истекшую по умолчанию)
+        # Создаём лицензию сразу (истекшую по умолчанию)
         license_key = generate_license_key()
         await conn.execute(
             """
             INSERT INTO licenses (license_key, status, user_name, user_uid)
             VALUES ($1, 'expired', $2, $3)
             """,
-            license_key,
-            row["username"],
-            row["uid"]
+            license_key, row["username"], row["uid"]
         )
 
-    await create_and_send_confirmation(request.app, row["id"], row["email"])
+    # Отправка письма подтверждения (в блоке try, чтобы ошибка почты не ломала регистрацию)
+    try:
+        await create_and_send_confirmation(request.app, row["id"], row["email"])
+    except:
+        pass 
 
     token = make_jwt(row["id"], row["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
@@ -115,16 +103,15 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
 
-@app.get("/cabinet", response_class=HTMLResponse)
+@router.get("/cabinet", response_class=HTMLResponse)
 async def account_page(request: Request):
     try:
         user = await get_current_user(request.app, request)
     except:
-        # если не авторизован → редирект на логин
         return RedirectResponse(url="/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
-        # 1. Получаем лицензии
+        # 1. Получаем лицензии (включая HWID для отображения привязки)
         licenses = await conn.fetch(
             """
             SELECT license_key, status, expires, hwid
@@ -135,14 +122,13 @@ async def account_page(request: Request):
             user["uid"],
         )
         
-        # [cite_start]2. Получаем общую сумму трат (LTV) [cite: 594]
-        # (Используем COALESCE, чтобы вернуть 0, если покупок нет)
+        # 2. Получаем общую сумму трат (LTV) для статистики в шапке
         total_spent = await conn.fetchval(
             "SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1",
             user["uid"]
         )
 
-    # передаём ссылку загрузки из переменных окружения
+    # Ссылка на скачивание из глобального стейта (загружается из .env)
     download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
 
     return templates.TemplateResponse(
@@ -152,7 +138,7 @@ async def account_page(request: Request):
             "user": user, 
             "licenses": licenses, 
             "download_url": download_url,
-            "total_spent": total_spent # <-- Передаем сумму в шаблон
+            "total_spent": total_spent
         }
     )
 
@@ -161,9 +147,6 @@ async def user_logout():
     resp = RedirectResponse(url="/")
     resp.delete_cookie("user_auth")
     return resp
-
-
-
 
 @router.get("/change-password", response_class=HTMLResponse)
 async def change_password_page(request: Request):
@@ -200,5 +183,3 @@ async def change_password_submit(
         await conn.execute("UPDATE users SET password_hash=$1 WHERE id=$2", new_hash, user["id"])
 
     return RedirectResponse(url="/cabinet", status_code=302)
-
-
