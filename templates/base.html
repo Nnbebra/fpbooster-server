@@ -140,6 +140,11 @@
             </a>
           </li>
           <li class="nav-item">
+            <a class="nav-link {% if request.url.path.startswith('/admin/tokens') %}active{% endif %}" href="/admin/tokens">
+              <i class="fas fa-ticket-alt me-1"></i> Токены
+            </a>
+          </li>
+          <li class="nav-item">
             <a class="nav-link {% if request.url.path.startswith('/admin/creators') %}active{% endif %}" href="/admin/creators">
               <i class="fas fa-star me-1"></i> Креаторы
             </a>
@@ -163,3 +168,4 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
+
