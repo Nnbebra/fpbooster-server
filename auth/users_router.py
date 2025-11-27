@@ -128,17 +128,20 @@ async def account_page(request: Request):
             user["uid"]
         )
 
-        # Логика поиска активной лицензии для отображения статуса
-        active_license = None
+        # Логика поиска РЕАЛЬНО активной лицензии
+        found_active = None
         for lic in licenses:
             if lic['status'] == 'active':
                 if lic['expires'] and lic['expires'] >= date.today():
-                    active_license = lic
+                    found_active = lic
                     break
         
-        # Если активной нет, но есть хоть какие-то, берем первую (для инфы)
-        if not active_license and licenses:
-            active_license = licenses[0]
+        # Флаг для шаблона: True, если есть активная подписка (для кнопки скачивания в хедере)
+        is_license_active = (found_active is not None)
+
+        # Для отображения в самом кабинете (чтобы показать UID, HWID и т.д.)
+        # Если активной нет, берем первую попавшуюся (например, истекшую), просто для инфы
+        display_license = found_active if found_active else (licenses[0] if licenses else None)
 
     download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
 
@@ -148,7 +151,8 @@ async def account_page(request: Request):
             "request": request, 
             "user": user, 
             "licenses": licenses, 
-            "active_license": active_license,
+            "active_license": display_license, # Объект лицензии для вывода данных в центре
+            "is_license_active": is_license_active, # Булево значение для кнопки в шапке
             "download_url": download_url,
             "total_spent": total_spent
         }
