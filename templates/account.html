@@ -32,6 +32,16 @@
     .email-alert i {
         font-size: 1.5rem;
     }
+    
+    .resend-link {
+        color: #fbbf24;
+        text-decoration: underline;
+        cursor: pointer;
+        font-weight: 700;
+    }
+    .resend-link:hover {
+        color: #fff;
+    }
 
     @keyframes pulse-border {
         0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.2); }
@@ -48,7 +58,6 @@
         color: #eaeaea;
     }
 
-    /* Карточка списка данных */
     .cabinet-card-list {
         background: #0b0b0d; 
         border: 1px solid #1f1f22;
@@ -124,6 +133,27 @@
         box-shadow: 0 0 15px rgba(124, 58, 237, 0.4);
     }
 
+    /* Кнопка скачивания (зеленоватая) */
+    .btn-download-alt {
+        background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+        border: none;
+        color: #fff;
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+    .btn-download-alt:hover {
+        background: linear-gradient(90deg, #059669 0%, #047857 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+    }
+
     /* Второстепенные кнопки */
     .btn-secondary {
         background: linear-gradient(90deg, #6d28d9 0%, #5b21b6 100%);
@@ -143,7 +173,6 @@
         transform: translateY(-1px);
     }
     
-    /* Кнопка выхода */
     .btn-danger {
         background: linear-gradient(90deg, #dc2626 0%, #b91c1c 100%);
         color: #fff;
@@ -162,7 +191,6 @@
         color: #fff;
     }
 
-    /* Поле ввода */
     .input-group-custom {
         display: flex;
         background: #18181b;
@@ -171,7 +199,6 @@
         overflow: hidden;
         max-width: 400px;
     }
-
     .input-group-custom input {
         background: transparent;
         border: none;
@@ -182,7 +209,6 @@
         min-width: 180px;
         font-size: 0.85rem;
     }
-
     .input-group-custom button {
         border-radius: 0;
         margin: 0;
@@ -196,7 +222,6 @@
         background: #6d28d9;
     }
 
-    /* Блок кнопок */
     .actions-grid {
         display: flex;
         gap: 12px;
@@ -228,18 +253,48 @@
         .spacer { display: none; }
     }
 </style>
+<script>
+    async function sendConfirmation() {
+        const link = document.getElementById('resend-link');
+        const originalText = link.innerText;
+        
+        link.innerText = "Отправка...";
+        link.style.pointerEvents = "none";
+        link.style.opacity = "0.7";
+
+        try {
+            let response = await fetch('/api/resend-confirmation', { method: 'POST' });
+            let result = await response.json();
+            
+            if (response.ok) {
+                alert("Успешно: " + result.message);
+            } else {
+                alert("Ошибка: " + (result.error || "Не удалось отправить письмо"));
+            }
+        } catch (e) {
+            alert("Ошибка сети. Попробуйте позже.");
+        } finally {
+            link.innerText = originalText;
+            link.style.pointerEvents = "auto";
+            link.style.opacity = "1";
+        }
+    }
+</script>
 {% endblock %}
 
 {% block content %}
 <div class="cabinet-container">
 
-    <!-- НАЗОЙЛИВОЕ УВЕДОМЛЕНИЕ О ПОЧТЕ -->
+    <!-- НАЗОЙЛИВОЕ УВЕДОМЛЕНИЕ О ПОЧТЕ С КНОПКОЙ -->
     {% if not user.email_confirmed %}
     <div class="email-alert">
         <i class="fa-solid fa-triangle-exclamation fa-shake"></i>
         <div>
             <div style="font-size:1.1rem; margin-bottom:4px;">Требуется подтверждение Email!</div>
-            <div style="font-size:0.9rem; opacity:0.8;">Функционал аккаунта ограничен. Пожалуйста, проверьте почту и перейдите по ссылке.</div>
+            <div style="font-size:0.9rem; opacity:0.8;">
+                Функционал аккаунта ограничен. 
+                <span id="resend-link" class="resend-link" onclick="sendConfirmation()">Выслать подтверждение ещё раз</span>
+            </div>
         </div>
     </div>
     {% endif %}
@@ -353,6 +408,13 @@
         <button type="button" class="btn-gradient" onclick="location.href='/purchases'">
             <i class="fa-solid fa-bag-shopping" style="margin-right:8px;"></i> Купленные товары
         </button>
+        
+        <!-- НОВАЯ КНОПКА СКАЧИВАНИЯ (Здесь тоже) -->
+        {% if is_license_active and download_url %}
+        <a href="{{ download_url }}" target="_blank" class="btn-download-alt">
+            <i class="fa-solid fa-cloud-arrow-down" style="margin-right:8px;"></i> Скачать лаунчер
+        </a>
+        {% endif %}
         
         <!-- Распорка -->
         <div class="spacer" style="flex: 1;"></div> 
