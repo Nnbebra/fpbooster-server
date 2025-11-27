@@ -14,6 +14,31 @@
         margin: 0 auto;
     }
 
+    /* Назойливое уведомление о неподтвержденной почте */
+    .email-alert {
+        background: rgba(251, 191, 36, 0.1);
+        border: 1px solid rgba(251, 191, 36, 0.3);
+        color: #fbbf24;
+        padding: 15px 20px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        font-weight: 500;
+        animation: pulse-border 2s infinite;
+    }
+    
+    .email-alert i {
+        font-size: 1.5rem;
+    }
+
+    @keyframes pulse-border {
+        0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.2); }
+        70% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+    }
+
     .cabinet-header {
         margin-bottom: 2rem;
         margin-top: 0;
@@ -23,7 +48,7 @@
         color: #eaeaea;
     }
 
-    /* Карточка списка данных (темная, как на скрине) */
+    /* Карточка списка данных */
     .cabinet-card-list {
         background: #0b0b0d; 
         border: 1px solid #1f1f22;
@@ -76,7 +101,7 @@
         letter-spacing: 0.5px;
     }
 
-    /* Градиентные фиолетовые кнопки */
+    /* Градиентные кнопки */
     .btn-gradient {
         background: linear-gradient(90deg, #7c3aed 0%, #6d28d9 100%);
         border: none;
@@ -99,7 +124,7 @@
         box-shadow: 0 0 15px rgba(124, 58, 237, 0.4);
     }
 
-    /* Второстепенные кнопки (Сменить пароль) */
+    /* Второстепенные кнопки */
     .btn-secondary {
         background: linear-gradient(90deg, #6d28d9 0%, #5b21b6 100%);
         color: #fff;
@@ -118,7 +143,7 @@
         transform: translateY(-1px);
     }
     
-    /* Кнопка выхода (Красная) */
+    /* Кнопка выхода */
     .btn-danger {
         background: linear-gradient(90deg, #dc2626 0%, #b91c1c 100%);
         color: #fff;
@@ -137,7 +162,7 @@
         color: #fff;
     }
 
-    /* Поле ввода ключа */
+    /* Поле ввода */
     .input-group-custom {
         display: flex;
         background: #18181b;
@@ -171,7 +196,7 @@
         background: #6d28d9;
     }
 
-    /* Блок кнопок снизу (с отступами) */
+    /* Блок кнопок */
     .actions-grid {
         display: flex;
         gap: 12px;
@@ -207,6 +232,18 @@
 
 {% block content %}
 <div class="cabinet-container">
+
+    <!-- НАЗОЙЛИВОЕ УВЕДОМЛЕНИЕ О ПОЧТЕ -->
+    {% if not user.email_confirmed %}
+    <div class="email-alert">
+        <i class="fa-solid fa-triangle-exclamation fa-shake"></i>
+        <div>
+            <div style="font-size:1.1rem; margin-bottom:4px;">Требуется подтверждение Email!</div>
+            <div style="font-size:0.9rem; opacity:0.8;">Функционал аккаунта ограничен. Пожалуйста, проверьте почту и перейдите по ссылке.</div>
+        </div>
+    </div>
+    {% endif %}
+
     <h3 class="cabinet-header">Личный кабинет</h3>
 
     <!-- Основной блок информации -->
@@ -261,7 +298,7 @@
             </span>
         </div>
 
-        <!-- HWID (Без кнопки сброса) -->
+        <!-- HWID -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-computer"></i> HWID
@@ -281,7 +318,7 @@
                 <i class="fa-solid fa-clock"></i> Подписка
             </span>
             <div class="cabinet-item-value">
-                {% if active_license and active_license.status == 'active' and (not active_license.expires or active_license.expires >= today_date) %}
+                {% if is_license_active %}
                     <span class="status-active">Активна {% if active_license.expires %}(до {{ active_license.expires.strftime("%d.%m.%Y") }}){% endif %}</span>
                     <a href="/buy" class="btn-gradient" style="padding: 4px 12px; font-size: 0.75rem;">Продлить</a>
                 {% else %}
@@ -317,13 +354,7 @@
             <i class="fa-solid fa-bag-shopping" style="margin-right:8px;"></i> Купленные товары
         </button>
         
-        {% if active_license and download_url %}
-        <a href="{{ download_url }}" target="_blank" class="btn-gradient">
-            <i class="fa-solid fa-cloud-arrow-down" style="margin-right:8px;"></i> Скачать лаунчер
-        </a>
-        {% endif %}
-        
-        <!-- Распорка для сдвига кнопок вправо -->
+        <!-- Распорка -->
         <div class="spacer" style="flex: 1;"></div> 
 
         <button type="button" class="btn-secondary" onclick="location.href='/change-password'">
