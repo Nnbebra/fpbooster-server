@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
 from .email_service import create_and_send_confirmation
 import secrets, string
-from datetime import date
+from datetime import date, datetime
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -157,6 +157,40 @@ async def account_page(request: Request):
             "total_spent": total_spent
         }
     )
+
+# Новый эндпоинт для повторной отправки письма с кулдауном 24 часа
+@router.post("/api/resend-confirmation")
+async def resend_confirmation(request: Request):
+    try:
+        user = await get_current_user(request.app, request)
+    except:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    if user["email_confirmed"]:
+         return JSONResponse({"message": "Email уже подтвержден"})
+
+    async with request.app.state.pool.acquire() as conn:
+        # Проверяем дату последнего токена
+        last_request = await conn.fetchval(
+            "SELECT created_at FROM email_confirmations WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1",
+            user["id"]
+        )
+        
+        if last_request:
+            # Считаем разницу во времени
+            diff = datetime.utcnow() - last_request
+            if diff.total_seconds() < 24 * 3600:
+                 # Если прошло меньше 24 часов
+                 hours_left = int((24 * 3600 - diff.total_seconds()) / 3600)
+                 return JSONResponse({"error": f"Слишком часто. Повторная отправка возможна через {hours_left} ч."}, status_code=429)
+
+    # Если всё ок — отправляем
+    try:
+        await create_and_send_confirmation(request.app, user["id"], user["email"])
+        return JSONResponse({"message": "Письмо успешно отправлено!"})
+    except Exception as e:
+        print(f"Email Error: {e}")
+        return JSONResponse({"error": "Ошибка при отправке письма"}, status_code=500)
 
 @router.get("/logout")
 async def user_logout():
