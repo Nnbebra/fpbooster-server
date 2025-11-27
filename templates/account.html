@@ -3,33 +3,41 @@
 
 {% block head_extra %}
 <style>
-    /* Переопределяем фон для страницы кабинета, чтобы соответствовать примеру */
+    /* Стиль конкретно для этой страницы */
     body {
-        background-color: #121214;
+        background-color: #050405; 
         color: #fff;
     }
 
-    /* Стили из примера */
     .cabinet-container {
-        max-width: 1140px;
+        max-width: 1000px;
         margin: 0 auto;
-        padding-bottom: 40px;
     }
 
     .cabinet-header {
-        margin-bottom: 3rem;
-        margin-top: 2rem;
+        margin-bottom: 2rem;
+        margin-top: 0;
         font-weight: 500;
         line-height: 1.2;
         font-size: 1.75rem;
+        color: #eaeaea;
+    }
+
+    /* Карточка списка данных (темная, как на скрине) */
+    .cabinet-card-list {
+        background: #0b0b0d; 
+        border: 1px solid #1f1f22;
+        border-radius: 16px;
+        padding: 10px 30px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.5);
     }
 
     .cabinet-item {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 1rem 0;
-        border-bottom: 1px solid #2f2f2f;
+        padding: 18px 0;
+        border-bottom: 1px solid #1f1f22;
         flex-wrap: wrap;
         gap: 15px;
     }
@@ -42,12 +50,13 @@
         display: flex;
         align-items: center;
         font-weight: 500;
-        color: #eaeaea;
+        color: #d1d1d1;
+        font-size: 0.95rem;
     }
 
     .cabinet-item-label i {
-        color: #6c757d; /* grey icon by default */
-        margin-right: 0.75rem;
+        color: #636366; 
+        margin-right: 12px;
         width: 20px;
         text-align: center;
     }
@@ -58,50 +67,82 @@
         display: flex;
         align-items: center;
         gap: 10px;
+        font-size: 0.9rem;
     }
 
     .cabinet-value-text {
-        background: #1e1e21;
-        padding: 6px 12px;
-        border-radius: 6px;
         color: #fff;
         font-family: monospace;
-        font-size: 0.95rem;
+        letter-spacing: 0.5px;
     }
 
-    /* Градиентные кнопки как в примере */
+    /* Градиентные фиолетовые кнопки */
     .btn-gradient {
-        background: linear-gradient(330deg, #9929ea 0%, #5808fb 100%);
+        background: linear-gradient(90deg, #7c3aed 0%, #6d28d9 100%);
         border: none;
         color: #fff;
-        padding: 8px 16px;
-        border-radius: 6px;
+        padding: 8px 18px;
+        border-radius: 8px;
         font-weight: 600;
         transition: all 0.2s ease;
         text-decoration: none;
         display: inline-flex;
         align-items: center;
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }
 
     .btn-gradient:hover {
-        background: linear-gradient(330deg, #8825cf 0%, #4d09d6 100%);
+        background: linear-gradient(90deg, #6d28d9 0%, #5b21b6 100%);
         transform: translateY(-1px);
         color: #fff;
-        box-shadow: 0 4px 12px rgba(88, 8, 251, 0.3);
-    }
-    
-    .btn-gradient i {
-        margin-right: 8px;
+        box-shadow: 0 0 15px rgba(124, 58, 237, 0.4);
     }
 
-    /* Инпут с кнопкой внутри */
+    /* Второстепенные кнопки (Сменить пароль) */
+    .btn-secondary {
+        background: linear-gradient(90deg, #6d28d9 0%, #5b21b6 100%);
+        color: #fff;
+        border: 1px solid transparent;
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-weight: 500;
+        font-size: 0.85rem;
+        transition: 0.2s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+    }
+    .btn-secondary:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+    }
+    
+    /* Кнопка выхода (Красная) */
+    .btn-danger {
+        background: linear-gradient(90deg, #dc2626 0%, #b91c1c 100%);
+        color: #fff;
+        border: none;
+        padding: 8px 18px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+    }
+    .btn-danger:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+        color: #fff;
+    }
+
+    /* Поле ввода ключа */
     .input-group-custom {
         display: flex;
-        background: #1e1e21;
-        border: 1px solid #2f2f2f;
-        border-radius: 6px;
+        background: #18181b;
+        border: 1px solid #27272a;
+        border-radius: 8px;
         overflow: hidden;
         max-width: 400px;
     }
@@ -109,31 +150,39 @@
     .input-group-custom input {
         background: transparent;
         border: none;
-        color: #fff;
+        color: #a1a1aa;
         padding: 8px 12px;
         outline: none;
         flex-grow: 1;
-        min-width: 200px;
+        min-width: 180px;
+        font-size: 0.85rem;
     }
 
     .input-group-custom button {
         border-radius: 0;
         margin: 0;
-        padding: 8px 16px;
+        padding: 8px 14px;
+        background: #7c3aed;
+        color: white;
+        border: none;
+        cursor: pointer;
+    }
+    .input-group-custom button:hover {
+        background: #6d28d9;
     }
 
+    /* Блок кнопок снизу (с отступами) */
     .actions-grid {
         display: flex;
-        gap: 10px;
-        margin-top: 30px;
+        gap: 12px;
+        margin-top: 30px; 
         flex-wrap: wrap;
+        align-items: center;
     }
 
-    .status-active { color: #28a745; font-weight: bold; }
-    .status-expired { color: #dc3545; font-weight: bold; }
-    .status-banned { color: #ffc107; font-weight: bold; }
+    .status-active { color: #a78bfa; font-weight: bold; }
+    .status-expired { color: #ef4444; font-weight: bold; }
 
-    /* Адаптив */
     @media (max-width: 768px) {
         .cabinet-item {
             flex-direction: column;
@@ -144,9 +193,14 @@
             justify-content: space-between;
             margin-top: 5px;
         }
-        .input-group-custom {
-            width: 100%;
+        .actions-grid {
+            flex-direction: column;
+            align-items: stretch;
         }
+        .actions-grid button, .actions-grid a {
+            justify-content: center;
+        }
+        .spacer { display: none; }
     }
 </style>
 {% endblock %}
@@ -155,8 +209,8 @@
 <div class="cabinet-container">
     <h3 class="cabinet-header">Личный кабинет</h3>
 
-    <!-- Основной блок информации (список) -->
-    <div class="card panel-glass" style="padding: 20px 30px; background: #151517; border: 1px solid #222;">
+    <!-- Основной блок информации -->
+    <div class="cabinet-card-list">
         
         <!-- UID -->
         <div class="cabinet-item">
@@ -173,7 +227,7 @@
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-tag"></i> Логин
             </span>
-            <span class="cabinet-item-value">{{ user.username }}</span>
+            <span class="cabinet-item-value" style="color: #eaeaea;">{{ user.username }}</span>
         </div>
 
         <!-- Группа -->
@@ -182,7 +236,7 @@
                 <i class="fa-solid fa-gavel"></i> Группа
             </span>
             <span class="cabinet-item-value">
-                <span style="color: #a87bff; font-weight: 600;">{{ user.user_group }}</span>
+                <span style="color: #a78bfa; font-weight: 500;">{{ user.user_group }}</span>
             </span>
         </div>
 
@@ -201,45 +255,38 @@
             </span>
             <span class="cabinet-item-value">
                 {{ user.email }}
-                {% if user.email_confirmed %}
-                    <i class="fa-solid fa-check-circle" style="color: #28a745; margin-left: 5px;" title="Подтвержден"></i>
-                {% else %}
-                    <i class="fa-solid fa-exclamation-circle" style="color: #ffc107; margin-left: 5px;" title="Не подтвержден"></i>
+                {% if not user.email_confirmed %}
+                    <i class="fa-solid fa-circle-exclamation" style="color: #fbbf24; cursor:help;" title="Не подтвержден"></i>
                 {% endif %}
             </span>
         </div>
 
-        <!-- HWID -->
+        <!-- HWID (Без кнопки сброса) -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-computer"></i> HWID
             </span>
             <div class="cabinet-item-value">
                 {% if active_license and active_license.hwid %}
-                    <span class="cabinet-value-text" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">{{ active_license.hwid }}</span>
-                    <form action="/api/license/reset_hwid" method="POST" style="margin:0;">
-                        <button type="submit" class="btn-gradient" style="font-size: 0.8rem; padding: 5px 10px;">
-                            <i class="fa-solid fa-rotate-right" style="margin:0;"></i>
-                        </button>
-                    </form>
+                    <span class="cabinet-value-text" style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;">{{ active_license.hwid }}</span>
                 {% else %}
-                    <span class="cabinet-value-text">Не привязан</span>
+                    <span class="cabinet-value-text" style="color: #71717a;">Не привязан</span>
                 {% endif %}
             </div>
         </div>
 
-        <!-- Статус подписки (показываем самую свежую активную или сообщение об отсутствии) -->
+        <!-- Подписка -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-clock"></i> Подписка
             </span>
             <div class="cabinet-item-value">
-                {% if active_license %}
-                    <span class="status-active">Активна до {{ active_license.expires.strftime("%d.%m.%Y") }}</span>
-                    <a href="/buy" class="btn-gradient" style="font-size: 0.8rem; padding: 5px 10px;">Продлить</a>
+                {% if active_license and active_license.status == 'active' and (not active_license.expires or active_license.expires >= today_date) %}
+                    <span class="status-active">Активна {% if active_license.expires %}(до {{ active_license.expires.strftime("%d.%m.%Y") }}){% endif %}</span>
+                    <a href="/buy" class="btn-gradient" style="padding: 4px 12px; font-size: 0.75rem;">Продлить</a>
                 {% else %}
                     <span class="status-expired">Не активна</span>
-                    <a href="/buy" class="btn-gradient" style="font-size: 0.8rem; padding: 5px 10px;">Купить</a>
+                    <a href="/buy" class="btn-gradient" style="padding: 4px 12px; font-size: 0.75rem;">Купить</a>
                 {% endif %}
             </div>
         </div>
@@ -252,8 +299,8 @@
             <div class="cabinet-item-value">
                 <form method="post" action="/api/license/activate" class="input-group-custom">
                     <input type="text" name="token" placeholder="Введите ключ..." required>
-                    <button type="submit" class="btn-gradient">
-                        <i class="fa-solid fa-unlock-keyhole"></i>
+                    <button type="submit">
+                        <i class="fa-solid fa-lock"></i>
                     </button>
                 </form>
             </div>
@@ -264,23 +311,26 @@
     <!-- Кнопки действий -->
     <div class="actions-grid">
         <button type="button" class="btn-gradient" onclick="location.href='/creators/login'">
-            <i class="fa-solid fa-ticket"></i> Мои промокоды
+            <i class="fa-solid fa-ticket" style="margin-right:8px;"></i> Мои промокоды
         </button>
         <button type="button" class="btn-gradient" onclick="location.href='/purchases'">
-            <i class="fa-solid fa-bag-shopping"></i> Купленные товары
+            <i class="fa-solid fa-bag-shopping" style="margin-right:8px;"></i> Купленные товары
         </button>
         
         {% if active_license and download_url %}
         <a href="{{ download_url }}" target="_blank" class="btn-gradient">
-            <i class="fa-solid fa-cloud-arrow-down"></i> Скачать лаунчер
+            <i class="fa-solid fa-cloud-arrow-down" style="margin-right:8px;"></i> Скачать лаунчер
         </a>
         {% endif %}
         
-        <button type="button" class="btn-gradient" onclick="location.href='/change-password'" style="margin-left: auto;">
-            <i class="fa-solid fa-pen-to-square"></i> Сменить пароль
+        <!-- Распорка для сдвига кнопок вправо -->
+        <div class="spacer" style="flex: 1;"></div> 
+
+        <button type="button" class="btn-secondary" onclick="location.href='/change-password'">
+            <i class="fa-solid fa-pen-to-square" style="margin-right:8px;"></i> Сменить пароль
         </button>
-        <button type="button" class="btn-gradient" onclick="location.href='/logout'" style="background: linear-gradient(330deg, #ea2929 0%, #fb0808 100%);">
-            <i class="fa-solid fa-right-from-bracket"></i> Выйти
+        <button type="button" class="btn-danger" onclick="location.href='/logout'">
+            <i class="fa-solid fa-right-from-bracket" style="margin-right:8px;"></i> Выйти
         </button>
     </div>
 
