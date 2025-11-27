@@ -24,7 +24,6 @@
       --btn-ease: cubic-bezier(.16, .84, .34, 1);
     }
     
-    /* Исправление структуры страницы для правильного позиционирования футера */
     html { height: 100%; }
     body { 
         min-height: 100vh; 
@@ -47,10 +46,13 @@
     .header-inner { display:flex; align-items:center; gap:16px; width:100%; justify-content:space-between; }
     .brand { font-weight:800; font-size:1.125rem; color:#fff; display:flex; align-items:center; gap:8px; }
     .ver { background:var(--glass); color:var(--accent1); padding:6px 10px; border-radius:8px; font-weight:700; font-size:0.88rem; }
+    
     .nav-link { color:#dcdcdc; padding:8px 12px; border-radius:8px; font-weight:600; display:inline-flex; align-items:center; gap:8px; transition: color 160ms var(--btn-ease), transform 160ms var(--btn-ease); }
     .nav-link:hover { color:#fff; transform:translateY(-1px); }
+    
     .btn-cta { background:var(--gradient); color:#fff; padding:10px 14px; border-radius:10px; font-weight:800; border:none; display:inline-flex; align-items:center; gap:8px; transition: transform 180ms var(--btn-ease), box-shadow 180ms var(--btn-ease), opacity 180ms var(--btn-ease); box-shadow:0 10px 30px rgba(92, 40, 255, 0.18); }
     .btn-cta:hover { transform:translateY(-3px) scale(1.01); box-shadow:0 22px 66px rgba(92, 40, 255, 0.26); }
+    
     .btn-outline { background:transparent; color:#fff; padding:10px 14px; border-radius:10px; border:1px solid rgba(255,255,255,0.14); font-weight:700; transition:transform 180ms var(--btn-ease), box-shadow 180ms var(--btn-ease), background 180ms var(--btn-ease); box-shadow:0 8px 24px rgba(0,0,0,0.25); }
     .btn-outline:hover { background:rgba(255,255,255,0.03); transform:translateY(-2px) scale(1.01); box-shadow:0 16px 48px rgba(0,0,0,0.35); }
 
@@ -60,7 +62,6 @@
     .footer-links .nav-link { padding:6px 10px; }
     .footer-bottom { font-size:0.92rem; color:#9a9a9a; }
 
-    /* Main занимает всё свободное место */
     main { padding-top:96px; flex: 1; padding-bottom: 40px; }
     
     .card { background:var(--card); border-radius:12px; padding:26px; box-shadow:0 18px 56px rgba(0,0,0,0.56); color:#eaeaea; }
@@ -79,8 +80,17 @@
       </a>
     </div>
     <div class="right-group">
+      
       <a class="nav-link" href="/support" target="_blank" rel="noopener"><i class="fa-solid fa-headset"></i> Поддержка</a>
       <a class="nav-link" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить</a>
+      
+      <!-- Кнопка скачивания: ТОЛЬКО если активна лицензия -->
+      {% if is_license_active and download_url %}
+      <a class="btn-cta" href="{{ download_url }}" style="background: linear-gradient(330deg, #10b981 0%, #059669 100%); box-shadow: 0 10px 30px rgba(16, 185, 129, 0.2); margin-right: 8px;">
+        <i class="fa-solid fa-cloud-arrow-down"></i> Скачать
+      </a>
+      {% endif %}
+
       <a class="btn-cta" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
     </div>
   </div>
