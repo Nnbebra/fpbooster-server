@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
 from .email_service import create_and_send_confirmation
 import secrets, string
+from datetime import date
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -59,8 +60,8 @@ async def register_submit(
             """,
             email, pw_hash, username.strip()
         )
-
-        # Создаём лицензию сразу (истекшую по умолчанию)
+        
+        # Создаем пустую/истекшую лицензию для старта
         license_key = generate_license_key()
         await conn.execute(
             """
@@ -70,7 +71,6 @@ async def register_submit(
             license_key, row["username"], row["uid"]
         )
 
-    # Отправка письма подтверждения
     try:
         await create_and_send_confirmation(request.app, row["id"], row["email"])
     except:
@@ -111,7 +111,7 @@ async def account_page(request: Request):
         return RedirectResponse(url="/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
-        # 1. Получаем лицензии (добавил поле hwid)
+        # Получаем лицензии
         licenses = await conn.fetch(
             """
             SELECT license_key, status, expires, hwid
@@ -122,13 +122,21 @@ async def account_page(request: Request):
             user["uid"],
         )
         
-        # 2. Получаем общую сумму трат (LTV)
+        # Получаем общую сумму трат
         total_spent = await conn.fetchval(
             "SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1",
             user["uid"]
         )
 
-    # Ссылка на скачивание
+        # Определяем самую "свежую" активную лицензию для отображения главного статуса
+        active_license = None
+        for lic in licenses:
+            if lic['status'] == 'active':
+                # Проверяем дату
+                if lic['expires'] and lic['expires'] >= date.today():
+                    active_license = lic
+                    break
+
     download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
 
     return templates.TemplateResponse(
@@ -137,10 +145,29 @@ async def account_page(request: Request):
             "request": request, 
             "user": user, 
             "licenses": licenses, 
+            "active_license": active_license,
             "download_url": download_url,
             "total_spent": total_spent
         }
     )
+
+@router.post("/api/license/reset_hwid")
+async def reset_hwid_user(request: Request):
+    try:
+        user = await get_current_user(request.app, request)
+    except:
+        return RedirectResponse(url="/login", status_code=302)
+
+    async with request.app.state.pool.acquire() as conn:
+        # Сбрасываем HWID только у активных лицензий этого пользователя
+        # Можно добавить проверку на частоту сброса (например, раз в 7 дней), 
+        # но пока сделаем базовый сброс.
+        await conn.execute(
+            "UPDATE licenses SET hwid = NULL WHERE user_uid = $1 AND status = 'active'",
+            user["uid"]
+        )
+    
+    return RedirectResponse(url="/cabinet", status_code=302)
 
 @router.get("/logout")
 async def user_logout():
