@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Form, Depends, HTTPException
+from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from .jwt_utils import hash_password, verify_password, make_jwt
@@ -128,14 +128,17 @@ async def account_page(request: Request):
             user["uid"]
         )
 
-        # Определяем самую "свежую" активную лицензию для отображения главного статуса
+        # Логика поиска активной лицензии для отображения статуса
         active_license = None
         for lic in licenses:
             if lic['status'] == 'active':
-                # Проверяем дату
                 if lic['expires'] and lic['expires'] >= date.today():
                     active_license = lic
                     break
+        
+        # Если активной нет, но есть хоть какие-то, берем первую (для инфы)
+        if not active_license and licenses:
+            active_license = licenses[0]
 
     download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
 
@@ -150,24 +153,6 @@ async def account_page(request: Request):
             "total_spent": total_spent
         }
     )
-
-@router.post("/api/license/reset_hwid")
-async def reset_hwid_user(request: Request):
-    try:
-        user = await get_current_user(request.app, request)
-    except:
-        return RedirectResponse(url="/login", status_code=302)
-
-    async with request.app.state.pool.acquire() as conn:
-        # Сбрасываем HWID только у активных лицензий этого пользователя
-        # Можно добавить проверку на частоту сброса (например, раз в 7 дней), 
-        # но пока сделаем базовый сброс.
-        await conn.execute(
-            "UPDATE licenses SET hwid = NULL WHERE user_uid = $1 AND status = 'active'",
-            user["uid"]
-        )
-    
-    return RedirectResponse(url="/cabinet", status_code=302)
 
 @router.get("/logout")
 async def user_logout():
