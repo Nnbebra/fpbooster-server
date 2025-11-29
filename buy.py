@@ -98,7 +98,7 @@ PLANS = {
         "old_price": None,
         "price": 149,
         "discount": None,
-        "img": "/static/products/hwid_reset.png", # Убедись, что картинка есть, или замени
+        "img": "/static/hwid_reset.png", # Убедись, что картинка есть, или замени
         "available": True,
         "type": "service",
         "days": 0
@@ -123,3 +123,4 @@ async def checkout_page(request: Request, plan_id: str):
          raise HTTPException(status_code=403, detail="Этот товар пока недоступен для покупки")
 
     return templates.TemplateResponse("checkout.html", {"request": request, "plan": plan})
+
