@@ -1,6 +1,6 @@
 /* JavaScript/main.js
    - navbar shrink, smooth anchors
-   - hero parallax + progressive darkening + bottom blend
+   - hero parallax (updated: removed auto-darkening)
    - hydrate stats with retry + small UX helpers
 */
 (function () {
@@ -43,7 +43,7 @@
     window.scrollTo({ top: top, behavior: 'smooth' });
   });
 
-  // hero parallax + progressive darkening and distant feel
+  // hero parallax + bottom blend (Darkening removed for brightness)
   const heroBg = document.querySelector('.hero-bg');
   if (heroBg) {
     let raf = null;
@@ -52,21 +52,22 @@
       const pos = clamp(scrollPos / docH, 0, 1);
       const pct = clamp(pos * 1.35, 0, 1);
 
-      // css variable used by overlay
+      // css variable used by overlay (optional now)
       heroBg.style.setProperty('--hero-dim', String(pct));
 
-      // translate + small scale change
-      const translateY = Math.round(-10 * pct);
+      // translate + small scale change (Parallax movement)
+      const translateY = Math.round(-10 * pct); // Можно увеличить число, чтобы фон двигался быстрее
       const scale = 1 - 0.01 * pct;
       heroBg.style.transform = `translateX(-50%) translateY(${translateY}px) scale(${scale})`;
 
-      // tuned filter values
-      const contrast = 0.90 - 0.06 * pct;
-      const saturate = 1.02 - 0.06 * pct;
-      const brightness = 0.50 - 0.12 * pct;
-      heroBg.style.filter = `contrast(${contrast}) saturate(${saturate}) brightness(${brightness})`;
-
-      heroBg.classList.toggle('depth-dark', pos > 0.22);
+      // --- ИЗМЕНЕНИЕ: Отключили затемнение через JS, чтобы картинка была яркой ---
+      // const contrast = 0.90 - 0.06 * pct;
+      // const saturate = 1.02 - 0.06 * pct;
+      // const brightness = 0.50 - 0.12 * pct;
+      // heroBg.style.filter = `contrast(${contrast}) saturate(${saturate}) brightness(${brightness})`;
+      
+      // Если захочешь вернуть легкое затемнение при скролле, раскомментируй строку ниже:
+      // heroBg.style.filter = `brightness(${1 - 0.3 * pos})`; 
     }
 
     const onScroll = throttle(function () {
@@ -133,7 +134,7 @@
     });
   })();
 
-  // responsive navbar toggler: visible only on small screens; defensive behavior on resize
+  // responsive navbar toggler
   (function navbarToggler() {
     const toggler = document.querySelector('.navbar-toggler');
     const navRight = document.querySelector('.nav-right');
@@ -159,5 +160,4 @@
     window.addEventListener('resize', throttle(sync, 120), { passive: true });
     sync();
   })();
-
 })();
