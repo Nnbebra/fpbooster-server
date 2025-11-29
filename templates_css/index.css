@@ -7,7 +7,7 @@
   --accent2: #5e2bff;
   --gradient: linear-gradient(110deg,var(--accent1),var(--accent2));
   --glass: rgba(255,255,255,0.12);
-  --max-width: 1200px; /* Чуть шире, чтобы контент дышал */
+  --max-width: 1200px;
   --content-padding: 20px;
   --soft-shadow: 0 40px 140px rgba(8,6,30,0.82);
   --btn-ease: cubic-bezier(.16,.84,.34,1);
@@ -18,14 +18,10 @@
 /* === BASE & RESET === */
 *, *::before, *::after { box-sizing: border-box; }
 html,body{
-  width: 100%;
-  min-height: 100vh;
-  margin: 0;
-  padding: 0;
+  width: 100%; min-height: 100vh; margin: 0; padding: 0;
   font-family: Inter, "Open Sans", system-ui, -apple-system, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  overflow-x: hidden; /* FIXED: Убирает горизонтальный скролл */
+  background: var(--bg); color: var(--text);
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 body { display:flex; flex-direction:column; }
@@ -33,12 +29,8 @@ main{ flex:1 0 auto; position: relative; z-index: 1; }
 footer{ flex-shrink:0; position: relative; z-index: 1; }
 
 /* === CONTAINERS === */
-/* FIXED: Центрирование контейнера, чтобы контент не лип к краям */
 .container, .container-xl { 
-  max-width: var(--max-width); 
-  margin: 0 auto; 
-  padding: 0 var(--content-padding);
-  width: 100%;
+  max-width: var(--max-width); margin: 0 auto; padding: 0 var(--content-padding); width: 100%;
 }
 a{ color:inherit; text-decoration:none; transition: opacity 0.2s; }
 a:hover { opacity: 0.8; }
@@ -48,15 +40,13 @@ a:hover { opacity: 0.8; }
   position:fixed; top:0; left:0; right:0; height:72px;
   display:flex; align-items:center; z-index:1000;
   padding:0 var(--content-padding);
-  background: rgba(5,5,6,0.6); /* Полупрозрачность */
-  backdrop-filter: blur(12px);
+  background: rgba(5,5,6,0.6); backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .header-inner{ width:100%; display:flex; align-items:center; justify-content:space-between; }
 .brand{ font-weight:800; font-size:1.2rem; display:flex; gap:8px; align-items:center; color:#fff; letter-spacing: 0.5px; }
 .brand .ver{ background:var(--accent1); color:#fff; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:700; }
 
-/* Navbar toggler */
 .navbar-toggler{ display:none; background:transparent; border:0; width:44px; height:44px; align-items:center; justify-content:center; cursor: pointer; }
 .hamburger span { display:block; width:22px; height:2px; background:#fff; position:relative; }
 .hamburger span::before, .hamburger span::after { content:""; position:absolute; left:0; right:0; height:2px; background:#fff; transition:0.2s; }
@@ -67,179 +57,119 @@ a:hover { opacity: 0.8; }
 /* Buttons */
 .btn-cta{
   background:var(--gradient); color:#fff; padding:10px 22px; border-radius:8px; font-weight:700;
-  box-shadow: 0 0 25px rgba(155, 75, 255, 0.3);
-  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 0 25px rgba(155, 75, 255, 0.3); border: 1px solid rgba(255,255,255,0.1);
   display: inline-flex; align-items: center; gap: 8px;
 }
 .btn-outline{
   background:rgba(255,255,255,0.05); color:#fff; padding:10px 22px; border-radius:8px; font-weight:700;
-  border:1px solid rgba(255,255,255,0.1);
-  display: inline-flex; align-items: center; gap: 8px;
+  border:1px solid rgba(255,255,255,0.1); display: inline-flex; align-items: center; gap: 8px;
 }
 .btn-outline:hover { background:rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
 
-/* === HERO SECTION (САМОЕ ВАЖНОЕ) === */
+/* === HERO SECTION === */
 .hero{ 
-  position:relative; 
-  min-height: 100vh; /* Высота экрана */
-  display:flex; 
-  align-items:center; /* Центрируем контент вертикально */
-  padding-top: 80px; 
-  padding-bottom: 40px;
+  position:relative; min-height: 100vh; display:flex; align-items:center; 
+  padding-top: 80px; padding-bottom: 40px;
 }
 
-/* FIXED: Фон теперь точно растягивается и стоит по центру */
+/* FIXED v4: Исправленное позиционирование фона */
 .hero-bg {
   position: absolute;
   top: 0;
-  left: 0;
-  width: 100%;
-  height: 130vh; /* Запас высоты для зума/фейда */
+  /* Жесткое центрирование по горизонтали */
+  left: 50%;
+  transform: translateX(-50%); 
+  
+  /* Занимает всю ширину экрана */
+  width: 100vw; 
+  /* Минимальная ширина, чтобы не зумилось слишком сильно на узких экранах */
+  min-width: 1400px; 
+  
+  /* Уменьшили высоту до 115vh, чтобы немного "отдалить" (уменьшить зум) */
+  height: 115vh; 
   
   background-image: url('/static/new_bg.png');
   background-position: center top; 
   background-repeat: no-repeat;
   background-size: cover; 
   
-  z-index: 0; 
-  pointer-events: none;
+  z-index: 0; pointer-events: none;
   
-  /* Маска прозрачности снизу (Celestial Style) */
+  /* Маска прозрачности (Celestial Style) */
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
 }
 
-/* FIXED: Виньетка (затемнение краев) */
+/* Виньетка */
 .hero-bg::after {
-  content: "";
-  position: absolute;
-  inset: 0;
+  content: ""; position: absolute; inset: 0;
   background: radial-gradient(circle at center, transparent 40%, var(--bg) 100%);
   opacity: 0.6;
 }
 
-/* === HERO LAYOUT (ВЫРАВНИВАНИЕ) === */
+/* === HERO LAYOUT === */
 .hero-layout{ 
-  position: relative; 
-  z-index: 2; 
-  display: flex; 
-  align-items: center; 
-  justify-content: space-between; /* Текст слева, картинка справа */
-  gap: 40px; 
-  width: 100%;
+  position: relative; z-index: 2; display: flex; align-items: center; 
+  justify-content: space-between; gap: 40px; width: 100%;
 }
+.hero-left-wrap{ flex: 1; max-width: 550px; }
+.hero-right-wrap { flex: 1; display: flex; justify-content: flex-end; perspective: 1000px; }
 
-.hero-left-wrap{ 
-  flex: 1; 
-  max-width: 550px; /* Ограничиваем ширину текста */
-}
-
-.hero-right-wrap { 
-  flex: 1;
-  display: flex;
-  justify-content: flex-end; /* Картинку прижимаем вправо */
-  perspective: 1000px; 
-}
-
-/* Заголовки и текст */
 .hero-panel h1{
-  font-size: 3.5rem; 
-  line-height: 1.1; 
-  margin: 0 0 24px 0;
-  font-weight: 800;
-  background: linear-gradient(to right, #fff, #bfaee3);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  font-size: 3.5rem; line-height: 1.1; margin: 0 0 24px 0; font-weight: 800;
+  background: linear-gradient(to right, #fff, #bfaee3); -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent; text-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
-
-.lead{ 
-  font-size: 1.15rem; 
-  color: #ccc; 
-  margin-bottom: 32px; 
-  line-height: 1.6; 
-}
-
+.lead{ font-size: 1.15rem; color: #ccc; margin-bottom: 32px; line-height: 1.6; }
 .btns{ display:flex; gap:16px; flex-wrap: wrap; }
 
-/* Visual Card (Картинка UI) */
+/* Visual Card */
 .visual-card {
-  width: 100%;
-  max-width: 600px; /* Чтобы не была гигантской */
-  transform: rotateY(-8deg) rotateX(4deg); /* Легкий 3D поворот */
-  transition: transform 0.5s ease;
-  box-shadow: -30px 30px 80px rgba(0,0,0,0.6);
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: #000; /* Подложка, если картинка долго грузится */
+  width: 100%; max-width: 600px;
+  transform: rotateY(-8deg) rotateX(4deg); transition: transform 0.5s ease;
+  box-shadow: -30px 30px 80px rgba(0,0,0,0.6); border-radius: 14px;
+  overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: #000;
 }
 .visual-card:hover { transform: rotateY(0) rotateX(0); }
 .visual-frame img { display:block; width:100%; height:auto; }
 
-/* Статистика под кнопками (User count и т.д.) */
-.stats-row { 
-  margin-top: 40px; 
-  display:flex; 
-  gap: 15px; 
-  flex-wrap: wrap;
-}
+.stats-row { margin-top: 40px; display:flex; gap: 15px; flex-wrap: wrap; }
 .card.pill {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
-  padding: 8px 16px;
-  border-radius: 50px;
-  font-size: 0.9rem;
-  color: #ddd;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 16px; border-radius: 50px; font-size: 0.9rem; color: #ddd;
 }
 .card.pill strong { color: #fff; margin-right: 5px; }
 
 /* === SECTIONS === */
 section{ padding: 80px 0; position:relative; z-index:1; }
-
 .section-title { font-size: 2.5rem; margin-bottom: 10px; text-align: center; }
 .section-subtitle { text-align: center; color: var(--muted); margin-bottom: 50px; max-width: 600px; margin-left: auto; margin-right: auto; }
 
-/* Grid Cards */
 .grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:24px; }
-
 .card {
-  background: #0e0e10;
-  border: 1px solid rgba(255,255,255,0.05);
-  padding: 30px; 
-  border-radius: 16px;
-  transition: 0.3s;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  background: #0e0e10; border: 1px solid rgba(255,255,255,0.05);
+  padding: 30px; border-radius: 16px; transition: 0.3s; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
 .card:hover { 
-  background: #131316; 
-  transform: translateY(-5px); 
-  border-color: var(--accent1); 
-  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  background: #131316; transform: translateY(-5px); border-color: var(--accent1); box-shadow: 0 20px 40px rgba(0,0,0,0.4);
 }
-
 .benefit h5 { font-size: 1.25rem; color: #fff; margin: 0 0 12px 0; display:flex; align-items:center; gap:12px; }
 .benefit h5 i { color: var(--accent1); }
 .benefit p { color: #aaa; font-size: 0.95rem; line-height: 1.6; margin: 0; }
 
-/* Update Section */
+/* Update & Video */
 .update-flex { display: flex; gap: 30px; background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0)); }
 .update-box { flex: 1; }
 .update-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
 .update-meta div { margin-bottom: 8px; color: #ccc; }
 .update-cta { margin-top: 20px; }
 .btn-gradient { background: var(--gradient); color: #fff; padding: 10px 20px; border-radius: 8px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px;}
-
-/* Video Placeholder */
 .video-wrap {
-  background: rgba(255,255,255,0.02);
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.05);
-  display: flex; align-items: center; justify-content: center;
-  min-height: 400px;
+  background: rgba(255,255,255,0.02); border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);
+  display: flex; align-items: center; justify-content: center; min-height: 400px;
 }
 
-/* Stats (Big Icons) */
+/* Stats Icons */
 .stat.card { text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; }
 .stat i { color: var(--accent1); margin-bottom: 15px; }
 .stat-num { font-size: 2.5rem; font-weight: 800; color: #fff; line-height: 1; margin-bottom: 5px; }
@@ -251,33 +181,43 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 
 /* === FOOTER === */
 .footer{ 
-  border-top: 1px solid rgba(255,255,255,0.05); 
-  padding: 60px 0 30px; 
-  background: #020202; 
-  margin-top: 60px; 
+  border-top: 1px solid rgba(255,255,255,0.05); padding: 60px 0 30px; 
+  background: #020202; margin-top: 60px; 
 }
-.footer-inner { display:flex; flex-direction: column; gap: 30px; }
-.footer-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 20px; }
-.footer-brand-title { font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: 5px; }
-.footer-brand-sub { color: #666; font-size: 0.9rem; max-width: 300px; }
+.footer-inner { display:flex; flex-direction: column; gap: 40px; }
 
-.footer-links { display: flex; gap: 30px; }
-.footer-links a { color: #888; font-size: 0.95rem; font-weight: 500; }
-.footer-links a:hover { color: #fff; }
+/* FIXED v4: Используем GRID для колонок футера */
+.footer-top { 
+  display: grid;
+  /* Три колонки: Бвранд (пошире), Ссылки, Статистика */
+  grid-template-columns: 1.5fr 1fr 1fr; 
+  gap: 40px;
+  align-items: start;
+}
 
-.footer-stats { display: flex; gap: 15px; }
-.stat-pill { background: rgba(255,255,255,0.05); padding: 5px 12px; border-radius: 6px; font-size: 0.85rem; color: #aaa; border: 1px solid rgba(255,255,255,0.05); }
-.stat-pill span { color: #fff; font-weight: 700; }
+.footer-brand-title { font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: 10px; }
+.footer-brand-sub { color: #888; font-size: 0.95rem; line-height: 1.5; max-width: 350px; }
+
+/* Выравниваем ссылки вертикально в колонке */
+.footer-links { display: flex; flex-direction: column; gap: 12px; }
+.footer-links a { color: #aaa; font-size: 1rem; font-weight: 500; transition: 0.2s; }
+.footer-links a:hover { color: #fff; padding-left: 5px; }
+
+/* Выравниваем статистику вертикально */
+.footer-stats { display: flex; flex-direction: column; gap: 12px; }
+.stat-pill { 
+  background: rgba(255,255,255,0.03); padding: 8px 14px; border-radius: 8px; 
+  font-size: 0.9rem; color: #aaa; border: 1px solid rgba(255,255,255,0.05);
+  display: inline-flex; align-items: center; width: fit-content;
+}
+.stat-pill i { color: var(--accent1); margin-right: 8px; }
+.stat-pill span { color: #fff; font-weight: 700; margin-left: 5px; }
 
 .footer-bottom { 
-  border-top: 1px solid rgba(255,255,255,0.05); 
-  padding-top: 30px; 
-  display: flex; 
-  justify-content: space-between; 
-  color: #444; 
-  font-size: 0.85rem; 
+  border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px; 
+  display: flex; justify-content: space-between; color: #555; font-size: 0.85rem; 
 }
-.footer-bottom strong { color: #666; }
+.footer-bottom strong { color: #777; }
 
 /* === RESPONSIVE (MOBILE) === */
 @media (max-width: 1024px) {
@@ -287,15 +227,17 @@ section{ padding: 80px 0; position:relative; z-index:1; }
     .hero-panel h1 { font-size: 2.8rem; }
     .btns { justify-content: center; }
     .stats-row { justify-content: center; }
-    
     .hero-right-wrap { justify-content: center; width: 100%; }
     .visual-card { transform: none; max-width: 100%; }
-    
     .navbar-toggler { display:flex; }
-    .nav-right { display:none; } /* JS откроет меню */
-    
+    .nav-right { display:none; }
     .update-flex { flex-direction: column; }
-    .footer-top { flex-direction: column; align-items: center; text-align: center; }
-    .footer-links { justify-content: center; }
-    .footer-bottom { flex-direction: column; align-items: center; gap: 10px; }
+    
+    /* FIXED v4: На мобилках футер снова в одну колонку */
+    .footer-top { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 30px; }
+    .footer-links { align-items: center; }
+    .footer-stats { align-items: center; }
+    .footer-brand-sub { margin: 0 auto; }
+    
+    .footer-bottom { flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 }
