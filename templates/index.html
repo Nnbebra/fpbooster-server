@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>FPBooster — Лучший софт для FunPay</title>
-  <meta name="description" content="FPBooster — автоматизация поднятия лотов на FunPay: автоподъём, расписание, промокоды, апдейтер и премиальный UI." />
+  <meta name="description" content="FPBooster — мощный инструмент для автоматизации FunPay: авто-выдача, поднятие лотов, копирование товаров и защита аккаунта." />
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="/templates_css/index.css?v=5">
+  <link rel="stylesheet" href="/templates_css/index.css?v=final_fix">
 </head>
 <body>
   <noscript>Вам нужно включить JavaScript, чтобы пользоваться сайтом.</noscript>
@@ -17,10 +17,9 @@
     <div class="container header-inner">
       <a class="brand" href="/" aria-label="FPBooster — главная">
         <span>FPBooster</span>
-        <span id="version-badge" class="ver interactive-hitbox">Beta</span>
+        <span class="ver interactive-hitbox">Beta</span>
       </a>
 
-      <!-- исправленная разметка гамбургера: три полоски внутри .hamburger -->
       <button class="navbar-toggler" aria-label="Toggle navigation" aria-expanded="false" aria-hidden="true">
         <span class="hamburger">
           <span class="bar"></span>
@@ -37,7 +36,7 @@
           <a class="btn-cta interactive-hitbox" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
         {% else %}
           <a class="btn-cta interactive-hitbox" href="/login"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
-          <a class="btn-outline interactive-hitbox" href="/register"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</a>
+          <a class="btn-outline interactive-hitbox" href="/register"><i class="fa-solid fa-user-plus"></i> Регистрация</a>
         {% endif %}
       </nav>
     </div>
@@ -52,16 +51,15 @@
           <div class="hero-left-wrap">
             <div class="hero-panel" role="article" aria-labelledby="hero-title">
               <h1 id="hero-title">Лучший софт для сайта Фанпэй</h1>
-              <p class="lead">FPBooster включает автоподъём лотов, гибкое расписание, управление Session ID, поддержку промокодов, встроенный апдейтер и премиальные темы.</p>
+              <p class="lead">FPBooster — многофункциональный инструмент для работы с сайтом FunPay. Он включает в себя такие функции, как авто-восстановление лотов, копирование чужих лотов, авто-поднятие и множество других полезных инструментов.</p>
 
               <div class="btns" role="group" aria-label="Основные действия">
                 {% if user %}
                   <a class="btn-cta interactive-hitbox" href="/cabinet"><i class="fa-solid fa-user"></i> Личный кабинет</a>
                 {% else %}
                   <a class="btn-cta interactive-hitbox" href="/login"><i class="fa-solid fa-right-to-bracket"></i> Войти</a>
-                  <a class="btn-outline interactive-hitbox" href="/register"><i class="fa-solid fa-user-plus"></i> Зарегистрироваться</a>
+                  <a class="btn-outline interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
                 {% endif %}
-                <a class="btn-outline interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> ТГК софта</a>
               </div>
 
               <div class="stats-row" aria-hidden="false">
@@ -78,11 +76,9 @@
           <div class="hero-right-wrap">
             <div class="visual-card" aria-hidden="false">
               <div class="visual-frame" role="img" aria-label="Интерфейс FPBooster">
-                <img src="/static/image228.png" alt="UI FPBooster Interface" loading="lazy"
-                     class="img-center" 
-                     style="border-radius: 12px; box-shadow: 0 0 30px rgba(155, 75, 255, 0.2);">
+                 <img src="/static/image228.png" alt="UI FPBooster Interface" loading="lazy" class="img-center" style="border-radius: 12px; box-shadow: 0 0 30px rgba(155, 75, 255, 0.2);">
               </div>
-              <div class="visual-caption">Красивый интерфейс и премиальные темы; UI адаптирован под тёмную тему сайта</div>
+              <div class="visual-caption">Красивый интерфейс и премиальные темы</div>
             </div>
           </div>
         </div>
@@ -93,22 +89,22 @@
       <div class="container">
         <div class="card">
           <h2 id="why-title" class="section-title">Почему выбирают нас?</h2>
-          <p class="section-subtitle">Инструмент, созданный продавцами для продавцов на FunPay: простая настройка, быстрый результат и гарантия обновлений.</p>
+          <p class="section-subtitle">Инструмент, созданный продавцами для продавцов на FunPay: простая настройка, безопасность и гарантия обновлений.</p>
 
           <div class="grid mt-22">
             <div class="benefit card">
-              <h5><i class="fa-solid fa-bolt"></i> Мгновенный буст</h5>
-              <p>Поднимайте выбранные Node ID быстро и стабильно с визуальной диагностикой результата.</p>
+              <h5><i class="fa-solid fa-user-secret"></i> Полная безопасность</h5>
+              <p>Софт имитирует действия человека, делает случайные паузы и задержки, сводя риск блокировки к нулю.</p>
             </div>
 
             <div class="benefit card">
-              <h5><i class="fa-solid fa-clock"></i> Гибкое расписание</h5>
-              <p>Задавайте часы работы, интервалы и обходите пики нагрузки автоматически.</p>
+              <h5><i class="fa-solid fa-layer-group"></i> Многофункциональность</h5>
+              <p>Софт включает в себя множество инструментов: копирование чужих лотов, статистика профиля, авто-восстановление лотов и многое другое.</p>
             </div>
 
             <div class="benefit card">
-              <h5><i class="fa-solid fa-shield-halved"></i> Лицензии и промокоды</h5>
-              <p>Поддержка активации лицензий и промокодов с отображением владельца и соцссылок.</p>
+              <h5><i class="fa-solid fa-shield-halved"></i> Защита данных</h5>
+              <p>Софт работает локально через ваш GoldenKey. Логин и пароль от аккаунта не требуются, что гарантирует безопасность.</p>
             </div>
 
             <div class="benefit card">
@@ -122,8 +118,8 @@
             </div>
 
             <div class="benefit card">
-              <h5><i class="fa-solid fa-road"></i> Планы по функционалу</h5>
-              <p>Мы планируем добавить: возврат/ЧС для заказов с плохими отзывами, автодемпинг и другие инструменты.</p>
+              <h5><i class="fa-solid fa-rocket"></i> Удобный лаунчер</h5>
+              <p>Работа через современный лаунчер с возможностью гибкой настройки, авто-обновлением и отображением статистики профиля.</p>
             </div>
           </div>
         </div>
@@ -153,16 +149,6 @@
               <a class="btn-gradient interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener"><i class="fa-brands fa-telegram"></i> Официальный ТГК</a>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <section aria-labelledby="video-title">
-      <div class="container">
-        <h2 id="video-title">Видеообзор</h2>
-        <p>Ниже вы можете посмотреть небольшой обзор клиента.</p>
-        <div class="Home_video__ZcoNm video-wrap" aria-live="polite">
-          <div class="video-coming-soon" role="status">coming soon</div>
         </div>
       </div>
     </section>
@@ -199,11 +185,11 @@
         <div class="card contact-flex">
           <div>
             <h3 id="contact-title" class="contact-title">Поддержка и контакты</h3>
-            <div class="contact-subtitle">Техническая поддержка(ТГ): <strong>@PeCHeNKa_F</strong></div>
+            <div class="contact-subtitle">Техническая поддержка (ТГ): <strong>@PeCHeNKa_F</strong></div>
           </div>
           <div class="contact-actions" role="group" aria-label="Контактные действия">
-            <a class="btn-outline interactive-hitbox" href="/cabinet" role="button" tabindex="0">Личный кабинет</a>
-            <a class="btn-cta interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener" role="button" tabindex="0">Наш телеграм</a>
+            <a class="btn-outline interactive-hitbox" href="/cabinet">Личный кабинет</a>
+            <a class="btn-cta interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener">Наш телеграм</a>
           </div>
         </div>
       </div>
@@ -225,8 +211,8 @@
         </div>
 
         <div class="footer-stats" aria-hidden="false">
-          <div class="stat-pill"><i class="fa-solid fa-user" style="margin-right:8px"></i>Подписчиков: <span id="footer-subs">2 992</span></div>
-          <div class="stat-pill"><i class="fa-solid fa-star" style="margin-right:8px"></i>Оценок: <span id="footer-rates">844</span></div>
+          <div class="stat-pill"><i class="fa-solid fa-user"></i> <span>Подписчиков: <span id="footer-subs">2 992</span></span></div>
+          <div class="stat-pill"><i class="fa-solid fa-star"></i> <span>Оценок: <span id="footer-rates">844</span></span></div>
         </div>
       </div>
 
@@ -241,9 +227,3 @@
   <script defer src="/JavaScript/ui.js"></script>
 </body>
 </html>
-
-
-
-
-
-
