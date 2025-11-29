@@ -2,7 +2,7 @@
 {% block title %}Магазин FPBooster{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/templates_css/buy.css?v=2">
+<link rel="stylesheet" href="/templates_css/buy.css?v=3">
 
 <main>
 <section style="padding: 120px 0 80px;">
@@ -23,15 +23,7 @@
         
         <h4>{{ plan.title }}</h4>
         
-        {% if plan.id == 'hwid_reset' %}
-            <p>Сброс привязки (HWID) для запуска на новом ПК.</p>
-        {% elif 'plus' in plan.id %}
-            <p>Расширенная версия "Навсегда" с эксклюзивом.</p>
-        {% elif 'alpha' in plan.id %}
-            <p>Ранний доступ к бета-тестам и новым функциям.</p>
-        {% else %}
-            <p>Полный доступ ко всем функциям FPBooster.</p>
-        {% endif %}
+        <p>{{ plan.desc }}</p>
 
         <div class="price">
           {% if plan.old_price %}
