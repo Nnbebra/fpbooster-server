@@ -2,77 +2,83 @@
 {% block title %}Оформление заказа — {{ plan.title }}{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/templates_css/checkout.css">
+<link rel="stylesheet" href="/templates_css/checkout.css?v=2">
 
 <main>
-<section class="PaymentMethodModal_container__o1WaO" aria-labelledby="checkout-title" role="dialog">
-  <div class="modal-dialog">
-    <div class="modal-content" role="document" id="payment-modal">
-      <div class="PaymentMethodModal_paymentMethods__Egz7z">
-        <div style="width:100%; text-align:center; margin-bottom:6px;">
-          <strong style="color:var(--muted)">Способы оплаты</strong>
-        </div>
-        <div class="pm-method-row" id="pm-list">
-          <!-- Карта -->
-          <div class="pm-method active" data-method="card">
-            <img src="/static/method_8.png" alt="card" loading="lazy">
-          </div>
-          <!-- Крипта -->
-          <div class="pm-method" data-method="crypto">
-            <img src="/static/method_21.png" alt="crypto" loading="lazy">
-          </div>
-        </div>
+  <div class="checkout-card">
+    
+    <div class="checkout-header">
+      <h2>Оформление заказа</h2>
+      <div class="product-name">{{ plan.title }}</div>
+    </div>
+
+    <span class="checkout-section-title">Выберите способ оплаты</span>
+    <div class="payment-methods-grid" id="pm-list">
+      
+      <div class="pm-option active" data-method="card">
+        <img src="/static/method_8.png" alt="Bank Card">
+        <span>Банковская карта</span>
       </div>
 
-      <div class="PaymentMethodModal_paymentInfo__WHyrR">
-        <h4 id="checkout-title">Покупка «{{ plan.title }}»</h4>
-        <div class="PaymentMethodModal_price__aubih">
-          К оплате:
+      <div class="pm-option" data-method="crypto">
+        <img src="/static/method_21.png" alt="Crypto">
+        <span>Криптовалюта</span>
+      </div>
+
+    </div>
+
+    <div class="price-row">
+      <span class="price-label">К оплате:</span>
+      <div class="price-val">
+        {% if plan.old_price %}
           <s>{{ plan.old_price }} ₽</s>
-          <b class="price-current">{{ plan.price }} ₽</b>
-        </div>
-        {% if plan.discount %}
-        <div class="PaymentMethodModal_discount__B8seK">Скидка {{ plan.discount|replace('-', '') }}</div>
         {% endif %}
-
-        <!-- Кнопка PayPalych -->
-        <form id="pay-form" action="/payment/start" method="get" style="margin-top:12px;">
-          <input type="hidden" name="plan" value="{{ plan.id }}">
-          <input type="hidden" name="method" value="card" id="pay-method-input">
-          <button type="submit" class="btn btn-gradient btn-lg w-100">
-            <i class="fa-solid fa-circle-arrow-right mr-2"></i> Перейти к оплате
-          </button>
-        </form>
-
-        <!-- Кнопка FunPay -->
-        <a type="button"
-           class="btn btn-lg btn-light w-100 mt-3 mb-4"
-           href="https://funpay.com/users/17156368/"
-           target="_blank" rel="noreferrer">
-          <i class="mr-2"></i>Оплатить через
-          <img src="/static/funpay.png" width="56px" class="ml-2" alt="funpay">
-        </a>
-
-        <p class="checkout-note">
-          Оплата обрабатывается через <b>PayPalych</b> или <b>FunPay</b>. После нажатия кнопки вы будете перенаправлены на защищённую страницу оплаты.
-        </p>
+        <b>{{ plan.price }} ₽</b>
       </div>
     </div>
+
+    <form id="pay-form" action="/payment/start" method="get">
+      <input type="hidden" name="plan" value="{{ plan.id }}">
+      <input type="hidden" name="method" value="card" id="pay-method-input">
+      
+      <button type="submit" class="btn-pay">
+        <i class="fa-solid fa-lock"></i> Оплатить безопасно
+      </button>
+    </form>
+
+    <a href="https://funpay.com/users/17156368/" target="_blank" class="btn-funpay">
+      <span>Оплатить через</span>
+      <img src="/static/funpay.png" alt="FunPay">
+    </a>
+
+    <div class="secure-note">
+      <i class="fa-solid fa-shield-halved"></i>
+      Платежи защищены шифрованием
+    </div>
+
   </div>
-</section>
 </main>
 
 <script>
   (function(){
     const pmList = document.getElementById('pm-list');
     const payMethodInput = document.getElementById('pay-method-input');
-    pmList.addEventListener('click', (e) => {
-      const pm = e.target.closest('.pm-method');
-      if(!pm) return;
-      pmList.querySelectorAll('.pm-method').forEach(el => el.classList.remove('active'));
-      pm.classList.add('active');
-      payMethodInput.value = pm.getAttribute('data-method') || 'card';
-    });
+    
+    if(pmList && payMethodInput) {
+      pmList.addEventListener('click', (e) => {
+        const pm = e.target.closest('.pm-option');
+        if(!pm) return;
+        
+        // Сброс активного класса
+        pmList.querySelectorAll('.pm-option').forEach(el => el.classList.remove('active'));
+        
+        // Установка нового
+        pm.classList.add('active');
+        
+        // Обновление скрытого инпута
+        payMethodInput.value = pm.getAttribute('data-method') || 'card';
+      });
+    }
   })();
 </script>
 {% endblock %}
