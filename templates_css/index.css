@@ -1,7 +1,7 @@
 :root{
   --bg: #050405;
   --text: #eaeaea;
-  --muted: #9ca3af; /* Светлее, чтобы лучше читалось */
+  --muted: #9ca3af;
   --accent1: #9b4bff;
   --accent2: #5e2bff;
   --gradient: linear-gradient(135deg, var(--accent1), var(--accent2));
@@ -22,13 +22,13 @@ body { display:flex; flex-direction:column; }
 main{ flex:1 0 auto; position: relative; z-index: 1; }
 footer{ flex-shrink:0; position: relative; z-index: 2; }
 
-/* === ANIMATIONS (Новое!) === */
+/* === ANIMATIONS === */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .hero-left-wrap { animation: fadeInUp 0.8s ease-out forwards; }
-.hero-right-wrap { animation: fadeInUp 0.8s ease-out 0.2s forwards; opacity: 0; } /* Задержка 0.2с */
+.hero-right-wrap { animation: fadeInUp 0.8s ease-out 0.2s forwards; opacity: 0; }
 
 /* === CONTAINERS === */
 .container { 
@@ -41,13 +41,23 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   position:fixed; top:0; left:0; right:0; height:76px;
   display:flex; align-items:center; z-index:1000;
   padding:0 var(--content-padding);
-  background: rgba(5, 5, 6, 0.7); /* Темнее и прозрачнее */
+  background: rgba(5, 5, 6, 0.7);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 .header-inner{ width:100%; display:flex; align-items:center; justify-content:space-between; }
-.brand{ font-weight:800; font-size:1.3rem; display:flex; gap:10px; align-items:center; color:#fff; letter-spacing: -0.5px; }
-.brand .ver{ background: linear-gradient(45deg, var(--accent1), var(--accent2)); color:#fff; padding:3px 8px; border-radius:6px; font-size:0.7rem; font-weight:700; box-shadow: 0 0 10px rgba(155, 75, 255, 0.4); }
+
+/* Исправлено выравнивание логотипа и Beta */
+.brand{ 
+  font-weight:800; font-size:1.3rem; display:flex; gap:10px; align-items:center; 
+  color:#fff; letter-spacing: -0.5px; 
+}
+.brand .ver{ 
+  background: linear-gradient(45deg, var(--accent1), var(--accent2)); 
+  color:#fff; padding:4px 8px; border-radius:6px; font-size:0.75rem; 
+  font-weight:700; box-shadow: 0 0 10px rgba(155, 75, 255, 0.4);
+  align-self: center; /* Центрируем плашку по вертикали */
+}
 
 .nav-right{ display:flex; gap:24px; align-items:center; }
 .nav-link { font-weight: 500; font-size: 0.95rem; color: #ccc; }
@@ -55,14 +65,16 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 
 /* Buttons */
 .btn-cta{
-  background:var(--gradient); color:#fff; padding:10px 24px; border-radius:10px; font-weight:600;
+  background:var(--gradient); color:#fff; padding:12px 24px; border-radius:10px; font-weight:600;
   box-shadow: 0 4px 20px rgba(155, 75, 255, 0.25); border: 1px solid rgba(255,255,255,0.1);
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap;
 }
 .btn-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(155, 75, 255, 0.4); }
 
 .btn-outline{
-  background:rgba(255,255,255,0.03); color:#fff; padding:10px 24px; border-radius:10px; font-weight:600;
+  background:rgba(255,255,255,0.03); color:#fff; padding:12px 24px; border-radius:10px; font-weight:600;
   border:1px solid rgba(255,255,255,0.1); backdrop-filter: blur(4px);
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap;
 }
 .btn-outline:hover { background:rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); transform: translateY(-2px); }
 
@@ -72,18 +84,16 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   padding-top: 100px; padding-bottom: 60px;
 }
 
-/* Фон (настроен по твоей просьбе) */
 .hero-bg {
   position: absolute; top: 0; left: 50%; transform: translateX(-50%); 
   width: 100vw; min-width: 1400px; height: 120vh; 
   background-image: url('/static/new_bg.png');
   background-position: center top; background-repeat: no-repeat; background-size: cover; 
   z-index: 0; pointer-events: none;
-  /* Плавный уход в черный цвет снизу */
   -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
 }
-.hero-bg::after { /* Виньетка */
+.hero-bg::after { 
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(circle at center, transparent 30%, var(--bg) 90%);
   opacity: 0.7;
@@ -92,13 +102,11 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 /* HERO LAYOUT */
 .hero-layout{ 
   position: relative; z-index: 2; display: flex; align-items: center; 
-  justify-content: space-between; gap: 60px; width: 100%;
+  justify-content: space-between; gap: 40px; width: 100%;
 }
 
-/* Левая часть (Текст) + Glassmorphism */
 .hero-left-wrap{ 
-  flex: 1; max-width: 580px; 
-  /* НОВОЕ: Подложка под текст для читаемости */
+  flex: 1; max-width: 550px; 
   background: rgba(5, 5, 6, 0.4);
   backdrop-filter: blur(10px);
   padding: 30px;
@@ -108,12 +116,12 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 
 .hero-panel h1{
-  font-size: 3.5rem; line-height: 1.1; margin: 0 0 24px 0; font-weight: 800;
+  font-size: 3.2rem; line-height: 1.1; margin: 0 0 24px 0; font-weight: 800;
   background: linear-gradient(to right, #fff 20%, #bfaee3 100%); -webkit-background-clip: text;
   -webkit-text-fill-color: transparent; 
   filter: drop-shadow(0 0 20px rgba(155, 75, 255, 0.3));
 }
-.lead{ font-size: 1.15rem; color: #d1d5db; margin-bottom: 32px; line-height: 1.6; }
+.lead{ font-size: 1.1rem; color: #d1d5db; margin-bottom: 32px; line-height: 1.6; }
 .btns{ display:flex; gap:16px; flex-wrap: wrap; }
 
 /* Правая часть (Картинка) */
@@ -121,21 +129,20 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   flex: 1; display: flex; justify-content: flex-end; perspective: 1000px;
 }
 .visual-card {
-  width: 100%; max-width: 650px;
+  width: 100%; 
+  /* УВЕЛИЧЕНО с 650 до 800px по твоему запросу */
+  max-width: 800px; 
   transform: rotateY(-5deg) rotateX(2deg); transition: transform 0.5s ease;
-  /* Свечение за картинкой */
   box-shadow: 0 0 60px rgba(155, 75, 255, 0.15); 
   border-radius: 16px; overflow: hidden;
 }
 .visual-card:hover { transform: rotateY(0) rotateX(0) scale(1.02); }
 .visual-frame img { display:block; width:100%; height:auto; }
 
-/* Подпись под картинкой */
 .visual-caption {
-  margin-top: 12px; font-size: 0.9rem; color: var(--muted); text-align: center; font-style: italic; opacity: 0.7;
+  margin-top: 15px; font-size: 1rem; color: var(--muted); text-align: center; font-weight: 500; letter-spacing: 0.5px;
 }
 
-/* Статистика */
 .stats-row { margin-top: 30px; display:flex; gap: 12px; flex-wrap: wrap; }
 .card.pill {
   background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
@@ -148,7 +155,6 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 .section-title { font-size: 2.5rem; margin-bottom: 16px; text-align: center; color: #fff; }
 .section-subtitle { text-align: center; color: var(--muted); margin-bottom: 50px; max-width: 600px; margin: 0 auto 50px; }
 
-/* Grid Cards */
 .grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:24px; }
 .card {
   background: #0e0e10; border: 1px solid rgba(255,255,255,0.05);
@@ -162,21 +168,20 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 .benefit h5 i { color: var(--accent1); }
 .benefit p { color: #aaa; font-size: 0.95rem; line-height: 1.6; margin: 0; }
 
-/* === IMPROVED FOOTER === */
+/* === FOOTER === */
 .footer{ 
-  border-top: 1px solid rgba(155, 75, 255, 0.15); /* Цветной бордер */
+  border-top: 1px solid rgba(155, 75, 255, 0.15); 
   background: linear-gradient(180deg, #0a0a0c 0%, #000 100%);
   padding: 80px 0 30px; 
   margin-top: 80px; 
-  box-shadow: 0 -20px 60px rgba(0,0,0,0.5); /* Тень сверху */
+  box-shadow: 0 -20px 60px rgba(0,0,0,0.5); 
 }
 
-/* Сетка футера: 3 колонки (Бренд пошире, Ссылки, Статистика) */
 .footer-top { 
   display: grid;
   grid-template-columns: 2fr 1fr 1fr; 
   gap: 60px;
-  max-width: 1000px; /* Ограничиваем ширину чтобы не разъезжалось */
+  max-width: 1000px; 
   margin: 0 auto;
   align-items: start;
 }
@@ -184,14 +189,12 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 .footer-brand-title { font-size: 1.8rem; font-weight: 800; color: #fff; margin-bottom: 12px; letter-spacing: -1px; }
 .footer-brand-sub { color: #888; font-size: 0.95rem; line-height: 1.6; max-width: 320px; }
 
-/* Колонки ссылок */
 .footer-links { display: flex; flex-direction: column; gap: 14px; }
 .footer-links a { color: #999; font-size: 1rem; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; }
 .footer-links a::before { content: "›"; color: var(--accent1); margin-right: 8px; opacity: 0; transition: 0.2s; transform: translateX(-5px); }
 .footer-links a:hover { color: #fff; }
 .footer-links a:hover::before { opacity: 1; transform: translateX(0); }
 
-/* Статистика в футере */
 .footer-stats { display: flex; flex-direction: column; gap: 12px; }
 .stat-pill { 
   background: rgba(255,255,255,0.04); padding: 10px 16px; border-radius: 10px; 
@@ -221,8 +224,10 @@ section{ padding: 80px 0; position:relative; z-index:1; }
     .hero-panel h1 { font-size: 2.8rem; }
     .btns { justify-content: center; }
     .stats-row { justify-content: center; }
+    
     .hero-right-wrap { justify-content: center; width: 100%; }
-    .visual-card { transform: none; max-width: 100%; }
+    /* Картинка на мобилках тоже будет чуть меньше, чтобы влезла */
+    .visual-card { transform: none; max-width: 100%; margin-top: 20px; }
     
     .navbar-toggler { display:flex; }
     .nav-right { display:none; }
