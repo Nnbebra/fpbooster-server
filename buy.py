@@ -5,10 +5,8 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory="templates")
 router = APIRouter()
 
-# Структура тарифов:
-# available=False -> покажет табличку "Скоро в продаже"
 PLANS = {
-    # === СТАНДАРТНАЯ ВЕРСИЯ (Репрайсинг) ===
+    # === СТАНДАРТНАЯ ВЕРСИЯ ===
     "30": {
         "id": "30",
         "title": "Лицензия на 30 дней",
@@ -18,7 +16,8 @@ PLANS = {
         "img": "/static/products/30days.png",
         "available": True,
         "type": "license",
-        "days": 30
+        "days": 30,
+        "desc": "Полный доступ ко всем основным функциям FPBooster: авто-выдача, авто-поднятие, чат-бот."
     },
     "90": {
         "id": "90",
@@ -29,7 +28,8 @@ PLANS = {
         "img": "/static/products/90days.png",
         "available": True,
         "type": "license",
-        "days": 90
+        "days": 90,
+        "desc": "Выгодный вариант для постоянных продавцов. Включает все функции на 3 месяца."
     },
     "365": {
         "id": "365",
@@ -40,10 +40,11 @@ PLANS = {
         "img": "/static/products/365days.png",
         "available": True,
         "type": "license",
-        "days": 365
+        "days": 365,
+        "desc": "Максимальная выгода. Год полного доступа ко всему функционалу без ограничений."
     },
 
-    # === FPBooster Alpha (Пока недоступно) ===
+    # === FPBooster Alpha ===
     "alpha_30": {
         "id": "alpha_30",
         "title": "FPBooster Alpha (30 дней)",
@@ -51,9 +52,10 @@ PLANS = {
         "price": 350,
         "discount": None,
         "img": "/static/Alpha30.png",
-        "available": False, # Недоступно
+        "available": False, 
         "type": "license_alpha",
-        "days": 30
+        "days": 30,
+        "desc": "Доступ к 20+ функциям, автоматизация через сервер, дополнительные темы и эксклюзивный визуал."
     },
     "alpha_90": {
         "id": "alpha_90",
@@ -62,9 +64,10 @@ PLANS = {
         "price": 899,
         "discount": "-18%",
         "img": "/static/Alpha90.png",
-        "available": False, # Недоступно
+        "available": False, 
         "type": "license_alpha",
-        "days": 90
+        "days": 90,
+        "desc": "Доступ к 20+ функциям, автоматизация через сервер, дополнительные темы и эксклюзивный визуал."
     },
     "alpha_365": {
         "id": "alpha_365",
@@ -73,12 +76,13 @@ PLANS = {
         "price": 2699,
         "discount": "-15%",
         "img": "/static/Alpha365.png",
-        "available": False, # Недоступно
+        "available": False, 
         "type": "license_alpha",
-        "days": 365
+        "days": 365,
+        "desc": "Доступ к 20+ функциям, автоматизация через сервер, дополнительные темы и эксклюзивный визуал."
     },
 
-    # === FPBooster+ (Навсегда, пока недоступно) ===
+    # === FPBooster+ ===
     "plus_lifetime": {
         "id": "plus_lifetime",
         "title": "FPBooster+ (Навсегда)",
@@ -86,9 +90,10 @@ PLANS = {
         "price": 299,
         "discount": "HOT",
         "img": "/static/FPBooster+.png",
-        "available": False, # Недоступно
+        "available": False, 
         "type": "license_plus",
-        "days": 36500 # 100 лет
+        "days": 36500,
+        "desc": "Дополнение к лицензии. Позволяет автоматизировать некоторые процессы через сервер и даёт доп. темы."
     },
 
     # === Услуги ===
@@ -98,29 +103,25 @@ PLANS = {
         "old_price": None,
         "price": 149,
         "discount": None,
-        "img": "/static/hwid_reset.png", # Убедись, что картинка есть, или замени
+        "img": "/static/hwid_reset.png", 
         "available": True,
         "type": "service",
-        "days": 0
+        "days": 0,
+        "desc": "Сброс привязки к железу (HWID) для запуска софта на новом компьютере."
     },
 }
 
 @router.get("/buy", response_class=HTMLResponse)
 async def buy_page(request: Request):
-    # Передаем список тарифов в шаблон
     return templates.TemplateResponse("buy.html", {"request": request, "plans": PLANS.values()})
 
 @router.get("/checkout/{plan_id}", response_class=HTMLResponse)
 async def checkout_page(request: Request, plan_id: str):
     plan = PLANS.get(plan_id)
-    
     if not plan:
         raise HTTPException(status_code=404, detail="Тариф не найден")
     
-    # Если пытаются купить по прямой ссылке недоступный товар
     if not plan.get("available", True):
-         # Можно либо кидать ошибку, либо редиректить назад. Пока оставим ошибку.
          raise HTTPException(status_code=403, detail="Этот товар пока недоступен для покупки")
 
     return templates.TemplateResponse("checkout.html", {"request": request, "plan": plan})
-
