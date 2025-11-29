@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+# Импортируем PLANS, чтобы брать оттуда количество дней и тип товара
 from buy import PLANS
 from auth.guards import get_current_user
 
@@ -16,8 +17,8 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 # ===== Конфиг PayPalych (pal24.pro) =====
-SHOP_ID = os.getenv("PAYPALYCH_SHOP_ID")  # пример: "1g7WZ4k2Wz"
-API_TOKEN = os.getenv("PAYPALYCH_TOKEN")  # пример: "24960|E6mYfLC07N..."
+SHOP_ID = os.getenv("PAYPALYCH_SHOP_ID")
+API_TOKEN = os.getenv("PAYPALYCH_TOKEN")
 BILL_CREATE_URL = "https://pal24.pro/api/v1/bill/create"
 
 def md5_upper(s: str) -> str:
@@ -129,7 +130,6 @@ async def payment_start(request: Request, plan: str = Query(...), method: str = 
         "custom": custom,
         "payer_pays_commission": 1,  # по желанию: включает комиссию плательщику
         "name": "Платёж FPBooster",
-        # method в pal24 необязателен; оставляем для будущей логики, если понадобится
     }
 
     headers = {"Authorization": f"Bearer {API_TOKEN}"}
@@ -157,18 +157,7 @@ async def payment_start(request: Request, plan: str = Query(...), method: str = 
 async def payment_result(request: Request):
     """
     Postback от PayPalych на Result URL (после оплаты):
-    {
-      "Status": "SUCCESS" | "FAIL",
-      "InvId": "...",
-      "OutSum": "18.54",
-      "CurrencyIn": "RUB",
-      "custom": "uid:<...>|plan:<...>",
-      "SignatureValue": "<MD5_UPPER(OutSum:InvId:apiToken)>"
-    }
-    Логика:
-    - Проверяем подпись.
-    - Если SUCCESS: активируем/продлеваем лицензию и логируем покупку в purchases.
-    - Если FAIL: просто возвращаем FAIL (по желанию можно логировать).
+    Логика обновлена для поддержки Сброса HWID и новых тарифов.
     """
     data = await request.form()
 
@@ -194,38 +183,53 @@ async def payment_result(request: Request):
         uid = None
         plan = None
 
-    # 3) Приведение плана к дням
-    days_map = {"30": 30, "90": 90, "365": 365}
-    days = days_map.get(plan or "", 30)
+    # 3) Получаем данные о плане из buy.py (вместо старого days_map)
+    plan_data = PLANS.get(plan)
+    
+    # Берем количество дней из конфига, или ставим 30 по умолчанию
+    days = plan_data.get("days", 30) if plan_data else 30
 
     # 4) Смена статуса в нашей БД и логирование покупки
     if status == "SUCCESS" and uid:
         async with request.app.state.pool.acquire() as conn:
             async with conn.transaction():
-                row = await conn.fetchrow(
-                    "SELECT expires FROM licenses WHERE user_uid=$1",
-                    uid,
-                )
+                
+                # --- ЛОГИКА ДЛЯ СБРОСА HWID ---
+                if plan == "hwid_reset":
+                    # Сбрасываем HWID в NULL
+                    await conn.execute(
+                        "UPDATE licenses SET hwid = NULL WHERE user_uid=$1",
+                        uid
+                    )
+                    new_expires = "HWID Reset" # Маркер для ответа API (не пишется в базу как дата)
 
-                today = date.today()
-                if row and row["expires"] and row["expires"] > today:
-                    new_expires = row["expires"] + timedelta(days=days)
+                # --- ЛОГИКА ДЛЯ ОБЫЧНЫХ ЛИЦЕНЗИЙ ---
                 else:
-                    new_expires = today + timedelta(days=days)
+                    row = await conn.fetchrow(
+                        "SELECT expires FROM licenses WHERE user_uid=$1",
+                        uid,
+                    )
 
-                # Обновляем лицензию
-                await conn.execute(
-                    """
-                    UPDATE licenses
-                    SET status='active', expires=$1
-                    WHERE user_uid=$2
-                    """,
-                    new_expires,
-                    uid,
-                )
+                    today = date.today()
+                    # Если лицензия есть и еще действует — продлеваем
+                    if row and row["expires"] and row["expires"] > today:
+                        new_expires = row["expires"] + timedelta(days=days)
+                    else:
+                        # Иначе — начинаем с сегодня
+                        new_expires = today + timedelta(days=days)
+
+                    # Обновляем лицензию
+                    await conn.execute(
+                        """
+                        UPDATE licenses
+                        SET status='active', expires=$1
+                        WHERE user_uid=$2
+                        """,
+                        new_expires,
+                        uid,
+                    )
 
                 # Логируем покупку в purchases (источник: payment)
-                # Приводим сумму к NUMERIC через ::numeric на стороне SQL при необходимости
                 await conn.execute(
                     """
                     INSERT INTO purchases (user_uid, plan, amount, currency, source)
@@ -233,7 +237,7 @@ async def payment_result(request: Request):
                     """,
                     uid,
                     plan,
-                    out_sum,       # строка; таблица purchases принимает NUMERIC(10,2) — Postgres приведёт сам при вставке
+                    out_sum,
                     currency_in,
                 )
 
