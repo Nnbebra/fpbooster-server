@@ -47,7 +47,6 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 .header-inner{ width:100%; display:flex; align-items:center; justify-content:space-between; }
 
-/* Исправлено выравнивание логотипа и Beta */
 .brand{ 
   font-weight:800; font-size:1.3rem; display:flex; gap:10px; align-items:center; 
   color:#fff; letter-spacing: -0.5px; 
@@ -56,7 +55,7 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   background: linear-gradient(45deg, var(--accent1), var(--accent2)); 
   color:#fff; padding:4px 8px; border-radius:6px; font-size:0.75rem; 
   font-weight:700; box-shadow: 0 0 10px rgba(155, 75, 255, 0.4);
-  align-self: center; /* Центрируем плашку по вертикали */
+  align-self: center;
 }
 
 .nav-right{ display:flex; gap:24px; align-items:center; }
@@ -84,18 +83,37 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   padding-top: 100px; padding-bottom: 60px;
 }
 
+/* ФОН (НАСТРОЕН ДЛЯ ПАРАЛЛАКСА) */
 .hero-bg {
-  position: absolute; top: 0; left: 50%; transform: translateX(-50%); 
-  width: 100vw; min-width: 1400px; height: 120vh; 
+  position: absolute; /* Важно для параллакса */
+  top: 0;
+  left: 50%; /* Центрируем по горизонтали */
+  
+  /* Исходная трансформация. JS будет использовать translate3d(-50%, Y, 0), сохраняя -50% */
+  transform: translateX(-50%); 
+  
+  width: 100vw; 
+  min-width: 1400px; /* Чтобы не было белых краев на широких экранах */
+  height: 125vh; /* Запас высоты для движения */
+  
   background-image: url('/static/new_bg.png');
-  background-position: center top; background-repeat: no-repeat; background-size: cover; 
-  z-index: 0; pointer-events: none;
-  -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+  background-position: center top; 
+  background-repeat: no-repeat; 
+  background-size: cover; 
+  
+  z-index: 0; 
+  pointer-events: none;
+  will-change: transform; /* Оптимизация для браузера */
+  
+  /* Маска для плавного перехода в черный */
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
 }
+
+/* Виньетка (затемнение по краям) */
 .hero-bg::after { 
   content: ""; position: absolute; inset: 0;
-  background: radial-gradient(circle at center, transparent 30%, var(--bg) 90%);
+  background: radial-gradient(circle at center, transparent 40%, var(--bg) 90%);
   opacity: 0.7;
 }
 
@@ -130,7 +148,6 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 .visual-card {
   width: 100%; 
-  /* УВЕЛИЧЕНО с 650 до 800px по твоему запросу */
   max-width: 800px; 
   transform: rotateY(-5deg) rotateX(2deg); transition: transform 0.5s ease;
   box-shadow: 0 0 60px rgba(155, 75, 255, 0.15); 
@@ -210,7 +227,7 @@ section{ padding: 80px 0; position:relative; z-index:1; }
   max-width: 1000px; margin-left: auto; margin-right: auto;
 }
 
-/* === MOBILE === */
+/* === MOBILE & RESPONSIVE === */
 .navbar-toggler{ display:none; background:transparent; border:0; width:44px; height:44px; align-items:center; justify-content:center; }
 .hamburger span { display:block; width:22px; height:2px; background:#fff; position:relative; }
 .hamburger span::before, .hamburger span::after { content:""; position:absolute; left:0; right:0; height:2px; background:#fff; transition:0.2s; }
@@ -218,16 +235,65 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 .hamburger span::after { bottom:-6px; }
 
 @media (max-width: 1024px) {
-    .hero { padding-top: 100px; text-align: center; }
-    .hero-layout { flex-direction: column; gap: 50px; }
-    .hero-left-wrap { max-width: 100%; align-items: center; }
-    .hero-panel h1 { font-size: 2.8rem; }
-    .btns { justify-content: center; }
-    .stats-row { justify-content: center; }
+    /* Фон для мобильных (оставляем его на месте, но можно уменьшить высоту) */
+    .hero-bg {
+        height: 120vh;
+        background-position: center top;
+    }
+
+    .hero { 
+        padding-top: 120px; 
+        text-align: center; 
+        min-height: auto; 
+        padding-bottom: 60px;
+    }
     
-    .hero-right-wrap { justify-content: center; width: 100%; }
-    /* Картинка на мобилках тоже будет чуть меньше, чтобы влезла */
-    .visual-card { transform: none; max-width: 100%; margin-top: 20px; }
+    .hero-layout { 
+        flex-direction: column; 
+        gap: 40px; 
+    }
+    
+    .hero-left-wrap { 
+        max-width: 100%; 
+        align-items: center; 
+        padding: 25px 15px; /* Уменьшены отступы внутри стекла */
+    }
+    
+    .hero-panel h1 { 
+        font-size: 2.2rem; /* Шрифт меньше, чтобы не рвало экран */
+        line-height: 1.2;
+    }
+    
+    .lead { font-size: 1rem; margin-bottom: 25px; }
+    
+    /* Кнопки в столбик или по центру */
+    .btns { 
+        justify-content: center; 
+        width: 100%;
+        flex-direction: column; /* Кнопки одна под другой на узких экранах */
+        gap: 12px;
+    }
+    
+    .btns .btn-cta, .btns .btn-outline {
+        width: 100%; 
+        max-width: 320px;
+        margin: 0 auto; /* Центрируем */
+    }
+    
+    .stats-row { justify-content: center; gap: 10px; margin-top: 25px; }
+    .card.pill { padding: 8px 12px; font-size: 0.8rem; }
+    
+    .hero-right-wrap { 
+        justify-content: center; 
+        width: 100%; 
+        padding: 0 10px;
+    }
+    
+    .visual-card { 
+        transform: none; 
+        max-width: 100%; 
+        margin-top: 10px; 
+    }
     
     .navbar-toggler { display:flex; }
     .nav-right { display:none; }
