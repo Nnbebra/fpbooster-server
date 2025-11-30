@@ -2,16 +2,16 @@
 {% block title %}Магазин FPBooster{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/templates_css/buy.css?v=4">
+<link rel="stylesheet" href="/templates_css/buy.css?v=5">
 
 <main>
-<section style="padding: 40px 0 80px; margin-top: 80px;">
+<section style="padding: 40px 0 80px; margin-top: 60px;">
   <div class="container">
-    <h2 class="page-title">Тарифы FPBooster</h2>
+    <h2 class="page-title reveal-card">Магазин FPBooster</h2>
     
     <div class="plans-grid">
       {% for plan in plans %}
-      <div class="plan-card {% if not plan.available %}unavailable{% endif %}">
+      <div class="plan-card reveal-card {% if not plan.available %}unavailable{% endif %}">
         
         {% if plan.discount %}
           <span class="discount-badge">{{ plan.discount }}</span>
@@ -48,4 +48,26 @@
   </div>
 </section>
 </main>
+
+<script defer src="/JavaScript/main.js?v=FIXED_LINKS_V12"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry, index) => {
+            if (entry.isIntersecting) {
+                // Добавляем задержку для эффекта "лесенки"
+                setTimeout(() => {
+                    entry.target.classList.add('active');
+                }, index * 100); 
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.reveal-card').forEach(el => {
+        observer.observe(el);
+    });
+});
+</script>
 {% endblock %}
