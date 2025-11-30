@@ -3,20 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>{% block title %}Личный кабинет — FPBooster{% endblock %}</title>
-  <meta name="description" content="FPBooster — премиальный кабинет пользователя и управление лицензиями." />
+  <title>{% block title %}FPBooster{% endblock %}</title>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   
-  <link rel="stylesheet" href="/templates_css/base.css?v=BASE_V1">
+  <link rel="stylesheet" href="/templates_css/base.css?v=MOBILE_FIX_V2">
   
   {% block head_extra %}{% endblock %}
 </head>
 <body>
 
-  <header class="navbar" role="banner" aria-label="Главная навигация">
+  <header class="navbar" role="banner">
     <div class="container header-inner">
       <a class="brand" href="/" aria-label="FPBooster — главная">
         <span>FPBooster</span>
@@ -31,7 +30,7 @@
         </div>
       </button>
 
-      <nav class="nav-right" role="navigation" aria-label="Главное меню">
+      <nav class="nav-right" role="navigation">
         <a class="nav-link interactive-hitbox" href="https://t.me/funpaybo0sterr" target="_blank" rel="noopener"><i class="fa-solid fa-headset"></i> Поддержка</a>
         <a class="nav-link interactive-hitbox" href="/buy"><i class="fa-solid fa-bag-shopping"></i> Купить</a>
 
@@ -65,9 +64,9 @@
           <a class="nav-link interactive-hitbox" href="/docs">Документация</a>
         </div>
 
-        <div class="footer-stats" aria-hidden="false">
-          <div class="stat-pill"><i class="fa-solid fa-user"></i> <span>Подписчиков: <span id="footer-subs">2 992</span></span></div>
-          <div class="stat-pill"><i class="fa-solid fa-star"></i> <span>Оценок: <span id="footer-rates">844</span></span></div>
+        <div class="footer-stats">
+          <div class="stat-pill"><i class="fa-solid fa-user"></i> <span>Подписчиков: 2 992</span></div>
+          <div class="stat-pill"><i class="fa-solid fa-star"></i> <span>Оценок: 844</span></div>
         </div>
       </div>
 
@@ -78,8 +77,8 @@
     </div>
   </footer>
 
-  <script defer src="/JavaScript/main.js?v=FIXED_LINKS_V12"></script>
-  <script defer src="/JavaScript/ui.js?v=FIXED_LINKS_V12"></script>
+  <script defer src="/JavaScript/main.js?v=MOBILE_FIX_V2"></script>
+  <script defer src="/JavaScript/ui.js?v=MOBILE_FIX_V2"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
