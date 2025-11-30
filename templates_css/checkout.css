@@ -1,196 +1,260 @@
 :root {
     --bg: #050405;
-    --card-bg: #101012;
+    --card-bg: rgba(20, 20, 25, 0.7); /* Более глубокий цвет */
     --text: #eaeaea;
     --accent1: #9b4bff;
     --accent2: #5e2bff;
     --border-color: rgba(255, 255, 255, 0.08);
+    --input-bg: rgba(255, 255, 255, 0.03);
 }
 
 main {
-    min-height: 80vh;
+    min-height: 85vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 100px 20px 40px; /* Отступ сверху под навбар */
+    padding: 100px 20px 60px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Фоновое свечение (Ambient Light) */
+main::before {
+    content: '';
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(155, 75, 255, 0.12) 0%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 0;
+    pointer-events: none;
 }
 
 /* Контейнер карточки заказа */
 .checkout-card {
-    background: rgba(16, 16, 18, 0.8);
-    backdrop-filter: blur(14px);
+    position: relative;
+    z-index: 1;
+    background: var(--card-bg);
+    backdrop-filter: blur(20px);
     border: 1px solid var(--border-color);
     border-radius: 24px;
     width: 100%;
-    max-width: 500px;
-    padding: 30px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-    animation: fadeInUp 0.5s ease-out;
+    max-width: 480px;
+    padding: 35px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+    animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(30px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .checkout-header {
     text-align: center;
-    margin-bottom: 25px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 30px;
 }
 
 .checkout-header h2 {
-    font-size: 1.5rem;
+    font-size: 1.8rem;
     color: #fff;
-    margin: 0 0 10px;
+    margin: 0 0 12px;
+    font-weight: 800;
 }
 
-.product-name {
-    color: var(--accent1);
-    font-weight: 700;
+/* Фиолетовый бейдж с названием тарифа */
+.product-badge {
+    display: inline-block;
+    background: rgba(155, 75, 255, 0.15);
+    color: #d8b4fe;
+    padding: 6px 16px;
+    border-radius: 50px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: 1px solid rgba(155, 75, 255, 0.2);
 }
 
 .checkout-section-title {
-    font-size: 0.9rem;
-    color: #9ca3af;
+    font-size: 0.8rem;
+    color: #888;
     text-transform: uppercase;
     letter-spacing: 1px;
-    font-weight: 600;
-    margin-bottom: 15px;
+    font-weight: 700;
+    margin-bottom: 12px;
     display: block;
+    padding-left: 4px;
 }
 
-/* Выбор метода оплаты */
+/* Сетка методов оплаты */
 .payment-methods-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 15px;
+    gap: 12px;
     margin-bottom: 30px;
 }
 
 .pm-option {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--input-bg);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 15px;
+    border-radius: 14px;
+    padding: 16px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.25s ease;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 90px;
+    height: 100px;
     position: relative;
 }
 
 .pm-option img {
-    height: 32px;
+    height: 36px;
     object-fit: contain;
-    margin-bottom: 8px;
-    opacity: 0.8;
-    transition: 0.2s;
+    margin-bottom: 10px;
+    opacity: 0.7;
+    transition: 0.25s;
+    filter: grayscale(0.5);
 }
 
 .pm-option span {
     font-size: 0.85rem;
-    color: #ccc;
+    color: #aaa;
     font-weight: 500;
+    transition: 0.2s;
 }
 
 /* Активный метод */
 .pm-option:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 .pm-option.active {
-    background: rgba(155, 75, 255, 0.1);
+    background: rgba(155, 75, 255, 0.08);
     border-color: var(--accent1);
-    box-shadow: 0 0 20px rgba(155, 75, 255, 0.15);
+    box-shadow: 0 0 0 1px var(--accent1), 0 0 20px rgba(155, 75, 255, 0.1);
 }
 
 .pm-option.active img {
     opacity: 1;
-    transform: scale(1.05);
+    filter: grayscale(0);
+    transform: scale(1.1);
 }
 
 .pm-option.active span {
     color: #fff;
+    font-weight: 600;
 }
 
-/* Цена */
-.price-row {
+/* Блок цены */
+.price-container {
+    background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-bottom: 30px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(255,255,255,0.03);
-    padding: 15px 20px;
-    border-radius: 12px;
-    margin-bottom: 25px;
-    border: 1px solid var(--border-color);
 }
 
-.price-label { color: #ccc; font-size: 1rem; }
-.price-val { display: flex; align-items: baseline; gap: 10px; }
-.price-val s { color: #666; font-size: 0.9rem; }
-.price-val b { color: #fff; font-size: 1.4rem; font-weight: 800; }
+.price-label {
+    color: #bbb;
+    font-size: 1rem;
+    font-weight: 500;
+}
 
-/* Кнопки */
+.price-val {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.price-val s {
+    color: #666;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.price-val b {
+    color: #fff;
+    font-size: 1.6rem;
+    font-weight: 800;
+    text-shadow: 0 0 20px rgba(255,255,255,0.2);
+}
+
+/* Основная кнопка оплаты */
 .btn-pay {
     background: linear-gradient(135deg, var(--accent1), var(--accent2));
     border: none;
     width: 100%;
-    padding: 16px;
-    border-radius: 12px;
+    padding: 18px;
+    border-radius: 14px;
     color: #fff;
     font-weight: 700;
-    font-size: 1rem;
+    font-size: 1.05rem;
     text-transform: uppercase;
     cursor: pointer;
-    box-shadow: 0 5px 20px rgba(155, 75, 255, 0.3);
-    transition: all 0.25s;
+    box-shadow: 0 8px 30px rgba(155, 75, 255, 0.25);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 12px;
+    letter-spacing: 0.5px;
 }
 
 .btn-pay:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(155, 75, 255, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(155, 75, 255, 0.5);
+}
+.btn-pay:active {
+    transform: translateY(-1px);
 }
 
+/* Кнопка FunPay (Стильная) */
 .btn-funpay {
-    background: #303841; /* Цвет FunPay */
-    color: #fff;
+    background: #242a33; /* Темный фон FunPay */
+    color: #e4e6eb;
     width: 100%;
-    padding: 14px;
-    border-radius: 12px;
+    padding: 15px;
+    border-radius: 14px;
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 1rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    margin-top: 15px;
-    transition: 0.2s;
-    border: 1px solid rgba(255,255,255,0.05);
+    gap: 12px;
+    margin-top: 16px;
+    transition: 0.25s;
+    border: 1px solid rgba(255,255,255,0.06);
+    text-decoration: none;
 }
 .btn-funpay:hover {
-    background: #3c4652;
+    background: #0085ff; /* Фирменный синий FunPay при наведении */
+    color: #fff;
+    border-color: #0085ff;
+    box-shadow: 0 5px 20px rgba(0, 133, 255, 0.3);
     transform: translateY(-2px);
 }
 .btn-funpay img {
-    height: 20px;
+    height: 22px;
+    filter: brightness(0.9);
+}
+.btn-funpay:hover img {
+    filter: brightness(1) drop-shadow(0 2px 4px rgba(0,0,0,0.2));
 }
 
 .secure-note {
     text-align: center;
-    margin-top: 20px;
+    margin-top: 25px;
     font-size: 0.8rem;
-    color: #666;
+    color: #555;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
 }
