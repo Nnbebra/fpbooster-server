@@ -1,69 +1,6 @@
-/* JavaScript/main.js - New Features */
+/* JavaScript/main.js - No Parallax Version */
 (function () {
   "use strict";
-
-  // 1. --- PARALLAX CONTENT (Вместо фона) ---
-  // Двигаем контент, а не фон, для стабильности
-  const heroContent = document.querySelector('.hero-left-wrap');
-  const heroImage = document.querySelector('.visual-card');
-  
-  if (heroContent && heroImage) {
-    window.addEventListener('scroll', () => {
-      const scrollPos = window.scrollY;
-      if (window.innerWidth > 1024) { // Только на ПК
-        // Текст уезжает чуть быстрее (0.2), Картинка медленнее (0.1) -> Эффект глубины
-        heroContent.style.transform = `translateY(${scrollPos * 0.2}px)`;
-        heroImage.style.transform = `translateY(${scrollPos * 0.1}px) rotateY(-5deg) rotateX(2deg)`;
-      }
-    }, { passive: true });
-  }
-
-  // 2. --- SCROLL REVEAL (Появление блоков) ---
-  function initScrollReveal() {
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('active');
-          observer.unobserve(entry.target); // Показываем только один раз
-        }
-      });
-    }, { threshold: 0.1 }); // Срабатывает, когда 10% блока видно
-
-    // Ищем все секции и карточки, которые нужно анимировать
-    const elementsToReveal = document.querySelectorAll('.card, .stats-row, .section-title, .video-wrap');
-    elementsToReveal.forEach(el => {
-      el.classList.add('reveal-section'); // Добавляем класс стиля
-      observer.observe(el);
-    });
-  }
-
-  // 3. --- MAGNETIC BUTTONS (Магнитные кнопки) ---
-  function initMagneticButtons() {
-    if (window.innerWidth <= 1024) return; // Отключаем на мобильных
-
-    const buttons = document.querySelectorAll('.btn-cta, .btn-outline, .nav-link');
-    
-    buttons.forEach(btn => {
-      btn.addEventListener('mousemove', (e) => {
-        const rect = btn.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        // Вычисляем смещение от центра
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-        
-        const moveX = (x - centerX) * 0.2; // Сила магнита X
-        const moveY = (y - centerY) * 0.2; // Сила магнита Y
-        
-        btn.style.transform = `translate(${moveX}px, ${moveY}px)`;
-      });
-
-      btn.addEventListener('mouseleave', () => {
-        btn.style.transform = 'translate(0px, 0px)'; // Возврат на место
-      });
-    });
-  }
 
   // Navbar background change
   const navbar = document.querySelector('.navbar');
@@ -113,9 +50,5 @@
        }
     }).catch(() => {});
   })();
-
-  // INIT EVERYTHING
-  initScrollReveal();
-  initMagneticButtons();
 
 })();
