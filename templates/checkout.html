@@ -2,17 +2,17 @@
 {% block title %}Оформление заказа — {{ plan.title }}{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/templates_css/checkout.css?v=2">
+<link rel="stylesheet" href="/templates_css/checkout.css?v=3">
 
 <main>
   <div class="checkout-card">
     
     <div class="checkout-header">
       <h2>Оформление заказа</h2>
-      <div class="product-name">{{ plan.title }}</div>
+      <div class="product-badge">{{ plan.title }}</div>
     </div>
 
-    <span class="checkout-section-title">Выберите способ оплаты</span>
+    <span class="checkout-section-title">Способ оплаты</span>
     <div class="payment-methods-grid" id="pm-list">
       
       <div class="pm-option active" data-method="card">
@@ -27,8 +27,8 @@
 
     </div>
 
-    <div class="price-row">
-      <span class="price-label">К оплате:</span>
+    <div class="price-container">
+      <span class="price-label">Итого к оплате:</span>
       <div class="price-val">
         {% if plan.old_price %}
           <s>{{ plan.old_price }} ₽</s>
@@ -53,7 +53,7 @@
 
     <div class="secure-note">
       <i class="fa-solid fa-shield-halved"></i>
-      Платежи защищены шифрованием
+      Ваши платежные данные надежно зашифрованы
     </div>
 
   </div>
@@ -69,13 +69,8 @@
         const pm = e.target.closest('.pm-option');
         if(!pm) return;
         
-        // Сброс активного класса
         pmList.querySelectorAll('.pm-option').forEach(el => el.classList.remove('active'));
-        
-        // Установка нового
         pm.classList.add('active');
-        
-        // Обновление скрытого инпута
         payMethodInput.value = pm.getAttribute('data-method') || 'card';
       });
     }
