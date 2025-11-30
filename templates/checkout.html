@@ -2,7 +2,7 @@
 {% block title %}Оформление заказа — {{ plan.title }}{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/templates_css/checkout.css?v=3">
+<link rel="stylesheet" href="/templates_css/checkout.css?v=final">
 
 <main>
   <div class="checkout-card">
@@ -12,7 +12,7 @@
       <div class="product-badge">{{ plan.title }}</div>
     </div>
 
-    <span class="checkout-section-title">Способ оплаты</span>
+    <span class="checkout-section-title">Выберите способ оплаты</span>
     <div class="payment-methods-grid" id="pm-list">
       
       <div class="pm-option active" data-method="card">
@@ -53,7 +53,7 @@
 
     <div class="secure-note">
       <i class="fa-solid fa-shield-halved"></i>
-      Ваши платежные данные надежно зашифрованы
+      Ваши данные надежно защищены
     </div>
 
   </div>
