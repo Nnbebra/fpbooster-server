@@ -1,16 +1,16 @@
 :root {
     --bg: #050405;
-    --card-bg: rgba(20, 20, 25, 0.6); /* Прозрачность для стекла */
+    --card-bg: rgba(20, 20, 25, 0.7); /* Чуть темнее для контраста */
     --text: #eaeaea;
     --muted: #9ca3af;
     --accent1: #9b4bff;
     --accent2: #5e2bff;
     --gradient: linear-gradient(135deg, var(--accent1), var(--accent2));
     --card-border: rgba(255, 255, 255, 0.08);
-    --card-hover: rgba(25, 25, 30, 0.8);
+    --card-hover: rgba(25, 25, 30, 0.9);
 }
 
-/* === 1. КАСТОМНЫЙ СКРОЛЛБАР (Как на главной) === */
+/* === Скроллбар === */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #050405; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
@@ -24,13 +24,13 @@ html, body {
     font-family: Inter, system-ui, -apple-system, sans-serif;
     background: var(--bg);
     color: var(--text);
-    overflow-x: hidden; /* Чтобы не шаталось на мобилках */
+    overflow-x: hidden;
 }
 
 main { flex: 1 0 auto; }
 footer { flex-shrink: 0; }
 
-/* Анимации */
+/* === Анимации === */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(30px); }
     to { opacity: 1; transform: translateY(0); }
@@ -42,7 +42,14 @@ footer { flex-shrink: 0; }
     100% { left: 100%; }
 }
 
-/* Класс для анимации появления (JS его активирует) */
+/* Пульсация скидки (НОВОЕ) */
+@keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(225, 29, 72, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
+}
+
+/* Reveal класс для JS */
 .reveal-card {
     opacity: 0;
     transform: translateY(30px);
@@ -66,39 +73,41 @@ footer { flex-shrink: 0; }
     filter: drop-shadow(0 0 20px rgba(155, 75, 255, 0.3));
 }
 
-/* Сетка тарифов */
+/* Сетка */
 .plans-grid {
     display: grid;
-    /* На десктопе от 320px, на мобилках будет одна колонка */
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 30px;
     padding-bottom: 40px;
 }
 
-/* Карточка товара */
+/* === КАРТОЧКА ТОВАРА === */
 .plan-card {
     position: relative;
     background: var(--card-bg);
-    backdrop-filter: blur(12px); /* Эффект стекла */
+    backdrop-filter: blur(16px);
     border: 1px solid var(--card-border);
     border-radius: 24px;
-    padding: 24px;
+    
+    /* ИСПРАВЛЕНИЕ: Увеличил отступы (было 24px -> стало 32px 26px) */
+    padding: 32px 26px; 
+    
     text-align: center;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+    height: 100%; /* Чтобы карточки были одной высоты */
 }
 
-/* Hover эффекты (только для доступных) */
+/* Hover карточки */
 .plan-card:not(.unavailable):hover {
-    transform: translateY(-8px);
+    transform: translateY(-10px);
     background: var(--card-hover);
-    border-color: var(--accent1);
-    box-shadow: 0 20px 60px rgba(155, 75, 255, 0.15);
+    border-color: rgba(155, 75, 255, 0.4);
+    box-shadow: 0 20px 60px rgba(155, 75, 255, 0.12);
 }
 
-/* Недоступные карты */
 .plan-card.unavailable {
     opacity: 0.7;
     filter: grayscale(0.6);
@@ -126,8 +135,9 @@ footer { flex-shrink: 0; }
     transition: transform 0.5s ease;
 }
 
+/* НОВОЕ: Зум картинки при наведении */
 .plan-card:not(.unavailable):hover .img-wrap img {
-    transform: scale(1.05);
+    transform: scale(1.08);
 }
 
 /* Тексты */
@@ -136,15 +146,15 @@ footer { flex-shrink: 0; }
     font-size: 1.5rem;
     color: #fff;
     font-weight: 700;
+    line-height: 1.2;
 }
 
 .plan-card p {
     color: var(--muted);
     font-size: 0.95rem;
     margin-bottom: 24px;
-    line-height: 1.5;
-    flex-grow: 1; /* Растягивает блок, чтобы кнопки были внизу */
-    padding: 0 5px;
+    line-height: 1.6;
+    flex-grow: 1; /* Растягивает контент, прижимая кнопки к низу */
 }
 
 /* Цена */
@@ -155,13 +165,13 @@ footer { flex-shrink: 0; }
     justify-content: center;
     gap: 12px;
     background: rgba(255,255,255,0.03);
-    padding: 10px;
+    padding: 12px;
     border-radius: 12px;
 }
 
 .plan-card .price s {
     color: #ff5b5b;
-    font-size: 1rem;
+    font-size: 1.1rem;
     font-weight: 500;
     text-decoration: line-through;
     opacity: 0.8;
@@ -170,17 +180,17 @@ footer { flex-shrink: 0; }
 .plan-card .price .current {
     color: #fff;
     font-weight: 800;
-    font-size: 1.5rem;
+    font-size: 1.7rem;
     text-shadow: 0 0 15px rgba(155, 75, 255, 0.4);
 }
 
-/* Кнопка "Купить" (С БЛИКОМ) */
+/* === КНОПКА КУПИТЬ (Доработано) === */
 .plan-card .btn-cta {
     background: var(--gradient);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 14px;
     padding: 16px 20px;
-    font-weight: 600;
+    font-weight: 700;
     color: #fff;
     text-transform: uppercase;
     transition: all 0.25s ease;
@@ -189,26 +199,30 @@ footer { flex-shrink: 0; }
     justify-content: center;
     gap: 10px;
     font-size: 1rem;
-    margin-top: auto;
+    
+    /* Важно для позиционирования */
+    margin-top: auto; 
     width: 100%;
+    
     box-shadow: 0 4px 20px rgba(155, 75, 255, 0.2);
     text-decoration: none;
     position: relative;
     overflow: hidden;
 }
 
-/* Анимация блика */
+/* Блик */
 .plan-card .btn-cta::after {
     content: ""; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
     transform: skewX(-20deg);
-    animation: shine 6s infinite; /* Редкий блик */
+    animation: shine 6s infinite;
 }
 
+/* Hover кнопки с неоновым свечением */
 .plan-card .btn-cta:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(155, 75, 255, 0.5);
-    border-color: rgba(255,255,255,0.3);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 35px rgba(155, 75, 255, 0.6);
+    border-color: rgba(255,255,255,0.4);
 }
 
 /* Бейдж "Скоро" */
@@ -229,19 +243,21 @@ footer { flex-shrink: 0; }
     gap: 8px;
 }
 
-/* Скидка */
+/* Скидка с пульсацией */
 .discount-badge {
     position: absolute;
     top: 16px;
     right: 16px;
     background: #e11d48;
     color: #fff;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     font-weight: 800;
     padding: 6px 12px;
     border-radius: 8px;
     box-shadow: 0 4px 15px rgba(225, 29, 72, 0.4);
     z-index: 2;
+    /* Анимация пульсации */
+    animation: pulse-red 2s infinite;
 }
 
 /* === МОБИЛЬНАЯ АДАПТАЦИЯ === */
@@ -252,13 +268,13 @@ footer { flex-shrink: 0; }
     }
     
     .plans-grid {
-        grid-template-columns: 1fr; /* Одна колонка */
-        gap: 20px;
-        padding: 0 10px; /* Отступы по бокам экрана */
+        grid-template-columns: 1fr;
+        gap: 25px;
+        padding: 0 15px;
     }
 
     .plan-card {
-        padding: 20px; /* Чуть меньше внутренний отступ */
+        padding: 25px; /* Чуть меньше на мобилках */
     }
 
     .plan-card .img-wrap {
