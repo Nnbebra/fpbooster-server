@@ -1,40 +1,71 @@
-/* JavaScript/main.js - Параллакс с инерцией (Smooth Lerp) */
+/* JavaScript/main.js - New Features */
 (function () {
   "use strict";
 
-  const heroBg = document.querySelector('.hero-bg');
+  // 1. --- PARALLAX CONTENT (Вместо фона) ---
+  // Двигаем контент, а не фон, для стабильности
+  const heroContent = document.querySelector('.hero-left-wrap');
+  const heroImage = document.querySelector('.visual-card');
   
-  if (heroBg) {
-    let currentY = 0; // Текущая позиция (плавная)
-    let targetY = 0;  // Целевая позиция (реальный скролл)
-    
-    // Коэффициент плавности (меньше = плавнее, больше = быстрее)
-    const ease = 0.1; 
-
-    function updateHero() {
-      // 1. Получаем реальный скролл
-      const scrollPos = window.scrollY || window.pageYOffset;
-      
-      // 2. Считаем, где должен быть фон (target)
-      targetY = scrollPos * 0.4; 
-
-      // 3. Плавно приближаем текущую позицию к целевой (Lerp)
-      // Формула: current = current + (target - current) * ease
-      currentY += (targetY - currentY) * ease;
-
-      // 4. Применяем (Обязательно сохраняем translateX -50%)
-      // toFixed(2) для оптимизации производительности
-      heroBg.style.transform = `translate3d(-50%, ${currentY.toFixed(2)}px, 0)`;
-
-      // Зацикливаем анимацию
-      requestAnimationFrame(updateHero);
-    }
-
-    // Запускаем цикл анимации
-    requestAnimationFrame(updateHero);
+  if (heroContent && heroImage) {
+    window.addEventListener('scroll', () => {
+      const scrollPos = window.scrollY;
+      if (window.innerWidth > 1024) { // Только на ПК
+        // Текст уезжает чуть быстрее (0.2), Картинка медленнее (0.1) -> Эффект глубины
+        heroContent.style.transform = `translateY(${scrollPos * 0.2}px)`;
+        heroImage.style.transform = `translateY(${scrollPos * 0.1}px) rotateY(-5deg) rotateX(2deg)`;
+      }
+    }, { passive: true });
   }
 
-  // Остальной JS код (Navbar, Mobile Menu, Stats)
+  // 2. --- SCROLL REVEAL (Появление блоков) ---
+  function initScrollReveal() {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('active');
+          observer.unobserve(entry.target); // Показываем только один раз
+        }
+      });
+    }, { threshold: 0.1 }); // Срабатывает, когда 10% блока видно
+
+    // Ищем все секции и карточки, которые нужно анимировать
+    const elementsToReveal = document.querySelectorAll('.card, .stats-row, .section-title, .video-wrap');
+    elementsToReveal.forEach(el => {
+      el.classList.add('reveal-section'); // Добавляем класс стиля
+      observer.observe(el);
+    });
+  }
+
+  // 3. --- MAGNETIC BUTTONS (Магнитные кнопки) ---
+  function initMagneticButtons() {
+    if (window.innerWidth <= 1024) return; // Отключаем на мобильных
+
+    const buttons = document.querySelectorAll('.btn-cta, .btn-outline, .nav-link');
+    
+    buttons.forEach(btn => {
+      btn.addEventListener('mousemove', (e) => {
+        const rect = btn.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Вычисляем смещение от центра
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        
+        const moveX = (x - centerX) * 0.2; // Сила магнита X
+        const moveY = (y - centerY) * 0.2; // Сила магнита Y
+        
+        btn.style.transform = `translate(${moveX}px, ${moveY}px)`;
+      });
+
+      btn.addEventListener('mouseleave', () => {
+        btn.style.transform = 'translate(0px, 0px)'; // Возврат на место
+      });
+    });
+  }
+
+  // Navbar background change
   const navbar = document.querySelector('.navbar');
   if (navbar) {
     window.addEventListener('scroll', () => {
@@ -48,6 +79,7 @@
     });
   }
 
+  // Mobile Menu
   const toggler = document.querySelector('.navbar-toggler');
   const navRight = document.querySelector('.nav-right');
   if (toggler && navRight) {
@@ -70,6 +102,7 @@
     });
   }
   
+  // Hydrate Stats
   (function hydrateStats() {
     const url = '/api/update';
     fetch(url).then(r => r.json()).then(data => {
@@ -80,5 +113,9 @@
        }
     }).catch(() => {});
   })();
+
+  // INIT EVERYTHING
+  initScrollReveal();
+  initMagneticButtons();
 
 })();
