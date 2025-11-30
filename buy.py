@@ -116,7 +116,18 @@ PLANS = {
 
 @router.get("/buy", response_class=HTMLResponse)
 async def buy_page(request: Request):
-    return templates.TemplateResponse("buy.html", {"request": request, "plans": PLANS.values()})
+    # --- ИСПРАВЛЕНИЕ: Получаем пользователя, чтобы шапка работала ---
+    user = None
+    try:
+        user = await get_current_user(request.app, request)
+    except Exception:
+        user = None
+        
+    return templates.TemplateResponse("buy.html", {
+        "request": request, 
+        "plans": PLANS.values(),
+        "user": user  # Передаем user в шаблон
+    })
 
 @router.get("/checkout/{plan_id}", response_class=HTMLResponse)
 async def checkout_page(request: Request, plan_id: str):
@@ -126,8 +137,6 @@ async def checkout_page(request: Request, plan_id: str):
         if not user:
             raise Exception("No user")
     except Exception:
-        # Если не авторизован — редирект на логин
-        # next перекинет обратно на оплату после входа (если логика логина это поддерживает)
         return RedirectResponse(url=f"/login?next=/checkout/{plan_id}", status_code=302)
 
     # 2. Ищем тариф
