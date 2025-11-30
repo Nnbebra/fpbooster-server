@@ -242,26 +242,53 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
     if not token_value:
         raise HTTPException(status_code=400, detail="Token is required")
 
-    async with request.app.state.pool.acquire() as conn:
-        async with conn.transaction():
-            activation = await conn.fetchrow("SELECT * FROM activation_tokens WHERE token=$1", token_value)
-            if not activation:
-                raise HTTPException(404, "Токен не найден")
-            if activation["status"] != "unused":
-                raise HTTPException(400, "Токен уже использован")
+    try:
+        async with request.app.state.pool.acquire() as conn:
+            async with conn.transaction():
+                # 1. Проверяем токен
+                activation = await conn.fetchrow("SELECT * FROM activation_tokens WHERE token=$1", token_value)
+                if not activation:
+                    raise HTTPException(404, "Токен не найден")
+                if activation["status"] != "unused":
+                    raise HTTPException(400, "Токен уже использован")
 
-            license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
-            if not license_row:
-                raise HTTPException(404, "Лицензия пользователя не найдена")
+                # 2. Проверяем лицензию пользователя (создаем, если нет, хотя она должна быть при регистрации)
+                license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
+                
+                # Если лицензии нет совсем (странно, но бывает), создадим заглушку
+                if not license_row:
+                     # Генерируем случайный ключ или берем из юзера, если есть логика
+                     # Но лучше просто кинуть ошибку, если архитектура требует наличие лицензии
+                     raise HTTPException(404, "Лицензия пользователя не найдена. Обратитесь в поддержку.")
 
-            today = datetime.utcnow().date()
-            base_date = (license_row["expires"] if license_row["expires"] and license_row["expires"] >= today else today)
-            new_expires = base_date + timedelta(days=activation["duration_days"])
+                # 3. Считаем новую дату
+                today = datetime.utcnow().date()
+                base_date = (license_row["expires"] if license_row["expires"] and license_row["expires"] >= today else today)
+                new_expires = base_date + timedelta(days=activation["duration_days"])
 
-            await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE user_uid=$2", new_expires, user["uid"])
-            await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user["uid"], activation["id"])
-            await conn.execute("INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code) VALUES ($1, $2, $3, $4, 'token', $5)",
-                user["uid"], str(activation["duration_days"]), 0, 'TOKEN', token_value)
+                # 4. Обновляем лицензию
+                await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE user_uid=$2", new_expires, user["uid"])
+                
+                # 5. Помечаем токен как использованный
+                await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user["uid"], activation["id"])
+                
+                # 6. Логируем в историю покупок
+                # Важно: amount передаем как число 0.00, plan как строку
+                await conn.execute(
+                    """
+                    INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code) 
+                    VALUES ($1, $2, 0.00, 'TOKEN', 'token', $3)
+                    """,
+                    user["uid"], 
+                    f"activation_{activation['duration_days']}_days", # Plan name
+                    token_value
+                )
+
+    except HTTPException:
+        raise # Пробрасываем HTTP исключения дальше
+    except Exception as e:
+        print(f"Error activating license: {e}") # Логируем в консоль сервера
+        raise HTTPException(status_code=500, detail="Ошибка при активации ключа. Попробуйте позже.")
 
     return RedirectResponse(url="/cabinet", status_code=302)
 
@@ -515,5 +542,6 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
