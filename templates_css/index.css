@@ -9,6 +9,12 @@
   --content-padding: 24px;
 }
 
+/* === 1. НОВОВВЕДЕНИЕ: КАСТОМНЫЙ СКРОЛЛБАР === */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0a0a0c; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent1); }
+
 /* === BASE & RESET === */
 *, *::before, *::after { box-sizing: border-box; }
 html,body{
@@ -17,6 +23,7 @@ html,body{
   background: var(--bg); color: var(--text);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
 }
 body { display:flex; flex-direction:column; }
 main{ flex:1 0 auto; position: relative; z-index: 1; }
@@ -24,17 +31,26 @@ footer{ flex-shrink:0; position: relative; z-index: 2; }
 
 /* === ANIMATIONS === */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(30px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.hero-left-wrap { animation: fadeInUp 0.8s ease-out forwards; }
-.hero-right-wrap { animation: fadeInUp 0.8s ease-out 0.2s forwards; opacity: 0; }
 
-/* Эффект блика для кнопок */
-@keyframes shine {
-    0% { left: -100%; }
-    20% { left: 100%; }
-    100% { left: 100%; }
+/* Анимация градиента текста */
+@keyframes textShine {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Класс для Scroll Reveal (JS добавляет класс .active) */
+.reveal-section {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal-section.active {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* === CONTAINERS === */
@@ -61,7 +77,7 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 .brand .ver{ 
   background: linear-gradient(45deg, var(--accent1), var(--accent2)); 
   color:#fff; padding:4px 8px; border-radius:6px; font-size:0.75rem; 
-  font-weight:700; box-shadow: 0 0 10px rgba(155, 75, 255, 0.4);
+  font-weight:700; box-shadow: 0 0 15px rgba(155, 75, 255, 0.3);
   align-self: center;
 }
 
@@ -71,27 +87,21 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 
 /* Buttons */
 .btn-cta{
-  background:var(--gradient); color:#fff; padding:12px 24px; border-radius:10px; font-weight:600;
+  background:var(--gradient); color:#fff; padding:12px 24px; border-radius:12px; font-weight:600;
   box-shadow: 0 4px 20px rgba(155, 75, 255, 0.25); border: 1px solid rgba(255,255,255,0.1);
   display: inline-flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap;
-  position: relative; overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
-.btn-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(155, 75, 255, 0.5); }
-
-/* Блик на кнопке (новинка) */
-.btn-cta::after {
-    content: ""; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-    transform: skewX(-20deg);
-    animation: shine 4s infinite;
-}
+/* Магнитный эффект будет через JS, тут базовый hover */
+.btn-cta:hover { box-shadow: 0 6px 30px rgba(155, 75, 255, 0.5); }
 
 .btn-outline{
-  background:rgba(255,255,255,0.03); color:#fff; padding:12px 24px; border-radius:10px; font-weight:600;
+  background:rgba(255,255,255,0.03); color:#fff; padding:12px 24px; border-radius:12px; font-weight:600;
   border:1px solid rgba(255,255,255,0.1); backdrop-filter: blur(4px);
   display: inline-flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap;
+  transition: transform 0.2s;
 }
-.btn-outline:hover { background:rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.4); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(255,255,255,0.05); }
+.btn-outline:hover { background:rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.4); box-shadow: 0 4px 20px rgba(255,255,255,0.05); }
 
 /* === HERO SECTION === */
 .hero{ 
@@ -99,32 +109,29 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   padding-top: 100px; padding-bottom: 60px;
 }
 
-/* ФОН */
+/* ФОН - ТЕПЕРЬ ФИКСИРОВАН И НЕ ДВИГАЕТСЯ (ИСПРАВЛЕНО) */
 .hero-bg {
-  position: absolute;
+  position: fixed; /* Намертво прибит к экрану */
   top: 0;
-  left: 50%;
-  transform: translateX(-50%); /* Центрирование */
-  
-  width: 100vw; 
-  min-width: 1400px;
-  height: 112vh; 
+  left: 0;
+  width: 100%;
+  height: 100vh;
   
   background-image: url('/static/new_bg.png');
   background-position: center top; 
   background-repeat: no-repeat; 
   background-size: cover; 
   
-  z-index: 0; 
+  z-index: -1; 
   pointer-events: none;
-  /* will-change управляется JS теперь */
   
+  /* Маска */
   -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
 }
 
 .hero-bg::after { 
-  content: ""; position: absolute; inset: 0;
+  content: ""; position: fixed; inset: 0; z-index: -1;
   background: radial-gradient(circle at center, transparent 40%, var(--bg) 95%);
   opacity: 0.8;
 }
@@ -143,30 +150,38 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+  animation: fadeInUp 0.8s ease-out forwards;
 }
 
+/* 2. НОВОВВЕДЕНИЕ: ЖИВОЙ ГРАДИЕНТ ТЕКСТА */
 .hero-panel h1{
   font-size: 3.2rem; line-height: 1.1; margin: 0 0 24px 0; font-weight: 800;
-  background: linear-gradient(to right, #fff 20%, #bfaee3 100%); -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent; 
+  background: linear-gradient(270deg, #fff, #bfaee3, #fff);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: textShine 4s ease infinite;
   filter: drop-shadow(0 0 20px rgba(155, 75, 255, 0.3));
 }
+
 .lead{ font-size: 1.1rem; color: #d1d5db; margin-bottom: 32px; line-height: 1.6; }
 .btns{ display:flex; gap:16px; flex-wrap: wrap; }
 
-/* Правая часть */
+/* Правая часть (Картинка) - параллакс теперь здесь */
 .hero-right-wrap { 
   flex: 1; display: flex; justify-content: flex-end; perspective: 1000px;
+  opacity: 0;
+  animation: fadeInUp 0.8s ease-out 0.2s forwards;
 }
 .visual-card {
-  width: 100%; 
-  max-width: 800px; 
-  transform: rotateY(-5deg) rotateX(2deg); transition: transform 0.5s ease;
+  width: 100%; max-width: 800px; 
+  /* Исходный поворот, JS будет его менять */
+  transform: rotateY(-5deg) rotateX(2deg); 
+  transition: transform 0.1s ease-out; /* Быстрая реакция для JS */
   box-shadow: 0 0 80px rgba(155, 75, 255, 0.15); 
   border-radius: 16px; overflow: hidden;
   border: 1px solid rgba(255,255,255,0.1);
 }
-.visual-card:hover { transform: rotateY(0) rotateX(0) scale(1.01); box-shadow: 0 0 100px rgba(155, 75, 255, 0.25); }
 .visual-frame img { display:block; width:100%; height:auto; }
 
 .visual-caption {
@@ -181,70 +196,40 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 .card.pill:hover { background: rgba(255,255,255,0.06); color: #fff; }
 .card.pill strong { color: #fff; margin-right: 5px; }
 
-/* === SECTIONS === */
+/* === SECTIONS GENERAL === */
 section{ padding: 80px 0; position:relative; z-index:1; }
 .section-title { font-size: 2.5rem; margin-bottom: 16px; text-align: center; color: #fff; }
 .section-subtitle { text-align: center; color: var(--muted); margin-bottom: 50px; max-width: 600px; margin: 0 auto 50px; }
 
 .grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:24px; }
+
+/* 3. НОВОВВЕДЕНИЕ: 3D КАРТОЧКИ (Стили для JS) */
 .card {
   background: #0e0e10; border: 1px solid rgba(255,255,255,0.05);
   padding: 30px; border-radius: 16px; transition: 0.3s; 
+  /* Для 3D эффекта */
+  transform-style: preserve-3d;
+  perspective: 1000px;
 }
 .card:hover { 
-  background: #131316; transform: translateY(-5px); border-color: var(--accent1); 
+  background: #131316; border-color: var(--accent1); 
   box-shadow: 0 10px 40px rgba(155, 75, 255, 0.1);
 }
 .benefit h5 { font-size: 1.25rem; color: #fff; margin: 0 0 12px 0; display:flex; align-items:center; gap:12px; }
 .benefit h5 i { color: var(--accent1); }
 .benefit p { color: #aaa; font-size: 0.95rem; line-height: 1.6; margin: 0; }
 
-/* === CONTACT SECTION FIX === */
-/* Исправленный блок контактов */
-.contact-flex {
-    display: flex;
-    align-items: center; /* Центрируем по вертикали */
-    justify-content: space-between;
-    gap: 40px; /* Отступ между текстом и кнопками */
-    padding: 40px; /* Больше воздуха внутри карточки */
-    
-    background: linear-gradient(145deg, #101012, #0a0a0c);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 20px;
-    transition: 0.3s;
-}
-
-/* Красивая подсветка при наведении на блок */
-.contact-flex:hover {
-    border-color: rgba(155, 75, 255, 0.2);
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-}
-
-.contact-title { margin: 0 0 10px 0; font-size: 1.8rem; }
-.contact-subtitle { color: #888; font-size: 1.1rem; }
-
-.contact-actions {
-    display: flex;
-    gap: 20px; /* Расстояние между кнопками */
-    flex-shrink: 0; /* Чтобы кнопки не сжимались */
-}
-
 /* === FOOTER === */
 .footer{ 
   border-top: 1px solid rgba(155, 75, 255, 0.15); 
   background: linear-gradient(180deg, #0a0a0c 0%, #000 100%);
-  padding: 80px 0 30px; 
-  margin-top: 80px; 
+  padding: 80px 0 30px; margin-top: 80px; 
   box-shadow: 0 -20px 60px rgba(0,0,0,0.5); 
 }
 
 .footer-top { 
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr; 
-  gap: 60px;
-  max-width: 1000px; 
-  margin: 0 auto;
-  align-items: start;
+  display: grid; grid-template-columns: 2fr 1fr 1fr; 
+  gap: 60px; max-width: 1000px; margin: 0 auto; align-items: start;
 }
 
 .footer-brand-title { font-size: 1.8rem; font-weight: 800; color: #fff; margin-bottom: 12px; letter-spacing: -1px; }
@@ -279,7 +264,7 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 .hamburger span::after { bottom:-6px; }
 
 @media (max-width: 1024px) {
-    .hero-bg { height: 110vh; background-position: center top; }
+    .hero-bg { background-position: center top; height: 100vh; }
     .hero { padding-top: 120px; text-align: center; min-height: auto; padding-bottom: 60px; }
     .hero-layout { flex-direction: column; gap: 40px; }
     .hero-left-wrap { max-width: 100%; align-items: center; padding: 25px 20px; }
@@ -292,11 +277,6 @@ section{ padding: 80px 0; position:relative; z-index:1; }
     .hero-right-wrap { justify-content: center; width: 100%; padding: 0 10px; }
     .visual-card { transform: none; max-width: 100%; margin-top: 10px; }
     
-    /* Контакты на мобильном */
-    .contact-flex { flex-direction: column; text-align: center; gap: 20px; padding: 30px 20px; }
-    .contact-actions { width: 100%; flex-direction: column; }
-    .contact-actions .btn-cta, .contact-actions .btn-outline { width: 100%; justify-content: center; }
-
     .navbar-toggler { display:flex; }
     .nav-right { display:none; }
     .footer-top { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 40px; }
