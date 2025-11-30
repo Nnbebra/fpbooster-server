@@ -2,12 +2,10 @@
 {% block title %}Магазин FPBooster{% endblock %}
 
 {% block content %}
-<link rel="stylesheet" href="/templates_css/buy.css?v=RESTORED_V7">
+<link rel="stylesheet" href="/templates_css/buy.css?v=FIXED_LAYOUT_V9">
 
-<main>
-<section style="padding: 40px 0 80px; margin-top: 80px;">
-  <div class="container">
-    <h2 class="page-title reveal-card">Услуги FPBooster</h2>
+<section class="shop-section">
+    <h2 class="page-title reveal-card">Магазин FPBooster</h2>
     
     <div class="plans-grid">
       {% for plan in plans %}
@@ -34,29 +32,24 @@
         
         {% if plan.available %}
             <a href="/checkout/{{ plan.id }}" class="btn-cta">
-              <i class="fa-solid fa-cart-shopping"></i> Купить
+              <i class="fa-solid fa-cart-shopping" style="margin-right: 8px;"></i> Купить
             </a>
         {% else %}
             <div class="coming-soon-badge">
-                <i class="fa-regular fa-clock"></i> Скоро в продаже
+                <i class="fa-regular fa-clock" style="margin-right: 8px;"></i> Скоро в продаже
             </div>
         {% endif %}
 
       </div>
       {% endfor %}
     </div>
-  </div>
 </section>
-</main>
-
-<script defer src="/JavaScript/main.js?v=FIXED_LINKS_V12"></script>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     const observer = new IntersectionObserver((entries) => {
         entries.forEach((entry, index) => {
             if (entry.isIntersecting) {
-                // Красивое появление лесенкой
                 setTimeout(() => {
                     entry.target.classList.add('active');
                 }, index * 100); 
@@ -71,4 +64,3 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 </script>
 {% endblock %}
-
