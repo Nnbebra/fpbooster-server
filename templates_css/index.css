@@ -47,7 +47,6 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 .header-inner{ width:100%; display:flex; align-items:center; justify-content:space-between; }
 
-/* Исправлено выравнивание логотипа и Beta */
 .brand{ 
   font-weight:800; font-size:1.3rem; display:flex; gap:10px; align-items:center; 
   color:#fff; letter-spacing: -0.5px; 
@@ -56,7 +55,7 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   background: linear-gradient(45deg, var(--accent1), var(--accent2)); 
   color:#fff; padding:4px 8px; border-radius:6px; font-size:0.75rem; 
   font-weight:700; box-shadow: 0 0 10px rgba(155, 75, 255, 0.4);
-  align-self: center; /* Центрируем плашку по вертикали */
+  align-self: center;
 }
 
 .nav-right{ display:flex; gap:24px; align-items:center; }
@@ -69,14 +68,14 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   box-shadow: 0 4px 20px rgba(155, 75, 255, 0.25); border: 1px solid rgba(255,255,255,0.1);
   display: inline-flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap;
 }
-.btn-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(155, 75, 255, 0.4); }
+.btn-cta:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(155, 75, 255, 0.5); }
 
 .btn-outline{
   background:rgba(255,255,255,0.03); color:#fff; padding:12px 24px; border-radius:10px; font-weight:600;
   border:1px solid rgba(255,255,255,0.1); backdrop-filter: blur(4px);
   display: inline-flex; align-items: center; justify-content: center; gap: 10px; white-space: nowrap;
 }
-.btn-outline:hover { background:rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); transform: translateY(-2px); }
+.btn-outline:hover { background:rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.4); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(255,255,255,0.05); }
 
 /* === HERO SECTION === */
 .hero{ 
@@ -84,19 +83,38 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   padding-top: 100px; padding-bottom: 60px;
 }
 
+/* ФОН (Оптимизирован размер) */
 .hero-bg {
-  position: absolute; top: 0; left: 50%; transform: translateX(-50%); 
-  width: 100vw; min-width: 1400px; height: 120vh; 
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%); /* Центрирование */
+  
+  width: 100vw; 
+  min-width: 1400px;
+  
+  /* БЫЛО 125vh -> СТАЛО 112vh. Картинка "отдалится" и станет меньше */
+  height: 112vh; 
+  
   background-image: url('/static/new_bg.png');
-  background-position: center top; background-repeat: no-repeat; background-size: cover; 
-  z-index: 0; pointer-events: none;
+  background-position: center top; 
+  background-repeat: no-repeat; 
+  background-size: cover; 
+  
+  z-index: 0; 
+  pointer-events: none;
+  will-change: transform;
+  
+  /* Маска чуть жестче, чтобы контент внизу читался лучше */
   -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
 }
+
+/* Виньетка */
 .hero-bg::after { 
   content: ""; position: absolute; inset: 0;
-  background: radial-gradient(circle at center, transparent 30%, var(--bg) 90%);
-  opacity: 0.7;
+  background: radial-gradient(circle at center, transparent 40%, var(--bg) 95%);
+  opacity: 0.8;
 }
 
 /* HERO LAYOUT */
@@ -105,14 +123,15 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   justify-content: space-between; gap: 40px; width: 100%;
 }
 
+/* Левая часть (Стекло) - Улучшено */
 .hero-left-wrap{ 
   flex: 1; max-width: 550px; 
-  background: rgba(5, 5, 6, 0.4);
-  backdrop-filter: blur(10px);
-  padding: 30px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+  background: rgba(15, 15, 18, 0.6); /* Чуть темнее */
+  backdrop-filter: blur(20px); /* Сильнее блюр */
+  padding: 35px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
 }
 
 .hero-panel h1{
@@ -130,13 +149,13 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 .visual-card {
   width: 100%; 
-  /* УВЕЛИЧЕНО с 650 до 800px по твоему запросу */
   max-width: 800px; 
   transform: rotateY(-5deg) rotateX(2deg); transition: transform 0.5s ease;
-  box-shadow: 0 0 60px rgba(155, 75, 255, 0.15); 
+  box-shadow: 0 0 80px rgba(155, 75, 255, 0.15); 
   border-radius: 16px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
 }
-.visual-card:hover { transform: rotateY(0) rotateX(0) scale(1.02); }
+.visual-card:hover { transform: rotateY(0) rotateX(0) scale(1.01); box-shadow: 0 0 100px rgba(155, 75, 255, 0.25); }
 .visual-frame img { display:block; width:100%; height:auto; }
 
 .visual-caption {
@@ -146,8 +165,9 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 .stats-row { margin-top: 30px; display:flex; gap: 12px; flex-wrap: wrap; }
 .card.pill {
   background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-  padding: 6px 14px; border-radius: 50px; font-size: 0.85rem; color: #aaa;
+  padding: 8px 16px; border-radius: 50px; font-size: 0.9rem; color: #aaa; transition: 0.2s;
 }
+.card.pill:hover { background: rgba(255,255,255,0.06); color: #fff; }
 .card.pill strong { color: #fff; margin-right: 5px; }
 
 /* === SECTIONS GENERAL === */
@@ -210,7 +230,7 @@ section{ padding: 80px 0; position:relative; z-index:1; }
   max-width: 1000px; margin-left: auto; margin-right: auto;
 }
 
-/* === MOBILE === */
+/* === MOBILE & RESPONSIVE === */
 .navbar-toggler{ display:none; background:transparent; border:0; width:44px; height:44px; align-items:center; justify-content:center; }
 .hamburger span { display:block; width:22px; height:2px; background:#fff; position:relative; }
 .hamburger span::before, .hamburger span::after { content:""; position:absolute; left:0; right:0; height:2px; background:#fff; transition:0.2s; }
@@ -218,16 +238,64 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 .hamburger span::after { bottom:-6px; }
 
 @media (max-width: 1024px) {
-    .hero { padding-top: 100px; text-align: center; }
-    .hero-layout { flex-direction: column; gap: 50px; }
-    .hero-left-wrap { max-width: 100%; align-items: center; }
-    .hero-panel h1 { font-size: 2.8rem; }
-    .btns { justify-content: center; }
-    .stats-row { justify-content: center; }
+    /* Мобильный фон тоже меньше */
+    .hero-bg {
+        height: 110vh;
+        background-position: center top;
+    }
+
+    .hero { 
+        padding-top: 120px; 
+        text-align: center; 
+        min-height: auto; 
+        padding-bottom: 60px;
+    }
     
-    .hero-right-wrap { justify-content: center; width: 100%; }
-    /* Картинка на мобилках тоже будет чуть меньше, чтобы влезла */
-    .visual-card { transform: none; max-width: 100%; margin-top: 20px; }
+    .hero-layout { 
+        flex-direction: column; 
+        gap: 40px; 
+    }
+    
+    .hero-left-wrap { 
+        max-width: 100%; 
+        align-items: center; 
+        padding: 25px 20px;
+    }
+    
+    .hero-panel h1 { 
+        font-size: 2.2rem; 
+        line-height: 1.2;
+    }
+    
+    .lead { font-size: 1rem; margin-bottom: 25px; }
+    
+    .btns { 
+        justify-content: center; 
+        width: 100%;
+        flex-direction: column; 
+        gap: 12px;
+    }
+    
+    .btns .btn-cta, .btns .btn-outline {
+        width: 100%; 
+        max-width: 320px;
+        margin: 0 auto; 
+    }
+    
+    .stats-row { justify-content: center; gap: 10px; margin-top: 25px; }
+    .card.pill { padding: 8px 12px; font-size: 0.8rem; }
+    
+    .hero-right-wrap { 
+        justify-content: center; 
+        width: 100%; 
+        padding: 0 10px;
+    }
+    
+    .visual-card { 
+        transform: none; 
+        max-width: 100%; 
+        margin-top: 10px; 
+    }
     
     .navbar-toggler { display:flex; }
     .nav-right { display:none; }
