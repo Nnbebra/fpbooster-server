@@ -1,13 +1,18 @@
 :root {
     --bg: #050405;
-    --card-bg: rgba(20, 20, 25, 0.75);
+    --card-bg: rgba(20, 20, 25, 0.7); /* Стекло */
     --text: #eaeaea;
     --muted: #9ca3af;
     --accent1: #9b4bff;
     --accent2: #5e2bff;
     --gradient: linear-gradient(135deg, var(--accent1), var(--accent2));
     --card-border: rgba(255, 255, 255, 0.08);
-    --card-hover: rgba(25, 25, 30, 0.95);
+    --card-hover: rgba(30, 30, 35, 0.95);
+}
+
+/* Глобальный фикс размеров */
+*, *::before, *::after {
+    box-sizing: border-box;
 }
 
 /* === Скроллбар === */
@@ -31,11 +36,6 @@ main { flex: 1 0 auto; }
 footer { flex-shrink: 0; }
 
 /* === Анимации === */
-@keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(30px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
 @keyframes shine {
     0% { left: -100%; }
     20% { left: 100%; }
@@ -48,6 +48,7 @@ footer { flex-shrink: 0; }
     100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
 }
 
+/* Класс для JS-анимации появления */
 .reveal-card {
     opacity: 0;
     transform: translateY(30px);
@@ -68,35 +69,30 @@ footer { flex-shrink: 0; }
     background: linear-gradient(to right, #fff 20%, #bfaee3 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 0 25px rgba(155, 75, 255, 0.3));
+    filter: drop-shadow(0 0 20px rgba(155, 75, 255, 0.3));
 }
 
-/* === СЕТКА (ИСПРАВЛЕНО НАЛОЖЕНИЕ) === */
+/* === СЕТКА (Восстановлено из твоего файла) === */
 .plans-grid {
     display: grid;
-    /* Уменьшили min до 280px. Это решает проблему наложения на узких экранах */
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    
-    /* Достаточный отступ, чтобы карточки не слипались */
-    gap: 30px; 
-    
-    padding-bottom: 60px;
-    max-width: 1300px;
+    /* 320px - как в твоем старом файле, это оптимально */
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 30px;
+    padding-bottom: 40px;
+    max-width: 1400px;
     margin: 0 auto;
 }
 
-/* === КАРТОЧКА ТОВАРА === */
+/* === КАРТОЧКА === */
 .plan-card {
     position: relative;
     background: var(--card-bg);
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(12px);
     border: 1px solid var(--card-border);
-    border-radius: 24px;
+    border-radius: 20px;
     
-    /* Сделали отступы компактнее (было 30px) */
-    padding: 24px; 
-    /* Дополнительный марджин для безопасности (как ты просил) */
-    margin: 5px; 
+    /* Твой идеальный паддинг */
+    padding: 26px; 
     
     text-align: center;
     display: flex;
@@ -109,8 +105,8 @@ footer { flex-shrink: 0; }
 .plan-card:not(.unavailable):hover {
     transform: translateY(-8px);
     background: var(--card-hover);
-    border-color: rgba(155, 75, 255, 0.4);
-    box-shadow: 0 20px 60px rgba(155, 75, 255, 0.15);
+    border-color: rgba(155, 75, 255, 0.4); /* Фиолетовая обводка */
+    box-shadow: 0 15px 50px rgba(155, 75, 255, 0.15); /* Свечение */
 }
 
 .plan-card.unavailable {
@@ -120,16 +116,15 @@ footer { flex-shrink: 0; }
     border-color: rgba(255,255,255,0.02);
 }
 
-/* === ИЗОБРАЖЕНИЕ (СДЕЛАНО КОМПАКТНЕЕ И БЛИЖЕ) === */
+/* === КАРТИНКА (Восстановлено: 220px) === */
 .plan-card .img-wrap {
     width: 100%;
-    /* Уменьшили высоту, чтобы карточка не была длинной */
-    height: 160px; 
+    height: 220px; /* Твой размер */
     display: block;
-    border-radius: 16px;
+    border-radius: 14px;
     overflow: hidden;
-    margin-bottom: 20px;
-    background: #000; 
+    margin-bottom: 24px;
+    background: #000;
     position: relative;
     border: 1px solid rgba(255,255,255,0.05);
 }
@@ -137,46 +132,39 @@ footer { flex-shrink: 0; }
 .plan-card .img-wrap img {
     width: 100%;
     height: 100%;
-    /* cover = заполнить всё пространство (зум) */
-    object-fit: cover; 
-    /* center = фокус на центре картинки */
-    object-position: center center;
+    object-fit: cover; /* Заполняем весь блок */
     transition: transform 0.5s ease;
 }
 
-/* Эффект зума */
+/* Зум при наведении */
 .plan-card:not(.unavailable):hover .img-wrap img {
-    transform: scale(1.1);
+    transform: scale(1.05);
 }
 
 /* Тексты */
 .plan-card h4 {
-    margin: 0 0 10px;
-    font-size: 1.5rem;
+    margin: 0 0 12px;
+    font-size: 1.4rem;
     color: #fff;
     font-weight: 700;
-    line-height: 1.2;
 }
 
 .plan-card p {
     color: var(--muted);
     font-size: 0.95rem;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     line-height: 1.5;
-    flex-grow: 1; 
-    padding: 0;
+    flex-grow: 1; /* Прижимает кнопки к низу */
+    padding: 0 5px;
 }
 
-/* Цена */
+/* Цены */
 .plan-card .price {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    background: rgba(255,255,255,0.03);
-    padding: 10px;
-    border-radius: 12px;
+    gap: 10px;
 }
 
 .plan-card .price s {
@@ -191,16 +179,16 @@ footer { flex-shrink: 0; }
     color: #fff;
     font-weight: 800;
     font-size: 1.6rem;
-    text-shadow: 0 0 15px rgba(155, 75, 255, 0.4);
+    text-shadow: 0 0 20px rgba(155, 75, 255, 0.4);
 }
 
-/* === КНОПКА КУПИТЬ === */
+/* === КНОПКА (ФИКС "ВЫЛЕЗАНИЯ") === */
 .plan-card .btn-cta {
     background: var(--gradient);
     border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 14px;
-    padding: 16px 20px;
-    font-weight: 700;
+    border-radius: 12px;
+    padding: 14px 20px; /* Твой размер */
+    font-weight: 600;
     color: #fff;
     text-transform: uppercase;
     transition: all 0.25s ease;
@@ -208,19 +196,19 @@ footer { flex-shrink: 0; }
     align-items: center;
     justify-content: center;
     gap: 10px;
-    font-size: 1rem;
+    font-size: 0.95rem;
     
     margin-top: auto; 
     width: 100%;
     
-    box-shadow: 0 6px 25px rgba(155, 75, 255, 0.25);
+    box-shadow: 0 4px 15px rgba(155, 75, 255, 0.2);
     text-decoration: none;
     position: relative;
-    overflow: hidden;
-    box-sizing: border-box; 
+    overflow: hidden; /* Чтобы блик не вылезал */
     z-index: 2;
 }
 
+/* Живой блик на кнопке */
 .plan-card .btn-cta::after {
     content: ""; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
@@ -230,8 +218,8 @@ footer { flex-shrink: 0; }
 
 .plan-card .btn-cta:hover {
     transform: translateY(-3px);
-    box-shadow: 0 10px 40px rgba(155, 75, 255, 0.6);
-    border-color: rgba(255,255,255,0.4);
+    box-shadow: 0 8px 30px rgba(155, 75, 255, 0.5);
+    border-color: rgba(255,255,255,0.3);
 }
 
 /* Бейдж "Скоро" */
@@ -241,28 +229,27 @@ footer { flex-shrink: 0; }
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: var(--muted);
-    padding: 16px;
-    border-radius: 14px;
+    padding: 14px;
+    border-radius: 12px;
     font-weight: 600;
     text-transform: uppercase;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    box-sizing: border-box;
 }
 
-/* Скидка */
+/* Скидка (Пульсирующая) */
 .discount-badge {
     position: absolute;
-    top: 12px;
-    right: 12px;
+    top: 16px;
+    right: 16px;
     background: #e11d48;
     color: #fff;
     font-size: 0.8rem;
     font-weight: 800;
-    padding: 5px 12px;
+    padding: 6px 10px;
     border-radius: 8px;
     box-shadow: 0 4px 15px rgba(225, 29, 72, 0.4);
     z-index: 2;
@@ -270,26 +257,8 @@ footer { flex-shrink: 0; }
 }
 
 /* === МОБИЛЬНАЯ АДАПТАЦИЯ === */
-@media (max-width: 768px) {
-    .page-title {
-        font-size: 2.2rem;
-        margin-bottom: 2rem;
-    }
-    
-    .plans-grid {
-        grid-template-columns: 1fr;
-        gap: 25px;
-        padding: 0 15px;
-    }
-
-    .plan-card {
-        padding: 22px; 
-    }
-
-    /* На телефоне тоже компактная картинка */
-    .plan-card .img-wrap {
-        height: 160px; 
-    }
-    
-    .plan-card h4 { font-size: 1.4rem; }
+@media (max-width: 480px) {
+    .plan-card { padding: 20px; }
+    .plan-card .img-wrap { height: 200px; } /* Чуть меньше на телефоне */
+    .plans-grid { gap: 20px; padding: 0 10px; }
 }
