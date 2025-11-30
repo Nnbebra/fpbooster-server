@@ -116,7 +116,6 @@ PLANS = {
 
 @router.get("/buy", response_class=HTMLResponse)
 async def buy_page(request: Request):
-    # --- ИСПРАВЛЕНИЕ: Получаем пользователя, чтобы шапка работала ---
     user = None
     try:
         user = await get_current_user(request.app, request)
@@ -126,12 +125,13 @@ async def buy_page(request: Request):
     return templates.TemplateResponse("buy.html", {
         "request": request, 
         "plans": PLANS.values(),
-        "user": user  # Передаем user в шаблон
+        "user": user 
     })
 
 @router.get("/checkout/{plan_id}", response_class=HTMLResponse)
 async def checkout_page(request: Request, plan_id: str):
     # 1. Проверяем авторизацию
+    user = None
     try:
         user = await get_current_user(request.app, request)
         if not user:
@@ -147,4 +147,9 @@ async def checkout_page(request: Request, plan_id: str):
     if not plan.get("available", True):
          raise HTTPException(status_code=403, detail="Этот товар пока недоступен для покупки")
 
-    return templates.TemplateResponse("checkout.html", {"request": request, "plan": plan})
+    # ВАЖНО: Добавил "user": user, чтобы в шапке (base.html) отрисовался "Личный кабинет"
+    return templates.TemplateResponse("checkout.html", {
+        "request": request, 
+        "plan": plan, 
+        "user": user 
+    })
