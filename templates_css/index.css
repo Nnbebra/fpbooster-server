@@ -47,6 +47,7 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 .header-inner{ width:100%; display:flex; align-items:center; justify-content:space-between; }
 
+/* Исправлено выравнивание логотипа и Beta */
 .brand{ 
   font-weight:800; font-size:1.3rem; display:flex; gap:10px; align-items:center; 
   color:#fff; letter-spacing: -0.5px; 
@@ -55,7 +56,7 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
   background: linear-gradient(45deg, var(--accent1), var(--accent2)); 
   color:#fff; padding:4px 8px; border-radius:6px; font-size:0.75rem; 
   font-weight:700; box-shadow: 0 0 10px rgba(155, 75, 255, 0.4);
-  align-self: center;
+  align-self: center; /* Центрируем плашку по вертикали */
 }
 
 .nav-right{ display:flex; gap:24px; align-items:center; }
@@ -77,36 +78,25 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 .btn-outline:hover { background:rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); transform: translateY(-2px); }
 
-/* === HERO SECTION & BACKGROUND (FIXED) === */
+/* === HERO SECTION === */
 .hero{ 
   position:relative; min-height: 100vh; display:flex; align-items:center; 
   padding-top: 100px; padding-bottom: 60px;
 }
 
-/* ИСПРАВЛЕННЫЙ ФОН */
 .hero-bg {
-  position: fixed; /* Фиксируем фон, чтобы не двигался при скролле */
-  top: 0; 
-  left: 0;
-  width: 100%;
-  height: 100vh; /* Занимает ровно высоту экрана */
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%); 
+  width: 100vw; min-width: 1400px; height: 120vh; 
   background-image: url('/static/new_bg.png');
-  background-position: center center; /* Центрируем картинку */
-  background-repeat: no-repeat; 
-  background-size: cover; /* Растягиваем на весь экран */
-  z-index: -1; /* Убираем назад */
-  pointer-events: none;
-  /* Маска плавного перехода в черный цвет снизу */
-  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  background-position: center top; background-repeat: no-repeat; background-size: cover; 
+  z-index: 0; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
 }
-
-/* Виньетка тоже фиксированная */
 .hero-bg::after { 
-  content: ""; position: fixed; inset: 0;
-  background: radial-gradient(circle at center, transparent 40%, var(--bg) 90%);
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(circle at center, transparent 30%, var(--bg) 90%);
   opacity: 0.7;
-  z-index: -1;
 }
 
 /* HERO LAYOUT */
@@ -140,6 +130,7 @@ a{ color:inherit; text-decoration:none; transition: all 0.2s; }
 }
 .visual-card {
   width: 100%; 
+  /* УВЕЛИЧЕНО с 650 до 800px по твоему запросу */
   max-width: 800px; 
   transform: rotateY(-5deg) rotateX(2deg); transition: transform 0.5s ease;
   box-shadow: 0 0 60px rgba(155, 75, 255, 0.15); 
@@ -227,24 +218,16 @@ section{ padding: 80px 0; position:relative; z-index:1; }
 .hamburger span::after { bottom:-6px; }
 
 @media (max-width: 1024px) {
-    /* Уменьшил отступы для мобилок */
-    .hero { padding-top: 110px; padding-bottom: 40px; text-align: center; min-height: auto; }
-    .hero-layout { flex-direction: column; gap: 40px; }
-    .hero-left-wrap { max-width: 100%; align-items: center; padding: 25px; }
-    
-    /* Шрифт чуть меньше */
-    .hero-panel h1 { font-size: 2.4rem; }
-    .lead { font-size: 1rem; }
-    
+    .hero { padding-top: 100px; text-align: center; }
+    .hero-layout { flex-direction: column; gap: 50px; }
+    .hero-left-wrap { max-width: 100%; align-items: center; }
+    .hero-panel h1 { font-size: 2.8rem; }
     .btns { justify-content: center; }
-    
-    /* Отступы для пилюль статистики */
-    .stats-row { justify-content: center; gap: 10px; margin-top: 25px; }
-    .card.pill { padding: 8px 12px; font-size: 0.8rem; }
+    .stats-row { justify-content: center; }
     
     .hero-right-wrap { justify-content: center; width: 100%; }
-    /* Картинка чуть меньше и с отступом */
-    .visual-card { transform: none; max-width: 90%; margin-top: 20px; }
+    /* Картинка на мобилках тоже будет чуть меньше, чтобы влезла */
+    .visual-card { transform: none; max-width: 100%; margin-top: 20px; }
     
     .navbar-toggler { display:flex; }
     .nav-right { display:none; }
