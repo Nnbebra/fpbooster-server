@@ -252,43 +252,49 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
                 if activation["status"] != "unused":
                     raise HTTPException(400, "Токен уже использован")
 
-                # 2. Проверяем лицензию пользователя (создаем, если нет, хотя она должна быть при регистрации)
+                # 2. Проверяем лицензию пользователя
                 license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
                 
-                # Если лицензии нет совсем (странно, но бывает), создадим заглушку
+                # Если лицензии нет (редкий случай), создаем её
                 if not license_row:
-                     # Генерируем случайный ключ или берем из юзера, если есть логика
-                     # Но лучше просто кинуть ошибку, если архитектура требует наличие лицензии
-                     raise HTTPException(404, "Лицензия пользователя не найдена. Обратитесь в поддержку.")
+                     import secrets
+                     new_key = "key_" + secrets.token_hex(8)
+                     # Создаем новую запись, чтобы было что обновлять
+                     await conn.execute(
+                         "INSERT INTO licenses (license_key, status, user_uid, created_at) VALUES ($1, 'expired', $2, NOW())",
+                         new_key, user["uid"]
+                     )
+                     # Перечитываем
+                     license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
 
                 # 3. Считаем новую дату
                 today = datetime.utcnow().date()
                 base_date = (license_row["expires"] if license_row["expires"] and license_row["expires"] >= today else today)
                 new_expires = base_date + timedelta(days=activation["duration_days"])
 
-                # 4. Обновляем лицензию
+                # 4. Обновляем лицензию (Добавил activated_at=NOW())
                 await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE user_uid=$2", new_expires, user["uid"])
                 
-                # 5. Помечаем токен как использованный
+                # 5. Помечаем токен как использованный (Добавил used_at=NOW())
                 await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user["uid"], activation["id"])
                 
                 # 6. Логируем в историю покупок
-                # Важно: amount передаем как число 0.00, plan как строку
+                # ИСПРАВЛЕНИЕ: Явно передаем NOW() для created_at и 0 для суммы
                 await conn.execute(
                     """
-                    INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code) 
-                    VALUES ($1, $2, 0.00, 'TOKEN', 'token', $3)
+                    INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
+                    VALUES ($1, $2, 0, 'TOKEN', 'token', $3, NOW())
                     """,
                     user["uid"], 
-                    f"activation_{activation['duration_days']}_days", # Plan name
+                    f"activation_{activation['duration_days']}_days", 
                     token_value
                 )
 
     except HTTPException:
-        raise # Пробрасываем HTTP исключения дальше
+        raise # Пробрасываем обычные ошибки (404, 400)
     except Exception as e:
-        print(f"Error activating license: {e}") # Логируем в консоль сервера
-        raise HTTPException(status_code=500, detail="Ошибка при активации ключа. Попробуйте позже.")
+        # ВАЖНО: Выводим реальную ошибку на экран, чтобы понять причину
+        raise HTTPException(status_code=500, detail=f"SQL Error: {str(e)}")
 
     return RedirectResponse(url="/cabinet", status_code=302)
 
@@ -542,6 +548,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
