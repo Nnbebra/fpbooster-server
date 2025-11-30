@@ -1,36 +1,40 @@
-/* JavaScript/main.js */
+/* JavaScript/main.js - Параллакс с инерцией (Smooth Lerp) */
 (function () {
   "use strict";
 
-  // Параллакс фона
   const heroBg = document.querySelector('.hero-bg');
   
   if (heroBg) {
-    let raf = null;
+    let currentY = 0; // Текущая позиция (плавная)
+    let targetY = 0;  // Целевая позиция (реальный скролл)
+    
+    // Коэффициент плавности (меньше = плавнее, больше = быстрее)
+    const ease = 0.1; 
 
     function updateHero() {
+      // 1. Получаем реальный скролл
       const scrollPos = window.scrollY || window.pageYOffset;
       
-      // ИЗМЕНЕНИЕ: Скорость 0.35 (медленнее), чтобы фон не улетал
-      const translateY = scrollPos * 0.35; 
-      
-      // Обязательно сохраняем translateX(-50%)
-      heroBg.style.transform = `translate3d(-50%, ${translateY}px, 0)`;
+      // 2. Считаем, где должен быть фон (target)
+      targetY = scrollPos * 0.4; 
+
+      // 3. Плавно приближаем текущую позицию к целевой (Lerp)
+      // Формула: current = current + (target - current) * ease
+      currentY += (targetY - currentY) * ease;
+
+      // 4. Применяем (Обязательно сохраняем translateX -50%)
+      // toFixed(2) для оптимизации производительности
+      heroBg.style.transform = `translate3d(-50%, ${currentY.toFixed(2)}px, 0)`;
+
+      // Зацикливаем анимацию
+      requestAnimationFrame(updateHero);
     }
 
-    window.addEventListener('scroll', () => {
-      if (!raf) {
-        raf = requestAnimationFrame(() => {
-          updateHero();
-          raf = null;
-        });
-      }
-    }, { passive: true });
-    
-    updateHero();
+    // Запускаем цикл анимации
+    requestAnimationFrame(updateHero);
   }
 
-  // Navbar меняет цвет при скролле
+  // Остальной JS код (Navbar, Mobile Menu, Stats)
   const navbar = document.querySelector('.navbar');
   if (navbar) {
     window.addEventListener('scroll', () => {
@@ -44,14 +48,12 @@
     });
   }
 
-  // Мобильное меню
   const toggler = document.querySelector('.navbar-toggler');
   const navRight = document.querySelector('.nav-right');
   if (toggler && navRight) {
     toggler.addEventListener('click', () => {
       const isVisible = navRight.style.display === 'flex';
       navRight.style.display = isVisible ? 'none' : 'flex';
-      
       if (!isVisible) {
         navRight.style.position = 'absolute';
         navRight.style.top = '76px';
@@ -68,7 +70,6 @@
     });
   }
   
-  // Инициализация статистики
   (function hydrateStats() {
     const url = '/api/update';
     fetch(url).then(r => r.json()).then(data => {
