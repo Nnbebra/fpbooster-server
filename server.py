@@ -252,48 +252,63 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
                 if activation["status"] != "unused":
                     raise HTTPException(400, "Токен уже использован")
 
-                # 2. Проверяем лицензию пользователя
+                # 2. Проверяем лицензию
                 license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
                 
-                # Если лицензии нет (редкий случай), создаем её
+                # Создаем лицензию, если нет
                 if not license_row:
                      import secrets
                      new_key = "key_" + secrets.token_hex(8)
-                     # Создаем новую запись, чтобы было что обновлять
                      await conn.execute(
                          "INSERT INTO licenses (license_key, status, user_uid, created_at) VALUES ($1, 'expired', $2, NOW())",
                          new_key, user["uid"]
                      )
-                     # Перечитываем
                      license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
 
-                # 3. Считаем новую дату
+                # 3. Считаем новую дату (С ЗАЩИТОЙ ОТ ОШИБКИ)
                 today = datetime.utcnow().date()
-                base_date = (license_row["expires"] if license_row["expires"] and license_row["expires"] >= today else today)
-                new_expires = base_date + timedelta(days=activation["duration_days"])
+                
+                # Если текущая дата уже "вечная" (больше 2090 года), не прибавляем, а оставляем как есть
+                current_expires = license_row["expires"]
+                if current_expires and current_expires.year > 2090:
+                    base_date = today # Сброс базы, чтобы не улететь в 10000+ год
+                else:
+                    base_date = (current_expires if current_expires and current_expires >= today else today)
+                
+                days_to_add = activation["duration_days"]
+                
+                # Безопасное сложение
+                try:
+                    new_expires = base_date + timedelta(days=days_to_add)
+                    # Если дата улетела слишком далеко (больше 2100 года), ставим 2100 год
+                    if new_expires.year > 2100:
+                        new_expires = date(2100, 1, 1)
+                except OverflowError:
+                    # Если Python не может посчитать дату (слишком большая), ставим заглушку
+                    new_expires = date(2100, 1, 1)
 
-                # 4. Обновляем лицензию (Добавил activated_at=NOW())
+                # 4. Обновляем лицензию
                 await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE user_uid=$2", new_expires, user["uid"])
                 
-                # 5. Помечаем токен как использованный (Добавил used_at=NOW())
+                # 5. Помечаем токен
                 await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user["uid"], activation["id"])
                 
-                # 6. Логируем в историю покупок
-                # ИСПРАВЛЕНИЕ: Явно передаем NOW() для created_at и 0 для суммы
+                # 6. Логируем
                 await conn.execute(
                     """
                     INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
                     VALUES ($1, $2, 0, 'TOKEN', 'token', $3, NOW())
                     """,
                     user["uid"], 
-                    f"activation_{activation['duration_days']}_days", 
+                    f"activation_{days_to_add}_days", 
                     token_value
                 )
 
     except HTTPException:
-        raise # Пробрасываем обычные ошибки (404, 400)
+        raise 
     except Exception as e:
-        # ВАЖНО: Выводим реальную ошибку на экран, чтобы понять причину
+        # Логируем ошибку в консоль сервера для тебя
+        print(f"CRITICAL ERROR in activate_license: {e}")
         raise HTTPException(status_code=500, detail=f"SQL Error: {str(e)}")
 
     return RedirectResponse(url="/cabinet", status_code=302)
@@ -548,6 +563,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
