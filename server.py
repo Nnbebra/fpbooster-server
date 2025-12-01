@@ -149,31 +149,26 @@ async def launcher_login(data: LauncherLogin, request: Request):
     async with request.app.state.pool.acquire() as conn:
         user = await conn.fetchrow("SELECT id, uid, password_hash, username FROM users WHERE email=$1", email)
         
-        # 1. Проверяем пароль
         if not user or not verify_password(data.password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
-        # 2. Ищем лицензию
         license_row = await conn.fetchrow("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid = $1", user["uid"])
 
         if not license_row:
              raise HTTPException(status_code=403, detail="Лицензия не найдена. Купите подписку на сайте.")
 
-        # 3. Статус подписки
         if license_row['status'] != 'active':
              raise HTTPException(status_code=402, detail="Подписка не активна")
              
         if license_row['expires'] and license_row['expires'] < date.today():
              raise HTTPException(status_code=402, detail="Срок подписки истек")
 
-        # 4. HWID (Привязка или проверка)
         db_hwid = license_row['hwid']
         if db_hwid is None:
             await conn.execute("UPDATE licenses SET hwid=$1 WHERE license_key=$2", data.hwid, license_row['license_key'])
         elif db_hwid != data.hwid:
             raise HTTPException(status_code=403, detail="Ошибка HWID: Заход с другого ПК запрещен. Сбросьте HWID в личном кабинете.")
 
-        # 5. Генерируем токен
         token = make_jwt(user["id"], email)
         
         return {
@@ -183,7 +178,7 @@ async def launcher_login(data: LauncherLogin, request: Request):
             "expires": str(license_row["expires"])
         }
 
-# API для получения списка продуктов в лаунчере
+# --- НОВЫЙ ЭНДПОИНТ: Список продуктов ---
 @app.get("/api/client/products")
 async def get_client_products(request: Request, user_data=Depends(current_user)):
     uid = user_data["uid"]
@@ -197,21 +192,24 @@ async def get_client_products(request: Request, user_data=Depends(current_user))
              if not license_row['expires'] or license_row['expires'] >= date.today():
                  has_access = True
 
-    # Список версий для лаунчера
+    # Получаем базовый URL (например, https://fpbooster.shop/)
+    base_url = str(request.base_url).rstrip("/")
+
     products = [
         {
             "id": "standard",
             "name": "FPBooster Standard",
             "description": "Стабильная версия 1.16.5",
-            "image_url": "https://fpbooster.shop/static/products/30days.png", 
+            # Важно: полный URL для картинки
+            "image_url": f"{base_url}/static/products/30days.png", 
             "is_available": has_access,
             "download_url": "/api/client/get-core?ver=standard"
         },
         {
             "id": "alpha",
             "name": "FPBooster Alpha",
-            "description": "Бета-тест новых функций (Скоро)",
-            "image_url": "https://fpbooster.shop/static/Alpha30.png",
+            "description": "Бета-тест (Скоро)",
+            "image_url": f"{base_url}/static/Alpha30.png",
             "is_available": False, 
             "download_url": "/api/client/get-core?ver=alpha"
         }
@@ -220,7 +218,6 @@ async def get_client_products(request: Request, user_data=Depends(current_user))
 
 @app.get("/api/client/get-core")
 async def get_client_core(request: Request, ver: str = "standard", user_data = Depends(current_user)):
-    # 1. Проверка лицензии
     async with request.app.state.pool.acquire() as conn:
         license_row = await conn.fetchrow("SELECT status, expires FROM licenses WHERE user_uid=$1", user_data["uid"])
         
@@ -230,16 +227,7 @@ async def get_client_core(request: Request, ver: str = "standard", user_data = D
         if license_row['expires'] and license_row['expires'] < date.today():
             raise HTTPException(status_code=403, detail="License expired")
 
-    # 2. Выбор файла в зависимости от версии
-    if ver == "alpha":
-        file_path = "protected_builds/FPBooster_Alpha.dll" # Пример
-    else:
-        file_path = "protected_builds/FPBooster.dll" 
-
-    if not os.path.exists(file_path):
-        # Фолбэк на стандартный, если альфы нет
-        file_path = "protected_builds/FPBooster.dll"
-        
+    file_path = "protected_builds/FPBooster.dll" 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=500, detail="Server Error: Build file not found")
 
@@ -249,7 +237,6 @@ async def get_client_core(request: Request, ver: str = "standard", user_data = D
 
 # ==========================================================
 
-# ========= Активация лицензии (ИСПРАВЛЕНО) =========
 @app.post("/api/license/activate")
 async def activate_license(request: Request, token: Optional[str] = Form(None), key: Optional[str] = Form(None), user=Depends(current_user)):
     token_value = (token or key or "").strip()
@@ -259,59 +246,39 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
     try:
         async with request.app.state.pool.acquire() as conn:
             async with conn.transaction():
-                # 1. Проверяем токен
                 activation = await conn.fetchrow("SELECT * FROM activation_tokens WHERE token=$1", token_value)
                 if not activation:
                     raise HTTPException(404, "Токен не найден")
                 if activation["status"] != "unused":
                     raise HTTPException(400, "Токен уже использован")
 
-                # 2. Проверяем лицензию
                 license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
-                
-                # Создаем лицензию, если нет
                 if not license_row:
                      import secrets
                      new_key = "key_" + secrets.token_hex(8)
-                     await conn.execute(
-                         "INSERT INTO licenses (license_key, status, user_uid, created_at) VALUES ($1, 'expired', $2, NOW())",
-                         new_key, user["uid"]
-                     )
+                     await conn.execute("INSERT INTO licenses (license_key, status, user_uid, created_at) VALUES ($1, 'expired', $2, NOW())", new_key, user["uid"])
                      license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
 
-                # 3. Считаем новую дату (С ЗАЩИТОЙ ОТ ПЕРЕПОЛНЕНИЯ)
                 today = datetime.utcnow().date()
-                
                 current_expires = license_row["expires"]
                 if current_expires and current_expires.year > 2090:
-                    base_date = today # Если уже вечная, не прибавляем бесконечность
+                    base_date = today 
                 else:
                     base_date = (current_expires if current_expires and current_expires >= today else today)
                 
                 days_to_add = activation["duration_days"]
-                
                 try:
                     new_expires = base_date + timedelta(days=days_to_add)
-                    if new_expires.year > 2100:
-                        new_expires = date(2100, 1, 1)
+                    if new_expires.year > 2100: new_expires = date(2100, 1, 1)
                 except OverflowError:
                     new_expires = date(2100, 1, 1)
 
-                # 4. Обновляем лицензию
                 await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE user_uid=$2", new_expires, user["uid"])
-                
-                # 5. Помечаем токен
                 await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user["uid"], activation["id"])
                 
-                # 6. Логируем (ИСПРАВЛЕНО: передаем 0 и NOW())
                 await conn.execute(
-                    """
-                    INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
-                    VALUES ($1, $2, 0, 'TOKEN', 'token', $3, NOW())
-                    """,
-                    user["uid"], 
-                    f"activation_{days_to_add}_days", 
-                    token_value
+                    "INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) VALUES ($1, $2, 0, 'TOKEN', 'token', $3, NOW())",
+                    user["uid"], f"activation_{days_to_add}_days", token_value
                 )
 
     except HTTPException:
@@ -554,3 +521,4 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
