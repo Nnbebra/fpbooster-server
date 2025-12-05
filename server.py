@@ -244,6 +244,42 @@ async def get_client_core(request: Request, ver: str = "standard", user_data = D
         file_bytes = f.read()
     return Response(content=file_bytes, media_type="application/octet-stream")
 
+
+# --- ДОБАВИТЬ В server.py ---
+
+class UserProfileData(BaseModel):
+    uid: int
+    username: str
+    email: str
+    group: str
+    expires: Optional[str]
+    avatar_url: Optional[str] = None
+
+@app.get("/api/client/profile", response_model=UserProfileData)
+async def get_client_profile(request: Request, user_data=Depends(current_user)):
+    uid = user_data["uid"]
+    async with request.app.state.pool.acquire() as conn:
+        # Получаем данные пользователя и лицензии
+        # user_group - поле в таблице users, expires - в licenses
+        row = await conn.fetchrow("""
+            SELECT u.uid, u.username, u.email, u.user_group, l.expires 
+            FROM users u
+            LEFT JOIN licenses l ON u.uid = l.user_uid
+            WHERE u.uid = $1
+        """, uid)
+        
+        if not row:
+            raise HTTPException(404, "User not found")
+
+        return {
+            "uid": row["uid"],
+            "username": row["username"],
+            "email": row["email"],
+            "group": row["user_group"] or "User",
+            "expires": str(row["expires"]) if row["expires"] else "Нет подписки",
+            "avatar_url": None # Тут можно добавить логику аватарок в будущем
+        }
+
 # ==========================================================
 # (Далее весь код активации лицензии и админки оставляем как был)
 # ==========================================================
@@ -513,5 +549,6 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
