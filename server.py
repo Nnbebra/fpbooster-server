@@ -245,13 +245,13 @@ async def get_client_core(request: Request, ver: str = "standard", user_data = D
     return Response(content=file_bytes, media_type="application/octet-stream")
 
 
-# --- ВСТАВИТЬ В server.py ВМЕСТО СТАРОГО get_client_profile ---
+# --- ЗАМЕНИТЬ ФУНКЦИЮ get_client_profile В server.py ---
 
 class UserProfileData(BaseModel):
     uid: int
     username: str
     email: str
-    group: str
+    group: Optional[str] = "User" # Разрешаем отсутствие группы
     expires: Optional[str]
     avatar_url: Optional[str] = None
 
@@ -259,43 +259,40 @@ class UserProfileData(BaseModel):
 async def get_client_profile(request: Request, user_data=Depends(current_user)):
     uid = user_data["uid"]
     async with request.app.state.pool.acquire() as conn:
-        # 1. Получаем пользователя
+        # 1. Получаем данные пользователя
         user_row = await conn.fetchrow("SELECT uid, username, email, user_group FROM users WHERE uid = $1", uid)
         
         if not user_row:
             raise HTTPException(404, "User not found")
 
-        # 2. Получаем лицензии (сортируем от новых к старым)
-        licenses = await conn.fetch("""
-            SELECT status, expires 
-            FROM licenses 
-            WHERE user_uid = $1 
-            ORDER BY created_at DESC
+        # 2. Получаем активную лицензию
+        # Сортируем: сначала активные, потом по дате окончания (самые долгие)
+        license_row = await conn.fetchrow("""
+            SELECT expires FROM licenses 
+            WHERE user_uid = $1 AND status = 'active'
+            ORDER BY expires DESC 
+            LIMIT 1
         """, uid)
 
-        # 3. Ищем активную подписку (логика как на сайте)
-        active_expires = None
-        for lic in licenses:
-            if lic['status'] == 'active':
-                # Если подписка активна и дата есть
-                if lic['expires'] and lic['expires'] >= date.today():
-                    active_expires = lic['expires']
-                    break
-        
-        # Если активной не нашли, но лицензии были — берем дату последней (для инфы)
-        if not active_expires and licenses:
-            active_expires = licenses[0]['expires']
-
-        # Формируем строку даты
+        # 3. Формируем строку даты
         expires_str = "Нет активной подписки"
-        if active_expires:
-            expires_str = active_expires.strftime("%d.%m.%Y")
+        if license_row and license_row['expires']:
+            # Проверяем, не истекла ли дата сегодня
+            if license_row['expires'] >= date.today():
+                expires_str = license_row['expires'].strftime("%d.%m.%Y")
+            else:
+                expires_str = "Истекла"
+
+        # Защита от NULL в группе
+        group_name = user_row["user_group"]
+        if not group_name:
+            group_name = "Пользователь"
 
         return {
             "uid": user_row["uid"],
             "username": user_row["username"],
             "email": user_row["email"],
-            "group": user_row["user_group"] or "Пользователь",
+            "group": group_name,
             "expires": expires_str,
             "avatar_url": None 
         }
@@ -569,6 +566,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
