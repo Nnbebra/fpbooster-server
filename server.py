@@ -251,7 +251,7 @@ class UserProfileData(BaseModel):
     uid: int
     username: str
     email: str
-    group: Optional[str] = "User" # Разрешаем отсутствие группы
+    group: Optional[str] = "Пользователь"
     expires: Optional[str]
     avatar_url: Optional[str] = None
 
@@ -259,14 +259,13 @@ class UserProfileData(BaseModel):
 async def get_client_profile(request: Request, user_data=Depends(current_user)):
     uid = user_data["uid"]
     async with request.app.state.pool.acquire() as conn:
-        # 1. Получаем данные пользователя
-        user_row = await conn.fetchrow("SELECT uid, username, email, user_group FROM users WHERE uid = $1", uid)
+        # 1. Получаем пользователя (БЕЗ user_group, чтобы не было ошибки)
+        user_row = await conn.fetchrow("SELECT uid, username, email FROM users WHERE uid = $1", uid)
         
         if not user_row:
             raise HTTPException(404, "User not found")
 
-        # 2. Получаем активную лицензию
-        # Сортируем: сначала активные, потом по дате окончания (самые долгие)
+        # 2. Получаем самую свежую активную лицензию
         license_row = await conn.fetchrow("""
             SELECT expires FROM licenses 
             WHERE user_uid = $1 AND status = 'active'
@@ -277,22 +276,21 @@ async def get_client_profile(request: Request, user_data=Depends(current_user)):
         # 3. Формируем строку даты
         expires_str = "Нет активной подписки"
         if license_row and license_row['expires']:
-            # Проверяем, не истекла ли дата сегодня
             if license_row['expires'] >= date.today():
                 expires_str = license_row['expires'].strftime("%d.%m.%Y")
             else:
                 expires_str = "Истекла"
 
-        # Защита от NULL в группе
-        group_name = user_row["user_group"]
-        if not group_name:
-            group_name = "Пользователь"
+        # 4. Пробуем получить группу (если колонки нет, будет "Пользователь")
+        user_group = "Пользователь"
+        # Если в будущем добавишь колонку user_group, раскомментируй строку ниже:
+        # user_group = user_row.get("user_group") or "Пользователь"
 
         return {
             "uid": user_row["uid"],
             "username": user_row["username"],
             "email": user_row["email"],
-            "group": group_name,
+            "group": user_group,
             "expires": expires_str,
             "avatar_url": None 
         }
@@ -566,6 +564,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
