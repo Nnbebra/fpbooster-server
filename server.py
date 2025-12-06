@@ -217,8 +217,14 @@ async def get_client_products(request: Request, user_data=Depends(current_user))
 
     return products
 
+# --- ВСТАВИТЬ ВМЕСТО СТАРОЙ ФУНКЦИИ get_client_core ---
+
+# Твой секретный ключ (должен совпадать с тем, чем шифровал)
+SERVER_SIDE_AES_KEY = "15345172281214561882123456789999"
+
 @app.get("/api/client/get-core")
 async def get_client_core(request: Request, ver: str = "standard", user_data = Depends(current_user)):
+    # 1. Проверяем лицензию
     async with request.app.state.pool.acquire() as conn:
         license_row = await conn.fetchrow("SELECT status, expires FROM licenses WHERE user_uid=$1", user_data["uid"])
         if not license_row or license_row['status'] != 'active':
@@ -226,23 +232,29 @@ async def get_client_core(request: Request, ver: str = "standard", user_data = D
         if license_row['expires'] and license_row['expires'] < date.today():
             raise HTTPException(403, "License expired")
 
-    # Выбор файла
-    filename = "FPBooster.dll"
-    if ver == "alpha": filename = "FPBooster_Alpha.dll"
-    elif ver == "plus": filename = "FPBooster_Plus.dll"
+    # 2. Выбираем ЗАШИФРОВАННЫЙ файл (.enc)
+    filename = "FPBooster.dll.enc"
+    if ver == "alpha": filename = "FPBooster_Alpha.dll.enc"
+    elif ver == "plus": filename = "FPBooster_Plus.dll.enc"
 
     file_path = f"protected_builds/{filename}"
     
-    # Фолбэк (если файла нет, отдаем обычный, чтобы не крашилось)
+    # Если файла нет — пробуем найти стандартный
     if not os.path.exists(file_path):
-        file_path = "protected_builds/FPBooster.dll"
+        file_path = "protected_builds/FPBooster.dll.enc"
 
     if not os.path.exists(file_path):
         raise HTTPException(500, "Build not found on server")
 
     with open(file_path, "rb") as f:
         file_bytes = f.read()
-    return Response(content=file_bytes, media_type="application/octet-stream")
+
+    # 3. Отдаем файл + КЛЮЧ в заголовке ответа
+    return Response(
+        content=file_bytes, 
+        media_type="application/octet-stream",
+        headers={"X-Decryption-Key": SERVER_SIDE_AES_KEY} 
+    )
 
 
 # --- ЗАМЕНИТЬ UserProfileData И get_client_profile В server.py ---
@@ -573,6 +585,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
