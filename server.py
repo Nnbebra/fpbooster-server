@@ -245,22 +245,30 @@ async def get_client_core(request: Request, ver: str = "standard", user_data = D
     return Response(content=file_bytes, media_type="application/octet-stream")
 
 
-# --- ЗАМЕНИТЬ ФУНКЦИЮ get_client_profile В server.py ---
+# --- ЗАМЕНИТЬ UserProfileData И get_client_profile В server.py ---
 
+# Модель ответа (ВАЖНО: uid должен быть str, так как в базе это UUID)
 class UserProfileData(BaseModel):
-    uid: int
+    uid: str 
     username: str
     email: str
-    group: Optional[str] = "Пользователь"
+    group: Optional[str] = "User"
     expires: Optional[str]
     avatar_url: Optional[str] = None
 
 @app.get("/api/client/profile", response_model=UserProfileData)
 async def get_client_profile(request: Request, user_data=Depends(current_user)):
-    uid = user_data["uid"]
+    # user_data["uid"] приходит из токена, это уже может быть строка или UUID объект
+    target_uid = user_data["uid"]
+    
     async with request.app.state.pool.acquire() as conn:
-        # 1. Получаем пользователя (БЕЗ user_group, чтобы не было ошибки)
-        user_row = await conn.fetchrow("SELECT uid, username, email FROM users WHERE uid = $1", uid)
+        # 1. Получаем пользователя.
+        # ВАЖНО: В твоей базе ЕСТЬ колонка user_group, поэтому запрашиваем её!
+        user_row = await conn.fetchrow("""
+            SELECT uid, username, email, user_group 
+            FROM users 
+            WHERE uid = $1
+        """, target_uid)
         
         if not user_row:
             raise HTTPException(404, "User not found")
@@ -271,7 +279,7 @@ async def get_client_profile(request: Request, user_data=Depends(current_user)):
             WHERE user_uid = $1 AND status = 'active'
             ORDER BY expires DESC 
             LIMIT 1
-        """, uid)
+        """, target_uid)
 
         # 3. Формируем строку даты
         expires_str = "Нет активной подписки"
@@ -281,16 +289,17 @@ async def get_client_profile(request: Request, user_data=Depends(current_user)):
             else:
                 expires_str = "Истекла"
 
-        # 4. Пробуем получить группу (если колонки нет, будет "Пользователь")
-        user_group = "Пользователь"
-        # Если в будущем добавишь колонку user_group, раскомментируй строку ниже:
-        # user_group = user_row.get("user_group") or "Пользователь"
+        # Преобразуем UUID в строку, чтобы Pydantic не ругался
+        uid_str = str(user_row["uid"])
+
+        # Группа (если в базе NULL, ставим "Пользователь")
+        group_display = user_row["user_group"] if user_row["user_group"] else "Пользователь"
 
         return {
-            "uid": user_row["uid"],
+            "uid": uid_str,
             "username": user_row["username"],
             "email": user_row["email"],
-            "group": user_group,
+            "group": group_display,
             "expires": expires_str,
             "avatar_url": None 
         }
@@ -564,6 +573,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
