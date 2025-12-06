@@ -245,7 +245,7 @@ async def get_client_core(request: Request, ver: str = "standard", user_data = D
     return Response(content=file_bytes, media_type="application/octet-stream")
 
 
-# --- ДОБАВИТЬ В server.py ---
+# --- ВСТАВИТЬ ЭТО В server.py (например, после endpoint get-core) ---
 
 class UserProfileData(BaseModel):
     uid: int
@@ -259,8 +259,7 @@ class UserProfileData(BaseModel):
 async def get_client_profile(request: Request, user_data=Depends(current_user)):
     uid = user_data["uid"]
     async with request.app.state.pool.acquire() as conn:
-        # Получаем данные пользователя и лицензии
-        # user_group - поле в таблице users, expires - в licenses
+        # Собираем данные: UID, Логин, Группу из users и Дату окончания из licenses
         row = await conn.fetchrow("""
             SELECT u.uid, u.username, u.email, u.user_group, l.expires 
             FROM users u
@@ -271,13 +270,19 @@ async def get_client_profile(request: Request, user_data=Depends(current_user)):
         if not row:
             raise HTTPException(404, "User not found")
 
+        # Формируем дату. Если даты нет или подписки нет — пишем "Нет активной"
+        expires_str = "Нет активной подписки"
+        if row["expires"]:
+            # Преобразуем дату в строку формата ДД.ММ.ГГГГ
+            expires_str = row["expires"].strftime("%d.%m.%Y")
+
         return {
             "uid": row["uid"],
             "username": row["username"],
             "email": row["email"],
-            "group": row["user_group"] or "User",
-            "expires": str(row["expires"]) if row["expires"] else "Нет подписки",
-            "avatar_url": None # Тут можно добавить логику аватарок в будущем
+            "group": row["user_group"] or "Пользователь",
+            "expires": expires_str,
+            "avatar_url": None 
         }
 
 # ==========================================================
@@ -549,6 +554,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
