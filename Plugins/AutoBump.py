@@ -9,10 +9,10 @@ import aiohttp
 from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel
 
-[cite_start]from auth.guards import get_current_user # Импорт из твоего проекта [cite: 125]
-from utils_crypto import encrypt_data, decrypt_data # Наш новый файл
+from auth.guards import get_current_user 
+from utils_crypto import encrypt_data, decrypt_data 
 
-# Создаем роутер (как мини-приложение внутри приложения)
+# Создаем роутер
 router = APIRouter(prefix="/api/plus/autobump", tags=["AutoBump Plugin"])
 
 # --- МОДЕЛИ ---
@@ -25,7 +25,7 @@ class CloudBumpSettings(BaseModel):
 async def worker(app):
     print(">>> [PLUGIN] AutoBump Worker Started (Modular)")
     
-    # [cite_start]Регулярки для парсинга (как в C# AutoBumpCore [cite: 176])
+    # Регулярки для парсинга
     RE_GAME_ID = [
         re.compile(r'class="btn[^"]*js-lot-raise"[^>]*data-game="(\d+)"'),
         re.compile(r'data-game-id="(\d+)"'),
@@ -39,7 +39,7 @@ async def worker(app):
 
     while True:
         try:
-            # Используем пул соединений из app.state (передан из server.py)
+            # Используем пул соединений из app.state
             pool = app.state.pool
             
             async with pool.acquire() as conn:
@@ -118,7 +118,7 @@ async def worker(app):
                             post_headers["Referer"] = trade_url
                             
                             async with session.post(raise_url, data=payload, headers=post_headers, cookies=cookies) as post_resp:
-                                pass # Логирование по желанию
+                                pass 
 
                             await asyncio.sleep(2) 
 
