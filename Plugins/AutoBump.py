@@ -9,11 +9,18 @@ import aiohttp
 from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel
 
-from auth.guards import get_current_user 
+# --- ВАЖНОЕ ИЗМЕНЕНИЕ: Импортируем как raw и делаем обертку ---
+from auth.guards import get_current_user as get_current_user_raw 
 from utils_crypto import encrypt_data, decrypt_data 
 
 # Создаем роутер
 router = APIRouter(prefix="/api/plus/autobump", tags=["AutoBump Plugin"])
+
+# --- ОБЕРТКА ДЛЯ АВТОРИЗАЦИИ ---
+# FastAPI будет использовать эту функцию. Она берет request, достает из него app 
+# и передает в твою функцию проверки токена.
+async def get_current_user(request: Request):
+    return await get_current_user_raw(request.app, request)
 
 # --- МОДЕЛИ ---
 class CloudBumpSettings(BaseModel):
@@ -25,7 +32,6 @@ class CloudBumpSettings(BaseModel):
 async def worker(app):
     print(">>> [PLUGIN] AutoBump Worker Started (Modular)")
     
-    # Регулярки для парсинга
     RE_GAME_ID = [
         re.compile(r'class="btn[^"]*js-lot-raise"[^>]*data-game="(\d+)"'),
         re.compile(r'data-game-id="(\d+)"'),
@@ -39,7 +45,6 @@ async def worker(app):
 
     while True:
         try:
-            # Используем пул соединений из app.state
             pool = app.state.pool
             
             async with pool.acquire() as conn:
@@ -70,7 +75,6 @@ async def worker(app):
                         cookies = {"golden_key": golden_key}
 
                         for node_id in nodes:
-                            # 1. GET (Получаем game_id и токен)
                             trade_url = f"https://funpay.com/lots/{node_id}/trade"
                             game_id = None
                             csrf_token = None
@@ -79,7 +83,6 @@ async def worker(app):
                                 if resp.status != 200: continue
                                 page_html = await resp.text()
 
-                            # Парсинг game_id
                             for pattern in RE_GAME_ID:
                                 m = pattern.search(page_html)
                                 if m: 
@@ -95,7 +98,6 @@ async def worker(app):
 
                             if not game_id: continue
 
-                            # Парсинг CSRF
                             m_app = RE_APP_DATA.search(page_html)
                             if m_app:
                                 blob = html_lib.unescape(m_app.group(1))
@@ -109,7 +111,6 @@ async def worker(app):
                                         csrf_token = m.group(1)
                                         break
 
-                            # 2. POST (Поднятие)
                             raise_url = "https://funpay.com/lots/raise"
                             payload = {"game_id": game_id, "node_id": node_id}
                             if csrf_token: payload["csrf_token"] = csrf_token
@@ -122,7 +123,6 @@ async def worker(app):
 
                             await asyncio.sleep(2) 
 
-                        # Обновляем время (рандом 4-5 часов)
                         hours = random.randint(4, 5)
                         async with pool.acquire() as conn:
                             await conn.execute("UPDATE autobump_tasks SET last_bump_at=NOW(), next_bump_at=NOW() + interval '1 hour' * $1 WHERE user_uid=$2", hours, uid)
@@ -139,12 +139,13 @@ async def worker(app):
 
 @router.post("/set")
 async def set_autobump(data: CloudBumpSettings, request: Request, user=Depends(get_current_user)):
-    # Проверка подписки Plus
     async with request.app.state.pool.acquire() as conn:
+        # Проверка PLUS
         has_plus = await conn.fetchval("""
             SELECT EXISTS(SELECT 1 FROM purchases WHERE user_uid=$1 AND plan ILIKE '%plus%')
         """, user['uid'])
         
+        # Если хочешь включить проверку лицензии, раскомментируй:
         # if not has_plus: raise HTTPException(403, "Only for Plus users") 
 
         enc_key = encrypt_data(data.golden_key)
