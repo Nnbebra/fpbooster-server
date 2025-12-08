@@ -22,36 +22,45 @@ class CloudBumpSettings(BaseModel):
     node_ids: list[str]
     active: bool
 
-# --- ЛОГИКА ПАРСИНГА ВРЕМЕНИ ---
-def parse_wait_time(error_msg: str) -> int:
-    """Парсит сообщение FunPay 'Подождите 3 ч. 15 мин.' и возвращает секунды"""
-    # Шаблоны для русского и английского языка
-    # Пример: "Подождите 3 ч.", "3 hours", "15 мин.", "wait 15 min"
+# --- ПАРСИНГ ОШИБОК FUNPAY ---
+
+def parse_wait_time(text: str) -> int:
+    """Парсит 'Подождите 3 ч. 15 мин.' или 'Подождите 4 часа.'"""
+    if not text: return 0
+    text = text.lower()
     
     hours = 0
     minutes = 0
     
-    # Поиск часов
-    h_match = re.search(r'(\d+)\s*(?:ч|h|hour)', error_msg, re.IGNORECASE)
+    # Регулярка для часов (ч, час, часа, часов, h, hour)
+    h_match = re.search(r'(\d+)\s*(?:ч|h|hour|час)', text)
     if h_match:
         hours = int(h_match.group(1))
         
-    # Поиск минут
-    m_match = re.search(r'(\d+)\s*(?:м|min)', error_msg, re.IGNORECASE)
+    # Регулярка для минут (м, мин, m, min)
+    m_match = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     if m_match:
         minutes = int(m_match.group(1))
         
     total_seconds = (hours * 3600) + (minutes * 60)
     
-    # Если не нашли времени, но ошибка есть - ставим дефолт 1 час для безопасности
-    if total_seconds == 0 and ("подожд" in error_msg.lower() or "wait" in error_msg.lower()):
+    # Если цифр не нашли, но есть слово 'подождите', ставим час
+    if total_seconds == 0 and ("подож" in text or "wait" in text):
         return 3600
         
     return total_seconds
 
+def extract_site_message(html_content: str) -> str:
+    """Вытаскивает текст из <div id="site-message">...</div>"""
+    # Ищем конкретный div с id="site-message"
+    match = re.search(r'<div[^>]*id=["\']site-message["\'][^>]*>(.*?)</div>', html_content, re.DOTALL | re.IGNORECASE)
+    if match:
+        return html_lib.unescape(match.group(1)).strip()
+    return ""
+
 # --- ВОРКЕР ---
 async def worker(app):
-    print(">>> [PLUGIN] Smart AutoBump Worker Started (v3 - Time Parsing)")
+    print(">>> [PLUGIN] AutoBump Worker v4 (HTML Parsing Support)")
     
     RE_GAME_ID = [re.compile(r'data-game-id="(\d+)"'), re.compile(r'data-game="(\d+)"')]
     RE_APP_DATA = re.compile(r'data-app-data="([^"]+)"')
@@ -61,7 +70,6 @@ async def worker(app):
         try:
             pool = app.state.pool
             
-            # Берем задачи, время которых пришло (или новые)
             async with pool.acquire() as conn:
                 tasks = await conn.fetch("""
                     SELECT user_uid, encrypted_golden_key, node_ids 
@@ -73,7 +81,7 @@ async def worker(app):
                 """)
 
             if not tasks:
-                await asyncio.sleep(15)
+                await asyncio.sleep(10)
                 continue
 
             async with aiohttp.ClientSession() as session:
@@ -86,7 +94,10 @@ async def worker(app):
                         
                         if not nodes: continue
 
-                        # Используем первый NodeID для получения токенов (CSRF общий для аккаунта)
+                        # ЛОГ НА СЕРВЕРЕ (для твоей отладки)
+                        key_preview = golden_key[:6] + "***"
+                        print(f">>> [Job] User: {uid} | Key: {key_preview} | Nodes: {len(nodes)}")
+
                         first_node = nodes[0]
                         
                         headers = {
@@ -96,21 +107,33 @@ async def worker(app):
                         }
                         cookies = {"golden_key": golden_key}
 
-                        # 1. GET (Получаем CSRF)
+                        # 1. GET Request
                         async with session.get(f"https://funpay.com/lots/{first_node}/trade", headers=headers, cookies=cookies) as resp:
                             if resp.status != 200:
-                                # Ошибка доступа к сайту, откладываем на 5 мин
+                                print(f"--- Error getting page: {resp.status}")
+                                # Откладываем на 5 минут при ошибке сети
                                 async with pool.acquire() as conn:
                                     await conn.execute("UPDATE autobump_tasks SET next_bump_at = NOW() + interval '5 minutes' WHERE user_uid=$1", uid)
                                 continue
                             html = await resp.text()
 
+                        # --- ПРОВЕРКА НА ОШИБКУ ТАЙМЕРА В HTML (СРАЗУ) ---
+                        # Иногда FunPay показывает ошибку прямо на странице, не давая кнопку
+                        site_msg = extract_site_message(html)
+                        if site_msg and ("подож" in site_msg.lower() or "wait" in site_msg.lower()):
+                            wait_sec = parse_wait_time(site_msg)
+                            print(f"--- [Wait] Found timer on page: {site_msg} ({wait_sec}s)")
+                            next_run = wait_sec + random.randint(60, 300)
+                            async with pool.acquire() as conn:
+                                await conn.execute("UPDATE autobump_tasks SET last_bump_at=NOW(), next_bump_at=NOW() + interval '1 second' * $1 WHERE user_uid=$2", next_run, uid)
+                            continue
+
+                        # Parsing Logic (CSRF & GameID)
                         csrf_token = None
                         m_csrf = RE_CSRF.search(html)
                         if m_csrf: csrf_token = m_csrf.group(1)
                         
                         if not csrf_token:
-                            # Fallback: ищем в app-data
                             m_app = RE_APP_DATA.search(html)
                             if m_app:
                                 blob = html_lib.unescape(m_app.group(1))
@@ -118,13 +141,9 @@ async def worker(app):
                                 if m_c: csrf_token = m_c.group(1)
 
                         if not csrf_token:
-                            print(f"[Err] No CSRF for {uid}")
+                            print(f"--- No CSRF found for {uid}")
                             continue
 
-                        # 2. ПОПЫТКА ПОДНЯТИЯ (Пробуем поднять ПЕРВЫЙ лот, чтобы узнать таймер)
-                        # FunPay вернет ошибку таймера даже если мы пытаемся поднять один лот
-                        
-                        # Парсим GameID (нужен для запроса)
                         game_id = None
                         m_app = RE_APP_DATA.search(html)
                         if m_app:
@@ -133,13 +152,14 @@ async def worker(app):
                             if m_g: game_id = m_g.group(1)
                         
                         if not game_id:
-                            # Простой поиск
                             m_g = re.search(r'data-game-id="(\d+)"', html)
                             if m_g: game_id = m_g.group(1)
 
-                        if not game_id: continue
+                        if not game_id: 
+                            print(f"--- No GameID found for {first_node}")
+                            continue
 
-                        # ОТПРАВЛЯЕМ ЗАПРОС
+                        # 2. POST Bump
                         raise_url = "https://funpay.com/lots/raise"
                         payload = {
                             "game_id": game_id,
@@ -147,46 +167,31 @@ async def worker(app):
                             "csrf_token": csrf_token
                         }
                         
-                        # Поднимаем ВСЕ выбранные категории
-                        # Но сначала проверяем ответ от первой, чтобы понять таймер
-                        
-                        next_run_seconds = 4 * 3600 # Дефолт 4 часа
-                        server_message = "Raised"
+                        next_run_seconds = (4 * 3600) + random.randint(60, 300) # Default success timer
 
                         async with session.post(raise_url, data=payload, headers=headers, cookies=cookies) as post_resp:
-                            resp_json = await post_resp.json()
+                            resp_text = await post_resp.text()
                             
-                            # ЛОГИКА ОБРАБОТКИ ОТВЕТА
-                            if not resp_json.get('error'):
-                                # УСПЕХ! Поднимаем остальные ноды (если есть)
-                                if len(nodes) > 1:
-                                    for other_node in nodes[1:]:
-                                        # Нужно найти game_id для других нод, это сложнее.
-                                        # Для оптимизации: часто game_id совпадает, если игра та же.
-                                        # Но правильно - делать GET запрос на каждую.
-                                        # В рамках оптимизации пока поднимаем только ту, где есть game_id, 
-                                        # или (TODO) надо парсить game_id для всех.
-                                        pass 
-                                
-                                # Таймер: 4 часа + рандом 1-5 минут
-                                next_run_seconds = (4 * 3600) + random.randint(60, 300)
-                                server_message = "Success"
-                                
-                            else:
-                                # ОШИБКА (Скорее всего таймер)
+                            # Пытаемся понять ответ
+                            try:
+                                resp_json = await post_resp.json()
                                 msg = resp_json.get('msg', '')
-                                server_message = msg
-                                wait_sec = parse_wait_time(msg)
-                                
-                                if wait_sec > 0:
-                                    # FunPay сказал ждать. Добавляем 2-4 минуты "человеческого" лага
-                                    next_run_seconds = wait_sec + random.randint(120, 240)
-                                    print(f"[Smart] User {uid} must wait: {wait_sec}s. Setting timer.")
-                                else:
-                                    # Какая-то другая ошибка, пробуем через час
-                                    next_run_seconds = 3600
+                                error = resp_json.get('error', False)
+                            except:
+                                # Если не JSON, ищем ошибку в HTML ответа
+                                msg = extract_site_message(resp_text)
+                                error = True if msg else False
 
-                        # Обновляем базу
+                            if not error:
+                                print(f"--- [Success] Bumped node {first_node}")
+                                # Тут можно пройтись по остальным нодам (nodes[1:])
+                            else:
+                                print(f"--- [FunPay Msg] {msg}")
+                                wait_sec = parse_wait_time(msg)
+                                if wait_sec > 0:
+                                    next_run_seconds = wait_sec + random.randint(120, 300)
+
+                        # Update DB
                         async with pool.acquire() as conn:
                             await conn.execute("""
                                 UPDATE autobump_tasks 
@@ -196,14 +201,14 @@ async def worker(app):
                             """, next_run_seconds, uid)
 
                     except Exception as e:
-                        print(f"[Err] Task {uid}: {e}")
+                        print(f"!!! Error processing task {uid}: {e}")
                         async with pool.acquire() as conn:
                             await conn.execute("UPDATE autobump_tasks SET next_bump_at = NOW() + interval '10 minutes' WHERE user_uid=$1", uid)
 
             await asyncio.sleep(2)
 
         except Exception as e:
-            print(f"[Crit] Loop error: {e}")
+            print(f"!!! CRITICAL WORKER ERROR: {e}")
             await asyncio.sleep(30)
 
 # --- API ---
@@ -213,7 +218,6 @@ async def set_autobump(data: CloudBumpSettings, request: Request, user=Depends(g
         enc_key = encrypt_data(data.golden_key)
         nodes_str = ",".join(data.node_ids)
         
-        # При включении ставим NOW(), чтобы воркер СРАЗУ проверил FunPay
         await conn.execute("""
             INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at)
             VALUES ($1, $2, $3, $4, NOW())
