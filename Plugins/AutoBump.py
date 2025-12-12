@@ -93,7 +93,7 @@ async def worker(app):
     
     # Отключаем SSL верификацию и ставим таймауты
     connector = aiohttp.TCPConnector(ssl=False)
-    timeout = aiohttp.ClientTimeout(total=25) # 25 сек на все про все
+    timeout = aiohttp.ClientTimeout(total=30) 
 
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
