@@ -9,14 +9,13 @@ import aiohttp
 from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel
 
-# Импортируем исходную функцию как _raw
+# Используем обертку для авторизации
 from auth.guards import get_current_user as get_current_user_raw 
 from utils_crypto import encrypt_data, decrypt_data 
 
 router = APIRouter(prefix="/api/plus/autobump", tags=["AutoBump Plugin"])
 
-# --- ИСПРАВЛЕНИЕ ОШИБКИ 422 ---
-# Эта функция-обертка критически важна. Она объясняет FastAPI, как достать user и app.
+# --- ИСПРАВЛЕНИЕ ОШИБКИ 422 (ВАЖНО!) ---
 async def get_current_user(request: Request):
     return await get_current_user_raw(request.app, request)
 
@@ -27,44 +26,54 @@ class CloudBumpSettings(BaseModel):
 
 # --- ПАРСИНГ FUNPAY ---
 def parse_wait_time(text: str) -> int:
-    """Парсит время из сообщения FunPay в секунды"""
+    """Парсит время ожидания в секунды"""
     if not text: return 0
     text = text.lower()
-    
     hours = 0
     minutes = 0
     
-    # Регулярка для часов (4 часа, 1 час, 3 h)
+    # 4 часа, 1 ч, 3 h
     h_match = re.search(r'(\d+)\s*(?:ч|h|hour|час)', text)
     if h_match: hours = int(h_match.group(1))
     
-    # Регулярка для минут (15 мин, 10 min)
+    # 15 мин, 10 min
     m_match = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     if m_match: minutes = int(m_match.group(1))
     
     total = (hours * 3600) + (minutes * 60)
     
-    # Если цифр нет, но есть слово "подождите", ставим 1 час (безопасный фолбэк)
     if total == 0 and ("подож" in text or "wait" in text):
-        return 3600
-        
+        return 3600 # Фолбэк 1 час
     return total
 
 def extract_site_message(html_content: str) -> str:
-    """Вытаскивает текст ошибки из <div id='site-message'>"""
+    """Ищет текст ошибки в HTML"""
     if not html_content: return ""
-    # Ищем блок с id="site-message"
+    # Твой div из примера
     match = re.search(r'<div[^>]*id=["\']site-message["\'][^>]*>(.*?)</div>', html_content, re.DOTALL | re.IGNORECASE)
     if match:
         clean = html_lib.unescape(match.group(1)).strip()
-        return re.sub(r'<[^>]+>', '', clean) # Удаляем HTML теги внутри текста
+        return re.sub(r'<[^>]+>', '', clean)
     return ""
+
+async def update_status_db(pool, uid, status_msg, next_bump_in_seconds=None):
+    """Обновляет статус в БД, чтобы клиент сразу видел изменения"""
+    async with pool.acquire() as conn:
+        if next_bump_in_seconds is not None:
+            await conn.execute("""
+                UPDATE autobump_tasks 
+                SET status_message = $1, 
+                    last_bump_at = NOW(),
+                    next_bump_at = NOW() + interval '1 second' * $2
+                WHERE user_uid = $3
+            """, status_msg, next_bump_in_seconds, uid)
+        else:
+            # Просто обновляем текст, не трогая таймер
+            await conn.execute("UPDATE autobump_tasks SET status_message = $1 WHERE user_uid = $2", status_msg, uid)
 
 # --- ВОРКЕР ---
 async def worker(app):
-    print(">>> [PLUGIN] AutoBump Worker v6 Started (Fix 422 + Smart Wait)")
-    
-    # Регулярки для поиска токенов
+    print(">>> [PLUGIN] AutoBump Worker v7 Started")
     RE_CSRF = re.compile(r'csrf-token["\'][^>]+content=["\']([^"\']+)["\']')
     RE_APP_DATA = re.compile(r'data-app-data="([^"]+)"')
 
@@ -72,7 +81,7 @@ async def worker(app):
         try:
             pool = app.state.pool
             
-            # 1. Ищем задачи (активные и время которых пришло)
+            # 1. Берем задачи (активные + время пришло)
             async with pool.acquire() as conn:
                 tasks = await conn.fetch("""
                     SELECT user_uid, encrypted_golden_key, node_ids 
@@ -90,46 +99,43 @@ async def worker(app):
             async with aiohttp.ClientSession() as session:
                 for task in tasks:
                     uid = task['user_uid']
-                    new_status = "Анализ..."
-                    next_run_delay = 600 # Дефолт: 10 мин при ошибке
                     
                     try:
+                        # СРАЗУ ПИШЕМ СТАТУС, ЧТОБЫ КЛИЕНТ ВИДЕЛ
+                        await update_status_db(pool, uid, "🔄 Подключение к FunPay...")
+                        
                         golden_key = decrypt_data(task['encrypted_golden_key'])
                         nodes = [n.strip() for n in task['node_ids'].split(',') if n.strip()]
                         
                         if not nodes:
-                            await update_task(pool, uid, 3600, "Нет NodeID")
+                            await update_status_db(pool, uid, "Ошибка: Нет NodeID", 3600)
                             continue
 
+                        first_node = nodes[0]
                         headers = {
                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                             "X-Requested-With": "XMLHttpRequest",
                             "Origin": "https://funpay.com"
                         }
                         cookies = {"golden_key": golden_key}
-                        first_node = nodes[0]
 
-                        # --- ШАГ 1: GET (Заходим на страницу лота) ---
-                        print(f"--> [Job] {uid}: Checking {first_node}")
+                        # --- ШАГ 1: GET ---
                         async with session.get(f"https://funpay.com/lots/{first_node}/trade", headers=headers, cookies=cookies) as resp:
                             if resp.status != 200:
-                                await update_task(pool, uid, 300, f"Ошибка доступа ({resp.status})")
+                                await update_status_db(pool, uid, f"Ошибка доступа ({resp.status})", 300)
                                 continue
                             html = await resp.text()
 
-                        # --- ШАГ 2: Ищем таймер в HTML (Сразу) ---
+                        # Проверка на ошибку таймера СРАЗУ
                         site_msg = extract_site_message(html)
-                        
-                        # Если нашли "Подождите..."
                         if site_msg and ("подож" in site_msg.lower() or "wait" in site_msg.lower()):
                             wait_sec = parse_wait_time(site_msg)
-                            next_run_delay = wait_sec + random.randint(120, 300) # +2-5 мин рандома
-                            print(f"--- [Wait] {uid}: Found timer {wait_sec}s")
-                            # Сразу обновляем базу и уходим в сон
-                            await update_task(pool, uid, next_run_delay, f"FunPay: {site_msg}")
+                            delay = wait_sec + random.randint(120, 240)
+                            print(f"[Wait] {uid}: {site_msg}")
+                            await update_status_db(pool, uid, f"⏳ FunPay: {site_msg}", delay)
                             continue
 
-                        # --- ШАГ 3: Парсим токены для поднятия ---
+                        # Парсинг
                         csrf = None
                         m = RE_CSRF.search(html)
                         if m: csrf = m.group(1)
@@ -151,65 +157,48 @@ async def worker(app):
                                 if m_g2: game_id = m_g2.group(1)
 
                         if not csrf or not game_id:
-                            print(f"--- [Err] {uid}: Tokens not found. Auth error?")
-                            await update_task(pool, uid, 600, "Ошибка входа (проверьте Golden Key)")
+                            await update_status_db(pool, uid, "Ошибка авторизации (токены)", 600)
                             continue
 
-                        # --- ШАГ 4: POST (Поднятие) ---
-                        payload = {"game_id": game_id, "node_id": first_node, "csrf_token": csrf}
+                        # --- ШАГ 2: POST ---
+                        await update_status_db(pool, uid, "📤 Отправка запроса...")
                         
+                        payload = {"game_id": game_id, "node_id": first_node, "csrf_token": csrf}
                         async with session.post("https://funpay.com/lots/raise", data=payload, headers=headers, cookies=cookies) as post_resp:
                             txt = await post_resp.text()
                             success = False
                             error_msg = ""
                             
-                            # Пытаемся понять ответ (JSON или HTML)
                             try:
                                 js = await post_resp.json()
                                 if not js.get('error'): success = True
                                 else: error_msg = js.get('msg', '')
                             except:
-                                # Не JSON? Ищем HTML ошибку
                                 error_msg = extract_site_message(txt)
-                                if not error_msg: error_msg = "Unknown response"
+                                if not error_msg: error_msg = "Неизвестный ответ сервера"
 
                             if success:
-                                # УСПЕХ! Ставим 4 часа + 2-5 мин рандома
-                                next_run_delay = (4 * 3600) + random.randint(120, 300)
-                                new_status = "✅ Успешно поднято"
-                                print(f"--- [OK] {uid}: Bumped!")
+                                delay = (4 * 3600) + random.randint(120, 300)
+                                print(f"[OK] {uid}: Bumped!")
+                                await update_status_db(pool, uid, "✅ Успешно поднято", delay)
                             else:
-                                # ОШИБКА ОТ FUNPAY
                                 wait_sec = parse_wait_time(error_msg)
                                 if wait_sec > 0:
-                                    next_run_delay = wait_sec + random.randint(120, 300)
-                                    new_status = f"FunPay: {error_msg}"
+                                    delay = wait_sec + random.randint(120, 240)
+                                    print(f"[Fail] {uid} Timer: {error_msg}")
+                                    await update_status_db(pool, uid, f"⏳ FunPay: {error_msg}", delay)
                                 else:
-                                    next_run_delay = 3600
-                                    new_status = f"Ошибка: {error_msg[:30]}..."
-                                print(f"--- [Fail] {uid}: {error_msg}")
-
-                        await update_task(pool, uid, next_run_delay, new_status)
+                                    print(f"[Fail] {uid} Error: {error_msg}")
+                                    await update_status_db(pool, uid, f"Ошибка: {error_msg[:20]}...", 3600)
 
                     except Exception as e:
-                        print(f"!!! Error task {uid}: {e}")
-                        await update_task(pool, uid, 600, f"Сбой: {str(e)[:20]}")
+                        print(f"[Crit] Task {uid}: {e}")
+                        await update_status_db(pool, uid, "Сбой воркера", 600)
 
             await asyncio.sleep(2)
         except Exception as e:
-            print(f"!!! CRIT WORKER: {e}")
+            print(f"[Crit] Main Loop: {e}")
             await asyncio.sleep(30)
-
-async def update_task(pool, uid, seconds, status_msg):
-    """Обновляет время следующего запуска и статус"""
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            UPDATE autobump_tasks 
-            SET last_bump_at = NOW(),
-                next_bump_at = NOW() + interval '1 second' * $1,
-                status_message = $2
-            WHERE user_uid = $3
-        """, seconds, status_msg, uid)
 
 # --- API ---
 
@@ -219,6 +208,7 @@ async def set_autobump(data: CloudBumpSettings, request: Request, user=Depends(g
         enc_key = encrypt_data(data.golden_key)
         nodes_str = ",".join(data.node_ids)
         
+        # Ставим NOW(), чтобы проверить сразу
         await conn.execute("""
             INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at, status_message)
             VALUES ($1, $2, $3, $4, NOW(), 'Инициализация...')
@@ -227,32 +217,30 @@ async def set_autobump(data: CloudBumpSettings, request: Request, user=Depends(g
                 node_ids = EXCLUDED.node_ids,
                 is_active = EXCLUDED.is_active,
                 next_bump_at = NOW(),
-                status_message = 'Запуск...'
+                status_message = 'Запуск проверки...'
         """, user['uid'], enc_key, nodes_str, data.active)
 
     return {"status": "success", "active": data.active}
 
 @router.post("/force_check")
 async def force_check_autobump(request: Request, user=Depends(get_current_user)):
-    """Кнопка 'Проверить сейчас'"""
     async with request.app.state.pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM autobump_tasks WHERE user_uid=$1", user['uid'])
-        if not exists:
-            return {"status": "error", "message": "Сначала включите автоподнятие"}
-            
+        # Сбрасываем таймер на сейчас и меняем статус
         await conn.execute("""
             UPDATE autobump_tasks 
             SET next_bump_at = NOW(), 
-                status_message = 'Принудительная проверка...' 
+                status_message = 'В очереди на проверку...' 
             WHERE user_uid = $1
         """, user['uid'])
-        
-    return {"status": "success", "message": "В очереди"}
+    return {"status": "success"}
 
 @router.get("/status")
 async def get_autobump_status(request: Request, user=Depends(get_current_user)):
     async with request.app.state.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT is_active, last_bump_at, next_bump_at, status_message FROM autobump_tasks WHERE user_uid=$1", user['uid'])
+        row = await conn.fetchrow("""
+            SELECT is_active, last_bump_at, next_bump_at, status_message 
+            FROM autobump_tasks WHERE user_uid=$1
+        """, user['uid'])
     
     if not row: return {"is_active": False}
 
