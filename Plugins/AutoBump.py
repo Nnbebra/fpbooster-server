@@ -16,7 +16,8 @@ class CloudBumpSettings(BaseModel):
     node_ids: list[str]
     active: bool
 
-# --- Helpers ---
+# --- ЛОГИКА ИЗ СТАРОГО БОТА (bump.py.txt) ---
+
 def parse_wait_time(text: str) -> int:
     if not text: return 14400 
     text = text.lower()
@@ -28,68 +29,88 @@ def parse_wait_time(text: str) -> int:
     if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total if total > 0 else 14400
 
-def extract_alert_message(html: str) -> str:
-    match = re.search(r'class="[^"]*ajax-alert-danger"[^>]*>(.*?)</div>', html, re.DOTALL)
-    return html_lib.unescape(match.group(1)).strip() if match else ""
+def extract_alert_message(html_content: str) -> str:
+    match = re.search(r'class="[^"]*ajax-alert-danger"[^>]*>(.*?)</div>', html_content, re.DOTALL)
+    if match:
+        return html_lib.unescape(match.group(1)).strip()
+    return ""
 
-def detect_page_state(html: str, url: str) -> str:
-    """Определяет, что за страницу вернул FunPay"""
-    html_lower = html.lower()
-    
-    # 1. Проверка на логин
-    if "login" in str(url) or "action=\"/login\"" in html_lower or "вохранить" in html_lower or "войти" in html_lower:
-        if "user-link-dropdown" not in html_lower: # Если нет меню юзера, значит точно разлогин
-            return "LOGIN_REQUIRED"
+def extract_game_id_and_csrf_legacy(html_text: str):
+    """
+    Портированная логика из bump.py.txt (Regex вместо JSON)
+    Это работает надежнее для категорий типа 1094.
+    """
+    csrf = None
+    game_id = None
 
-    # 2. Проверка на защиту
-    if "<title>just a moment...</title>" in html_lower or "ddos-guard" in html_lower:
-        return "BLOCKED"
-
-    # 3. Проверка на 404/Ошибку
-    if "страница не найдена" in html_lower or "page not found" in html_lower:
-        return "NOT_FOUND"
-
-    return "OK"
-
-def extract_data(html: str):
-    csrf, game_id = None, None
-    m_app = re.search(r'data-app-data=["\']([^"\']+)["\']', html)
+    # 1. Поиск в data-app-data (Сначала атрибут, потом unescape, потом Regex внутри)
+    m_app = re.search(r'data-app-data="([^"]+)"', html_text)
     if m_app:
         try:
             blob = html_lib.unescape(m_app.group(1))
-            m_c = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
-            if m_c: csrf = m_c.group(1)
-            m_g = re.search(r'"game-id"\s*:\s*(\d+)', blob)
-            if m_g: game_id = m_g.group(1)
-        except: pass
-    
+            
+            # CSRF внутри blob
+            m_csrf = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or \
+                     re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
+            if m_csrf: csrf = m_csrf.group(1)
+            
+            # GameID внутри blob
+            m_gid = re.search(r'"game-id"\s*:\s*(\d+)', blob)
+            if m_gid: game_id = m_gid.group(1)
+        except:
+            pass
+
+    # 2. Fallback методы (из старого кода)
     if not csrf:
-        m = re.search(r'name=["\']csrf_token["\'][^>]*value=["\']([^"\']+)["\']', html)
+        # <meta name="csrf-token" ...>
+        m = re.search(r'<meta[^>]+name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']', html_text)
         if m: csrf = m.group(1)
+        
+        # <input name="csrf_token" ...>
+        if not csrf:
+            m = re.search(r'<input[^>]+name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html_text)
+            if m: csrf = m.group(1)
+
     if not game_id:
-        m = re.search(r'data-game-id=["\'](\d+)["\']', html)
+        # data-game-id="..."
+        m = re.search(r'data-game-id="(\d+)"', html_text)
         if m: game_id = m.group(1)
-        else:
-            m = re.search(r'class="[^"]*js-lot-raise"[^>]*data-game=["\'](\d+)["\']', html)
+        
+        # class="... js-lot-raise ..." data-game="..." (Приоритетный метод старого бота)
+        if not game_id:
+            m = re.search(r'class="[^"]*js-lot-raise"[^>]*data-game="(\d+)"', html_text) 
             if m: game_id = m.group(1)
             
+        # data-game="..."
+        if not game_id:
+            m = re.search(r'data-game="(\d+)"', html_text)
+            if m: game_id = m.group(1)
+
     return game_id, csrf
 
 async def update_db(pool, uid, msg, delay=None):
     try:
         async with pool.acquire() as conn:
             if delay is not None:
-                final_delay = delay + random.randint(60, 180)
+                final_delay = delay + random.randint(120, 300) # +2-5 мин рандома
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, last_bump_at=NOW(), next_bump_at=NOW()+interval '1 second'*$2 WHERE user_uid=$3", msg, final_delay, uid)
             else:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1 WHERE user_uid=$2", msg, uid)
     except Exception as e:
         print(f"[AutoBump] DB Error: {e}")
 
+# --- WORKER ---
 async def worker(app):
     await asyncio.sleep(3)
-    print(">>> [AutoBump] DIAGNOSTIC WORKER STARTED", flush=True)
-    HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "X-Requested-With": "XMLHttpRequest"}
+    print(">>> [AutoBump] WORKER RELOADED (Legacy Parser)", flush=True)
+    
+    # Заголовки точь-в-точь как в старом коде
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "ru,en;q=0.9",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://funpay.com"
+    }
 
     while True:
         try:
@@ -106,81 +127,105 @@ async def worker(app):
                     uid = task['user_uid']
                     try:
                         key = decrypt_data(task['encrypted_golden_key'])
-                        nodes = [n.strip() for n in str(task['node_ids']).split(',') if n.strip().isdigit()]
+                        raw_nodes = str(task['node_ids']).split(',')
+                        nodes = [n.strip() for n in raw_nodes if n.strip().isdigit()]
+                        
                         if not nodes:
                             await update_db(pool, uid, "❌ Нет ID лотов", 3600)
                             continue
 
-                        # ДИАГНОСТИКА: Берем первый лот
-                        node = nodes[0]
                         cookies = {"golden_key": key}
                         
-                        await update_db(pool, uid, f"🔍 Анализ лота {node}...")
+                        # Переменные для агрегации результата
+                        batch_timer = 0
+                        batch_success = 0
+                        has_error = False
+                        error_msg = ""
 
-                        # Пробуем и chips (валюта) и lots (предметы), так как ID может быть любым
-                        target_url = f"https://funpay.com/lots/{node}/trade"
-                        
-                        async with session.get(target_url, cookies=cookies, timeout=15, allow_redirects=True) as resp:
-                            final_url = str(resp.url)
-                            html = await resp.text()
+                        # Идем по всем лотам
+                        for node in nodes:
+                            await asyncio.sleep(random.uniform(1.0, 2.0)) # Пауза между запросами
                             
-                            # 1. Анализ состояния страницы
-                            state = detect_page_state(html, final_url)
+                            target_url = f"https://funpay.com/lots/{node}/trade"
                             
-                            if state == "LOGIN_REQUIRED":
-                                print(f"[AutoBump] {uid} -> Login Required")
-                                await update_db(pool, uid, "❌ Слетела сессия (обновите GoldenKey)", 999999)
-                                continue
-                            
-                            if state == "BLOCKED":
-                                print(f"[AutoBump] {uid} -> Cloudflare Block")
-                                await update_db(pool, uid, "🛡️ IP заблокирован FunPay", 3600)
-                                continue
-                                
-                            if state == "NOT_FOUND":
-                                print(f"[AutoBump] {uid} -> 404 Not Found")
-                                await update_db(pool, uid, f"❌ Лот {node} не существует/удален", 3600)
-                                continue
+                            async with session.get(target_url, cookies=cookies, timeout=15) as resp:
+                                if resp.status != 200:
+                                    print(f"[AutoBump] {uid} -> HTTP {resp.status}")
+                                    has_error = True
+                                    error_msg = f"HTTP {resp.status}"
+                                    continue
+                                html = await resp.text()
 
-                            # 2. Проверка таймера
+                            # 1. Проверка на таймер
                             alert = extract_alert_message(html)
                             if alert and ("подож" in alert.lower() or "wait" in alert.lower()):
                                 sec = parse_wait_time(alert)
-                                await update_db(pool, uid, f"⏳ {alert}", sec)
+                                if sec > batch_timer: batch_timer = sec
                                 continue
 
-                            # 3. Парсинг
-                            gid, csrf = extract_data(html)
+                            # 2. Парсинг (Старый метод)
+                            gid, csrf = extract_game_id_and_csrf_legacy(html)
+                            
                             if not gid or not csrf:
-                                # Если это категория (например 1094), там нет game-id
-                                if "chips" in final_url or "lots" in final_url:
-                                    print(f"[AutoBump] {uid} -> No buttons found on page")
-                                    await update_db(pool, uid, f"❌ Не лот (ID {node} это категория?)", 3600)
-                                else:
-                                    await update_db(pool, uid, "❌ Ошибка структуры HTML", 1800)
+                                print(f"[AutoBump] {uid} -> Parse Fail Node {node}")
+                                has_error = True
+                                error_msg = "Ошибка парсинга"
+                                # Проверка на слет авторизации
+                                if "login" in str(resp.url):
+                                    error_msg = "Слетела сессия"
+                                    break
                                 continue
 
-                            # 4. Поднятие
+                            # 3. Поднятие
                             post_headers = HEADERS.copy()
                             post_headers["X-CSRF-Token"] = csrf
-                            # Важно: Referer должен совпадать
-                            post_headers["Referer"] = final_url 
+                            post_headers["Referer"] = target_url
                             
-                            async with session.post("https://funpay.com/lots/raise", data={"game_id": gid, "node_id": node, "csrf_token": csrf}, cookies=cookies, headers=post_headers) as post_resp:
-                                res = await post_resp.json()
-                                if not res.get("error"):
-                                    await update_db(pool, uid, "✅ Успешно поднято", 14400)
-                                else:
-                                    msg = res.get("msg", "")
-                                    await update_db(pool, uid, f"⏳ {msg}", parse_wait_time(msg))
+                            payload = {"game_id": gid, "node_id": node, "csrf_token": csrf}
+                            
+                            async with session.post("https://funpay.com/lots/raise", data=payload, cookies=cookies, headers=post_headers) as post_resp:
+                                txt = await post_resp.text()
+                                # Парсинг ответа
+                                is_ok = False
+                                try:
+                                    js = json.loads(txt)
+                                    if not js.get("error"): is_ok = True
+                                    else: 
+                                        srv_msg = js.get("msg", "")
+                                        sec = parse_wait_time(srv_msg)
+                                        if sec > batch_timer: batch_timer = sec
+                                except:
+                                    # Fallback если не JSON
+                                    if "поднято" in txt.lower(): is_ok = True
+                                
+                                if is_ok: batch_success += 1
+
+                        # --- ИТОГ ПО ЮЗЕРУ ---
+                        if error_msg == "Слетела сессия":
+                            await update_db(pool, uid, "❌ Слетела сессия (обновите ключ)", 999999)
+                        elif batch_timer > 0:
+                            # Найден таймер
+                            h = batch_timer // 3600
+                            m = (batch_timer % 3600) // 60
+                            print(f"[AutoBump] {uid} -> Timer {h}h {m}m")
+                            await update_db(pool, uid, f"⏳ Ждем {h}ч {m}мин", batch_timer)
+                        elif batch_success > 0:
+                            # Успех
+                            print(f"[AutoBump] {uid} -> Success ({batch_success})")
+                            await update_db(pool, uid, f"✅ Поднято: {batch_success}", 14400)
+                        elif has_error:
+                            await update_db(pool, uid, f"❌ {error_msg}", 600)
+                        else:
+                            # Странный кейс, но пусть будет таймер по умолчанию
+                            await update_db(pool, uid, "✅ Цикл завершен", 14400)
 
                     except Exception as e:
-                        print(f"[AutoBump] Error {uid}: {e}")
-                        await update_db(pool, uid, "⚠️ Сбой системы", 600)
+                        print(f"[AutoBump] Loop Error {uid}: {e}")
+                        await update_db(pool, uid, "⚠️ Сбой воркера", 600)
 
             await asyncio.sleep(1)
         except Exception as e:
-            print(f"CRITICAL: {e}")
+            print(f"CRITICAL WORKER: {e}")
             await asyncio.sleep(5)
 
 # --- API ---
