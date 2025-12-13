@@ -31,7 +31,7 @@ async def log_db(pool, uid, msg, next_delay=None):
     except Exception as e:
         print(f"[DB Error] {e}")
 
-# --- ПАРСЕРЫ (Точная копия логики bump.py) ---
+# --- ПАРСЕРЫ ---
 def parse_wait_time(text: str) -> int:
     if not text: return 14400 
     text = text.lower()
@@ -43,40 +43,40 @@ def parse_wait_time(text: str) -> int:
     if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total if total > 0 else 14400
 
-def get_tokens_legacy(html: str):
+def get_tokens_v15(html: str):
     """
-    Мощный парсер CSRF/GID, портированный из bump.py
+    Парсер V15: Включает data-csrf и fallback логику из bump.py
     """
     csrf, gid = None, None
     log = []
 
-    # --- 1. CSRF (6 способов из bump.py) ---
-    # A. data-app-data (Самый надежный)
+    # --- 1. CSRF (7 способов) ---
+    # A. data-app-data
     m = re.search(r'data-app-data="([^"]+)"', html)
     if m:
         try:
             blob = html_lib.unescape(m.group(1))
             t = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
-            if t: 
-                csrf = t.group(1)
-                log.append("C:AppData")
+            if t: csrf = t.group(1); log.append("C:App")
         except: pass
 
-    # B. Meta tag
+    # B. Meta / Input
     if not csrf:
         m = re.search(r'<meta[^>]+name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']', html)
         if m: csrf = m.group(1); log.append("C:Meta")
-
-    # C. Input field
     if not csrf:
         m = re.search(r'<input[^>]+name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
         if m: csrf = m.group(1); log.append("C:Inp")
 
-    # D. Nuxt / Window / Data
+    # C. Data-CSRF (ВАЖНО! Было пропущено)
+    if not csrf:
+        m = re.search(r'data-csrf(?:-token)?=["\']([^"\']+)["\']', html)
+        if m: csrf = m.group(1); log.append("C:Data")
+
+    # D. JS
     if not csrf:
         m = re.search(r'window\.__NUXT__[^;]+["\']csrfToken["\']\s*:\s*["\']([^"\']+)["\']', html)
         if m: csrf = m.group(1); log.append("C:Nuxt")
-    
     if not csrf:
         m = re.search(r"window\._csrf\s*=\s*['\"]([^'\"]+)['\"]", html)
         if m: csrf = m.group(1); log.append("C:Win")
@@ -98,15 +98,14 @@ def get_tokens_legacy(html: str):
 
     return gid, csrf, "+".join(log)
 
-# --- ВОРКЕР V14 ---
+# --- ВОРКЕР V15 (FORCE MODE) ---
 async def worker(app):
     await asyncio.sleep(3)
-    print(">>> [AutoBump] WORKER V14 (LEGACY CORE) STARTED", flush=True)
+    print(">>> [AutoBump] WORKER V15 (FORCE MODE) STARTED", flush=True)
     
     connector = aiohttp.TCPConnector(ssl=False)
-    timeout = aiohttp.ClientTimeout(total=60) # 60 сек на лот
+    timeout = aiohttp.ClientTimeout(total=60) 
 
-    # Заголовки как в старом боте
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
@@ -136,8 +135,7 @@ async def worker(app):
             task = tasks[0]
             uid = task['user_uid']
 
-            # БЛОК 15 МИН
-            await log_db(pool, uid, "[1/5] Старт V14...", 900)
+            await log_db(pool, uid, "[1/5] Старт V15...", 900)
 
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 try:
@@ -154,18 +152,15 @@ async def worker(app):
                     final_msg = ""
                     final_delay = 0
                     success_cnt = 0
-
-                    # Глобальный CSRF (если на странице лота не найдем)
                     global_csrf = None
 
                     for i, node in enumerate(nodes):
                         url = f"https://funpay.com/lots/{node}/trade"
-                        
                         get_hdrs = HEADERS.copy()
                         get_hdrs["Referer"] = url
 
                         html = ""
-                        # RETRY 3 раза
+                        # RETRY GET
                         for attempt in range(3):
                             try:
                                 async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
@@ -183,38 +178,39 @@ async def worker(app):
                         if final_msg: break 
 
                         # PARSE
-                        gid, csrf, debug_info = get_tokens_legacy(html)
+                        gid, csrf, debug_info = get_tokens_v15(html)
                         
-                        # Fallback на главную, если CSRF нет
+                        # Fallback: Если нет CSRF, ищем на главной
                         if not csrf:
                             if global_csrf: 
                                 csrf = global_csrf
                             else:
                                 try:
                                     async with session.get("https://funpay.com/", headers=get_hdrs, cookies=cookies) as r_home:
-                                        _, h_csrf, _ = get_tokens_legacy(await r_home.text())
-                                        if h_csrf: 
-                                            global_csrf = h_csrf
-                                            csrf = h_csrf
+                                        _, h_csrf, _ = get_tokens_v15(await r_home.text())
+                                        if h_csrf: global_csrf = h_csrf; csrf = h_csrf
                                 except: pass
 
-                        if not gid or not csrf:
-                            await log_db(pool, uid, f"Skip {node}: G={gid} C={bool(csrf)}", None)
+                        # Если нет GID - это точно ошибка. Но если нет CSRF - пробуем FORCE POST!
+                        if not gid:
+                            await log_db(pool, uid, f"Skip {node}: No GID found", None)
                             if "just a moment" in html.lower():
                                 final_msg = "🛡️ Cloudflare"; final_delay = 3600; break
-                            if not final_msg: final_msg = f"❌ Err: {debug_info}"; final_delay = 600
                             continue
 
-                        # POST (Сразу, без проверки таймера, как в старом боте)
-                        # Таймер проверим по ответу сервера
-                        await log_db(pool, uid, f"[POST] {node}...", None)
+                        # POST
+                        msg_log = f"🚀 POST {node}..."
+                        if not csrf: msg_log += " (No CSRF)"
+                        await log_db(pool, uid, msg_log, None)
                         
                         post_hdrs = HEADERS.copy()
-                        post_hdrs["X-CSRF-Token"] = csrf
                         post_hdrs["Referer"] = url
                         post_hdrs["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
                         
-                        payload = {"game_id": gid, "node_id": node, "csrf_token": csrf}
+                        if csrf: post_hdrs["X-CSRF-Token"] = csrf
+                        
+                        payload = {"game_id": gid, "node_id": node}
+                        if csrf: payload["csrf_token"] = csrf
 
                         try:
                             async with session.post("https://funpay.com/lots/raise", data=payload, cookies=cookies, headers=post_hdrs) as p_resp:
@@ -224,13 +220,13 @@ async def worker(app):
                                     if not js.get("error"):
                                         success_cnt += 1
                                     else:
-                                        # Вот тут ловим таймер от сервера
                                         msg = js.get("msg", "")
                                         w = parse_wait_time(msg)
                                         if w > 0:
                                             if w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
                                         else:
-                                            final_msg = f"⚠️ FP: {msg[:20]}"
+                                            # Ошибка FP, но не таймер
+                                            final_msg = f"⚠️ FP: {msg[:25]}"
                                 except:
                                     if "поднято" in txt.lower(): success_cnt += 1
                         except:
@@ -250,7 +246,7 @@ async def worker(app):
                     elif final_msg:
                         await log_db(pool, uid, final_msg, 1800)
                     else:
-                        await log_db(pool, uid, "⚠️ Нет результата", 3600)
+                        await log_db(pool, uid, "⚠️ Нет действий", 3600)
 
                 except Exception as e:
                     traceback.print_exc()
