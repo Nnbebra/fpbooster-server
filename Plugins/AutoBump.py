@@ -20,16 +20,17 @@ class CloudBumpSettings(BaseModel):
 
 # --- ЛОГИРОВАНИЕ ---
 async def log_db(pool, uid, msg, next_delay=None):
-    """Пишет статус в БД"""
     try:
-        # Обрезаем до 100 символов, чтобы влезло в базу
-        clean_msg = str(msg)[:100]
+        clean_msg = str(msg)[:150]
+        # Вывод в консоль сервера, чтобы вы видели, что скрипт работает
         print(f"[AutoBump {uid}] {clean_msg}", flush=True)
         
         async with pool.acquire() as conn:
             if next_delay is not None:
+                # Обновляем статус и время следующего запуска
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, last_bump_at=NOW(), next_bump_at=NOW()+interval '1 second'*$2 WHERE user_uid=$3", clean_msg, next_delay, uid)
             else:
+                # Обновляем только текст
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1 WHERE user_uid=$2", clean_msg, uid)
     except Exception as e:
         print(f"[DB Error] {e}")
@@ -47,9 +48,8 @@ def parse_wait_time(text: str) -> int:
     return total if total > 0 else 14400
 
 def get_tokens_debug(html: str):
-    """Возвращает (gid, csrf, debug_log)"""
+    """Ищет CSRF и GameID. Возвращает (gid, csrf, debug_log)"""
     csrf, gid = None, None
-    blob = None
     log = []
 
     # 1. CSRF
@@ -58,40 +58,43 @@ def get_tokens_debug(html: str):
         csrf = m.group(1)
         log.append("C:Input")
     
-    # 2. GID (Button)
-    m = re.search(r'class="[^"]*js-lot-raise"[^>]*data-game=["\'](\d+)["\']', html)
-    if m: 
-        gid = m.group(1)
-        log.append("G:Btn")
+    # 2. GID (Поиск для категорий и лотов)
+    # Кнопка (лоты)
+    if not gid:
+        m = re.search(r'class="[^"]*js-lot-raise"[^>]*data-game=["\'](\d+)["\']', html)
+        if m: gid = m.group(1); log.append("G:Btn")
 
-    # GID (Attribute)
+    # Атрибут data-game-id
     if not gid:
         m = re.search(r'data-game-id=["\'](\d+)["\']', html)
         if m: gid = m.group(1); log.append("G:AttrID")
 
+    # Атрибут data-game (для категорий типа 1094)
     if not gid:
         m = re.search(r'data-game=["\'](\d+)["\']', html)
         if m: gid = m.group(1); log.append("G:Attr")
 
     # 3. APP DATA (Fallback)
-    m_app = re.search(r'data-app-data="([^"]+)"', html)
-    if m_app:
-        try:
-            blob = html_lib.unescape(m_app.group(1))
-            if not csrf:
-                t = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
-                if t: csrf = t.group(1); log.append("C:Blob")
-            if not gid:
-                t = re.search(r'"game-id"\s*:\s*(\d+)', blob)
-                if t: gid = t.group(1); log.append("G:Blob")
-        except: 
-            log.append("BlobErr")
+    if not csrf or not gid:
+        m_app = re.search(r'data-app-data="([^"]+)"', html)
+        if m_app:
+            try:
+                blob = html_lib.unescape(m_app.group(1))
+                if not csrf:
+                    t = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
+                    if t: csrf = t.group(1); log.append("C:Blob")
+                if not gid:
+                    t = re.search(r'"game-id"\s*:\s*(\d+)', blob)
+                    if t: gid = t.group(1); log.append("G:Blob")
+            except: 
+                log.append("BlobErr")
 
     return gid, csrf, "+".join(log)
 
 # --- ВОРКЕР ---
 async def worker(app):
     await asyncio.sleep(3)
+    # !!! ЕСЛИ ВЫ НЕ ВИДИТЕ ЭТУ СТРОКУ В КОНСОЛИ СЕРВЕРА — ФАЙЛ НЕ ОБНОВИЛСЯ !!!
     print(">>> [AutoBump] WORKER V10 (EXTREME DEBUG) STARTED", flush=True)
     
     connector = aiohttp.TCPConnector(ssl=False)
@@ -100,9 +103,10 @@ async def worker(app):
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
+        # Обязательный заголовок для POST запросов FunPay
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "Origin": "https://funpay.com",
-        "Referer": "https://funpay.com/users/"
+        "Referer": "https://funpay.com/users/" 
     }
 
     while True:
@@ -111,7 +115,7 @@ async def worker(app):
                 await asyncio.sleep(1); continue
             pool = app.state.pool
             
-            # Берем 1 задачу для детальной отладки
+            # Берем 1 задачу
             tasks = []
             async with pool.acquire() as conn:
                 tasks = await conn.fetch("""
@@ -128,8 +132,8 @@ async def worker(app):
             task = tasks[0]
             uid = task['user_uid']
 
-            # БЛОКИРУЕМ ЗАДАЧУ (15 мин)
-            await log_db(pool, uid, "[1/5] Старт (Блок 15м)...", 900)
+            # БЛОКИРУЕМ ЗАДАЧУ НА 15 МИНУТ (чтобы не было вечного цикла при сбое)
+            await log_db(pool, uid, "[1/5] Старт (V10)...", 900)
 
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 try:
@@ -152,9 +156,8 @@ async def worker(app):
                         await log_db(pool, uid, f"[2/5] GET {node}...", None)
                         url = f"https://funpay.com/lots/{node}/trade"
                         
-                        # Копируем заголовки, убираем Content-Type для GET
                         get_hdrs = HEADERS.copy()
-                        del get_hdrs["Content-Type"]
+                        del get_hdrs["Content-Type"] # Для GET не нужен
                         get_hdrs["Referer"] = url
 
                         html = ""
@@ -168,10 +171,7 @@ async def worker(app):
                         except:
                             final_msg = "❌ GET Timeout"; final_delay = 600; break
 
-                        # ШАГ 3: Парсинг
-                        await log_db(pool, uid, f"[3/5] HTML ({len(html)}b) Parsing...", None)
-                        
-                        # Проверка на таймер
+                        # ШАГ 3: Проверка таймера на странице
                         if "Подождите" in html:
                             m = re.search(r'class="[^"]*ajax-alert-danger"[^>]*>(.*?)</div>', html, re.DOTALL)
                             tm = m.group(1).strip() if m else "Timer"
@@ -179,6 +179,7 @@ async def worker(app):
                             if sec > final_delay: final_delay = sec; final_msg = f"⏳ {tm}"
                             continue
 
+                        # ШАГ 4: Парсинг токенов
                         gid, csrf, debug_info = get_tokens_debug(html)
                         
                         if not gid or not csrf:
@@ -187,7 +188,7 @@ async def worker(app):
                             final_msg = f"❌ ParseErr: {debug_info}"; final_delay = 600
                             continue
 
-                        # ШАГ 4: Отправка
+                        # ШАГ 5: Отправка (Поднятие)
                         await log_db(pool, uid, f"[4/5] POST (G:{gid})...", None)
                         
                         post_hdrs = HEADERS.copy()
@@ -198,6 +199,10 @@ async def worker(app):
                         try:
                             async with session.post("https://funpay.com/lots/raise", data=payload, cookies=cookies, headers=post_hdrs) as p_resp:
                                 txt = await p_resp.text()
+                                
+                                if p_resp.status != 200:
+                                    final_msg = f"❌ POST {p_resp.status}"; final_delay = 600; continue
+
                                 try:
                                     js = json.loads(txt)
                                     if not js.get("error"):
@@ -216,7 +221,7 @@ async def worker(app):
 
                         await asyncio.sleep(1)
 
-                    # --- ШАГ 5: ИТОГИ ---
+                    # --- ИТОГИ ---
                     await log_db(pool, uid, f"[5/5] Finalizing...", None)
 
                     if final_delay > 900000:
@@ -234,7 +239,7 @@ async def worker(app):
 
                 except Exception as e:
                     traceback.print_exc()
-                    # ВОТ ГЛАВНОЕ: Пишем текст ошибки в статус!
+                    # Пишем текст ошибки в статус
                     err_text = str(e)[:90]
                     await log_db(pool, uid, f"⚠️ CRASH: {err_text}", 600)
 
