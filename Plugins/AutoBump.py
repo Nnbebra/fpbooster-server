@@ -18,19 +18,20 @@ class CloudBumpSettings(BaseModel):
     node_ids: list[str]
     active: bool
 
-# --- ЛОГИРОВАНИЕ ---
+# --- ЛОГИРОВАНИЕ (EXTREME) ---
 async def log_db(pool, uid, msg, next_delay=None):
+    """Пишет подробный статус в базу"""
     try:
-        clean_msg = str(msg)[:150]
-        # Дублируем в консоль сервера для отладки
-        print(f"[AutoBump] {uid}: {clean_msg}", flush=True) 
+        clean_msg = str(msg)[:200] # Чуть длиннее сообщения
+        print(f"[AutoBump {uid}] {clean_msg}", flush=True)
+        
         async with pool.acquire() as conn:
             if next_delay is not None:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, last_bump_at=NOW(), next_bump_at=NOW()+interval '1 second'*$2 WHERE user_uid=$3", clean_msg, next_delay, uid)
             else:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1 WHERE user_uid=$2", clean_msg, uid)
     except Exception as e:
-        print(f"[DB Error] {e}")
+        print(f"[DB FAIL] {e}")
 
 # --- ПАРСЕРЫ ---
 def parse_wait_time(text: str) -> int:
@@ -44,95 +45,62 @@ def parse_wait_time(text: str) -> int:
     if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total if total > 0 else 14400
 
-def extract_alert_message(html: str) -> str:
-    match = re.search(r'class="[^"]*ajax-alert-danger"[^>]*>(.*?)</div>', html, re.DOTALL)
-    if match: return html_lib.unescape(match.group(1)).strip()
-    return ""
+def get_debug_tokens(html: str):
+    """Возвращает (gid, csrf, debug_string)"""
+    csrf, gid = None, None
+    log = []
 
-def get_tokens_ultimate(html: str):
-    """
-    Полный набор методов поиска (из C# и старого бота).
-    """
-    csrf, game_id = None, None
-    debug_log = []
-
-    # --- 1. CSRF ---
-    # A. Input
+    # 1. CSRF
     m = re.search(r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
-    if m: 
-        csrf = m.group(1)
-        debug_log.append("csrf_input")
+    if m: csrf = m.group(1); log.append("C:Input")
     
-    # B. App Data / Meta / Js (Fallback)
     if not csrf:
+        m = re.search(r'name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']', html)
+        if m: csrf = m.group(1); log.append("C:Meta")
+
+    # 2. GID
+    m = re.search(r'class="[^"]*js-lot-raise"[^>]*data-game=["\'](\d+)["\']', html)
+    if m: gid = m.group(1); log.append("G:Btn")
+
+    if not gid:
+        m = re.search(r'data-game-id=["\'](\d+)["\']', html)
+        if m: gid = m.group(1); log.append("G:AttrID")
+
+    if not gid:
+        m = re.search(r'data-game=["\'](\d+)["\']', html)
+        if m: gid = m.group(1); log.append("G:Attr")
+
+    # 3. APP DATA (Fallback)
+    if not csrf or not gid:
         m_app = re.search(r'data-app-data="([^"]+)"', html)
         if m_app:
             try:
                 blob = html_lib.unescape(m_app.group(1))
-                t = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
-                if t: 
-                    csrf = t.group(1)
-                    debug_log.append("csrf_blob")
-            except: pass
-
-    # --- 2. GAME ID (Все методы) ---
-    
-    # A. Кнопка (для лотов)
-    # class="... js-lot-raise ... data-game="123"
-    if not game_id:
-        m = re.search(r'class="[^"]*js-lot-raise"[^>]*data-game=["\'](\d+)["\']', html)
-        if m: 
-            game_id = m.group(1)
-            debug_log.append("gid_btn")
-
-    # B. Атрибут data-game-id
-    if not game_id:
-        m = re.search(r'data-game-id=["\'](\d+)["\']', html)
-        if m:
-            game_id = m.group(1)
-            debug_log.append("gid_attr_id")
-
-    # C. Атрибут data-game (ОЧЕНЬ ВАЖНО ДЛЯ КАТЕГОРИЙ!)
-    if not game_id:
-        m = re.search(r'data-game=["\'](\d+)["\']', html)
-        if m:
-            game_id = m.group(1)
-            debug_log.append("gid_attr_simple")
-
-    # D. App Data
-    if not game_id:
-        if 'blob' in locals(): # Если blob уже декодирован выше
-            t = re.search(r'"game-id"\s*:\s*(\d+)', blob)
-            if t:
-                game_id = t.group(1)
-                debug_log.append("gid_blob")
-        else:
-            # Пробуем найти blob заново, если CSRF нашли в input
-            m_app = re.search(r'data-app-data="([^"]+)"', html)
-            if m_app:
-                try:
-                    blob = html_lib.unescape(m_app.group(1))
+                if not csrf:
+                    t = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
+                    if t: csrf = t.group(1); log.append("C:Blob")
+                if not gid:
                     t = re.search(r'"game-id"\s*:\s*(\d+)', blob)
-                    if t:
-                        game_id = t.group(1)
-                        debug_log.append("gid_blob_new")
-                except: pass
+                    if t: gid = t.group(1); log.append("G:Blob")
+            except: 
+                log.append("BlobErr")
 
-    return game_id, csrf, "+".join(debug_log)
+    return gid, csrf, "+".join(log)
 
 # --- ВОРКЕР ---
 async def worker(app):
     await asyncio.sleep(3)
-    print(">>> [AutoBump] WORKER V9 (ULTIMATE PARSER) STARTED", flush=True)
+    print(">>> [AutoBump] WORKER V10 (EXTREME DEBUG) STARTED", flush=True)
     
     connector = aiohttp.TCPConnector(ssl=False)
-    timeout = aiohttp.ClientTimeout(total=40) 
+    timeout = aiohttp.ClientTimeout(total=50) # 50 сек
 
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Origin": "https://funpay.com"
+        "Origin": "https://funpay.com",
+        "Referer": "https://funpay.com/users/"
     }
 
     while True:
@@ -141,7 +109,7 @@ async def worker(app):
                 await asyncio.sleep(1); continue
             pool = app.state.pool
             
-            # Берем задачи
+            # Берем 1 задачу для чистоты логов
             tasks = []
             async with pool.acquire() as conn:
                 tasks = await conn.fetch("""
@@ -149,121 +117,127 @@ async def worker(app):
                     FROM autobump_tasks 
                     WHERE is_active = TRUE 
                     AND (next_bump_at IS NULL OR next_bump_at <= NOW())
-                    LIMIT 2
+                    LIMIT 1
                 """)
 
             if not tasks:
                 await asyncio.sleep(2); continue
 
+            task = tasks[0]
+            uid = task['user_uid']
+
+            # БЛОКИРУЕМ ЗАДАЧУ (15 мин)
+            await log_db(pool, uid, "[1/8] Старт (Блок 15м)...", 900)
+
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-                for task in tasks:
-                    uid = task['user_uid']
-                    
-                    # БЛОКИРОВКА ЗАДАЧИ
-                    await log_db(pool, uid, "⚡ Воркер: Старт...", 600)
+                try:
+                    key = decrypt_data(task['encrypted_golden_key'])
+                    cookies = {"golden_key": key}
+                    raw_nodes = str(task['node_ids']).split(',')
+                    nodes = [n.strip() for n in raw_nodes if n.strip().isdigit()]
 
-                    try:
-                        key = decrypt_data(task['encrypted_golden_key'])
-                        cookies = {"golden_key": key}
-                        raw_nodes = str(task['node_ids']).split(',')
-                        nodes = [n.strip() for n in raw_nodes if n.strip().isdigit()]
+                    if not nodes:
+                        await log_db(pool, uid, "❌ Нет NodeID", 3600)
+                        continue
 
-                        if not nodes:
-                            await log_db(pool, uid, "❌ Нет NodeID", 3600)
+                    # --- ЦИКЛ ПО ЛОТАМ ---
+                    final_msg = ""
+                    final_delay = 0
+                    success_cnt = 0
+
+                    for i, node in enumerate(nodes):
+                        # ШАГ 2: GET
+                        await log_db(pool, uid, f"[2/8] GET {node}...", None)
+                        url = f"https://funpay.com/lots/{node}/trade"
+                        
+                        get_hdrs = HEADERS.copy()
+                        del get_hdrs["Content-Type"]
+                        get_hdrs["Referer"] = url
+
+                        html = ""
+                        try:
+                            async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
+                                if "login" in str(resp.url):
+                                    final_msg = "❌ Redirect to Login"; final_delay = 999999; break
+                                if resp.status != 200:
+                                    final_msg = f"❌ HTTP {resp.status}"; final_delay = 600; break
+                                html = await resp.text()
+                        except:
+                            final_msg = "❌ GET Timeout"; final_delay = 600; break
+
+                        # ШАГ 3: HTML Check
+                        await log_db(pool, uid, f"[3/8] HTML ({len(html)}b). Checking...", None)
+                        if "Подождите" in html:
+                            m = re.search(r'class="[^"]*ajax-alert-danger"[^>]*>(.*?)</div>', html, re.DOTALL)
+                            tm = m.group(1).strip() if m else "Timer"
+                            sec = parse_wait_time(tm)
+                            if sec > final_delay: final_delay = sec; final_msg = f"⏳ {tm}"
                             continue
 
-                        final_status = ""
-                        final_delay = 0
-                        success_count = 0
+                        # ШАГ 4: PARSE
+                        gid, csrf, debug_info = get_debug_tokens(html)
+                        await log_db(pool, uid, f"[4/8] PARSE: {debug_info}", None)
+                        
+                        if not gid or not csrf:
+                            if "just a moment" in html.lower():
+                                final_msg = "🛡️ Cloudflare"; final_delay = 3600; break
+                            final_msg = f"❌ ParseErr: {debug_info}"; final_delay = 600
+                            continue
 
-                        for idx, node in enumerate(nodes):
-                            await log_db(pool, uid, f"🔍 [{idx+1}/{len(nodes)}] Лот {node}...")
-                            if idx > 0: await asyncio.sleep(random.uniform(1.5, 3.0))
+                        # ШАГ 5: POST
+                        await log_db(pool, uid, f"[5/8] POST GID={gid}...", None)
+                        
+                        post_hdrs = HEADERS.copy()
+                        post_hdrs["X-CSRF-Token"] = csrf
+                        post_hdrs["Referer"] = url
+                        payload = {"game_id": gid, "node_id": node, "csrf_token": csrf}
 
-                            url = f"https://funpay.com/lots/{node}/trade"
-                            
-                            # 1. GET
-                            async with session.get(url, headers=HEADERS, cookies=cookies) as resp:
-                                if "login" in str(resp.url):
-                                    final_status = "❌ Слетела сессия"
-                                    final_delay = 999999
-                                    break
-                                
-                                if resp.status != 200:
-                                    final_status = f"❌ Ошибка {resp.status}"
-                                    final_delay = 600
-                                    break # Прерываем, если сайт лежит
-
-                                html = await resp.text()
-
-                            # 2. Таймер?
-                            if "Подождите" in html:
-                                m_alert = re.search(r'class="[^"]*ajax-alert-danger"[^>]*>(.*?)</div>', html, re.DOTALL)
-                                msg = m_alert.group(1).strip() if m_alert else "Таймер"
-                                wait = parse_wait_time(msg)
-                                if wait > final_delay: 
-                                    final_delay = wait
-                                    final_status = f"⏳ {msg}"
-                                continue
-
-                            # 3. Парсинг (ULTIMATE)
-                            gid, csrf, d_src = get_tokens_ultimate(html)
-                            
-                            if not gid or not csrf:
-                                print(f"[AutoBump] PARSE FAIL Node {node}: GID={gid} CSRF={bool(csrf)} Src={d_src}")
-                                if "just a moment" in html.lower():
-                                    final_status = "🛡️ Cloudflare Block"
-                                    final_delay = 3600
-                                    break
-                                else:
-                                    final_status = f"❌ Не нашел кнопки (см. консоль)"
-                                    # Не прерываем, вдруг следующий лот нормальный
-                                    continue
-
-                            # 4. POST
-                            post_headers = HEADERS.copy()
-                            post_headers["X-CSRF-Token"] = csrf
-                            post_headers["Referer"] = url
-                            payload = {"game_id": gid, "node_id": node, "csrf_token": csrf}
-                            
-                            async with session.post("https://funpay.com/lots/raise", data=payload, cookies=cookies, headers=post_headers) as p_resp:
+                        try:
+                            async with session.post("https://funpay.com/lots/raise", data=payload, cookies=cookies, headers=post_hdrs) as p_resp:
                                 txt = await p_resp.text()
+                                
+                                # ШАГ 6: REPLY
+                                await log_db(pool, uid, f"[6/8] REPLY: {p_resp.status} ({txt[:30]})...", None)
+                                
+                                if p_resp.status != 200:
+                                    final_msg = f"❌ POST {p_resp.status}"; final_delay = 600; continue
+
                                 try:
                                     js = json.loads(txt)
                                     if not js.get("error"):
-                                        success_count += 1
+                                        success_cnt += 1
                                     else:
                                         msg = js.get("msg", "")
                                         w = parse_wait_time(msg)
                                         if w > 0:
-                                            if w > final_delay:
-                                                final_delay = w
-                                                final_status = f"⏳ {msg}"
+                                            if w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
                                         else:
-                                            final_status = f"⚠️ FP: {msg[:25]}"
+                                            final_msg = f"⚠️ FP: {msg[:30]}"; final_delay=600
                                 except:
                                     if "поднято" in txt.lower(): success_count += 1
+                        except:
+                            final_msg = "❌ POST Timeout"; final_delay = 600; break
 
-                        # --- ИТОГ ---
-                        if final_delay > 900000: # Авторизация/Блок
-                            await log_db(pool, uid, final_status, final_delay)
-                        elif final_delay > 0: # Таймер
-                            final_delay += random.randint(120, 300)
-                            h = final_delay // 3600
-                            m = (final_delay % 3600) // 60
-                            st = final_status if final_status else f"⏳ Ждем {h}ч {m}мин"
-                            await log_db(pool, uid, st, final_delay)
-                        elif success_count > 0: # Успех
-                            await log_db(pool, uid, f"✅ Поднято: {success_count}", 14400)
-                        elif final_status: # Ошибка
-                            await log_db(pool, uid, final_status, 1800)
-                        else:
-                            await log_db(pool, uid, "⚠️ Нет лотов/ошибок", 3600)
+                        # Пауза между лотами
+                        await asyncio.sleep(1)
 
-                    except Exception as e:
-                        print(f"[Worker Error] {uid}: {e}")
-                        traceback.print_exc()
-                        await log_db(pool, uid, "⚠️ Сбой воркера", 600)
+                    # --- ИТОГИ ---
+                    if final_delay > 900000:
+                        await log_db(pool, uid, final_msg, final_delay)
+                    elif final_delay > 0:
+                        final_delay += random.randint(100, 300)
+                        msg = final_msg or "⏳ Ожидание"
+                        await log_db(pool, uid, msg, final_delay)
+                    elif success_cnt > 0:
+                        await log_db(pool, uid, f"✅ Поднято: {success_cnt}", 14400)
+                    elif final_msg:
+                        await log_db(pool, uid, final_msg, 1800)
+                    else:
+                        await log_db(pool, uid, "⚠️ Нет результата", 3600)
+
+                except Exception as e:
+                    traceback.print_exc()
+                    await log_db(pool, uid, f"⚠️ CRASH: {str(e)}", 600)
 
             await asyncio.sleep(1)
 
