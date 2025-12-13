@@ -43,12 +43,12 @@ def parse_wait_time(text: str) -> int:
     if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total if total > 0 else 14400
 
-def get_tokens_v11(html: str):
-    """Ищет токены (V11: Added JS patterns)"""
+def get_tokens_v12(html: str):
+    """Ищет токены (V12: Added NUXT + data-csrf)"""
     csrf, gid = None, None
     log = []
 
-    # --- 1. CSRF SEARCH ---
+    # --- 1. CSRF SEARCH (6 Patterns) ---
     # A. Input
     m = re.search(r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
     if m: csrf = m.group(1); log.append("C:Input")
@@ -58,10 +58,19 @@ def get_tokens_v11(html: str):
         m = re.search(r'name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']', html)
         if m: csrf = m.group(1); log.append("C:Meta")
 
-    # C. JS Variables (New!)
+    # C. JS Variables (Nuxt/Window)
     if not csrf:
         m = re.search(r'window\._csrf\s*=\s*["\']([^"\']+)["\']', html)
         if m: csrf = m.group(1); log.append("C:Win")
+    
+    if not csrf:
+        m = re.search(r'window\.__NUXT__[^;]+["\']csrfToken["\']\s*:\s*["\']([^"\']+)["\']', html)
+        if m: csrf = m.group(1); log.append("C:Nuxt")
+
+    # D. Data Attr
+    if not csrf:
+        m = re.search(r'data-csrf(?:-token)?=["\']([^"\']+)["\']', html)
+        if m: csrf = m.group(1); log.append("C:Data")
 
     # --- 2. GAME ID SEARCH ---
     # A. Button
@@ -79,11 +88,9 @@ def get_tokens_v11(html: str):
         if m_app:
             try:
                 blob = html_lib.unescape(m_app.group(1))
-                # CSRF in Blob
                 if not csrf:
                     t = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
                     if t: csrf = t.group(1); log.append("C:Blob")
-                # GID in Blob
                 if not gid:
                     t = re.search(r'"game-id"\s*:\s*(\d+)', blob)
                     if t: gid = t.group(1); log.append("G:Blob")
@@ -94,18 +101,16 @@ def get_tokens_v11(html: str):
     if not csrf: missing.append("CSRF")
     if not gid: missing.append("GID")
     
-    if missing:
-        return gid, csrf, f"Missing: {','.join(missing)} Found: {'+'.join(log)}"
-    
-    return gid, csrf, "OK"
+    debug_str = f"Missing: {','.join(missing)} Found: {'+'.join(log)}" if missing else "OK"
+    return gid, csrf, debug_str
 
 # --- ВОРКЕР ---
 async def worker(app):
     await asyncio.sleep(3)
-    print(">>> [AutoBump] WORKER V11 (RETRY + JS CSRF) STARTED", flush=True)
+    print(">>> [AutoBump] WORKER V12 (CSRF HUNTER) STARTED", flush=True)
     
     connector = aiohttp.TCPConnector(ssl=False)
-    timeout = aiohttp.ClientTimeout(total=40) 
+    timeout = aiohttp.ClientTimeout(total=45) 
 
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -138,7 +143,7 @@ async def worker(app):
             uid = task['user_uid']
 
             # БЛОКИРУЕМ ЗАДАЧУ
-            await log_db(pool, uid, "[1/5] Старт V11...", 900)
+            await log_db(pool, uid, "[1/5] Старт V12...", 900)
 
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 try:
@@ -181,7 +186,7 @@ async def worker(app):
                                 if attempt == 2: final_msg = "❌ GET Timeout"; final_delay = 600
                                 await asyncio.sleep(2)
                         
-                        if final_msg: break # Stop if failed after retries
+                        if final_msg: break 
 
                         # CHECK TIMER
                         if "Подождите" in html:
@@ -191,9 +196,21 @@ async def worker(app):
                             if sec > final_delay: final_delay = sec; final_msg = f"⏳ {tm}"
                             continue
 
-                        # PARSE V11
-                        gid, csrf, debug_info = get_tokens_v11(html)
+                        # PARSE V12
+                        gid, csrf, debug_info = get_tokens_v12(html)
                         
+                        # --- ПЛАН Б: FALLBACK ON HOMEPAGE ---
+                        if not csrf and gid:
+                            await log_db(pool, uid, "🔄 CSRF не найден, пробую главную...", None)
+                            try:
+                                async with session.get("https://funpay.com/", headers=get_hdrs, cookies=cookies) as resp_home:
+                                    html_home = await resp_home.text()
+                                    _, csrf_home, _ = get_tokens_v12(html_home)
+                                    if csrf_home:
+                                        csrf = csrf_home
+                                        await log_db(pool, uid, "✅ CSRF найден на главной!", None)
+                            except: pass
+
                         if not gid or not csrf:
                             if "just a moment" in html.lower():
                                 final_msg = "🛡️ Cloudflare"; final_delay = 3600; break
