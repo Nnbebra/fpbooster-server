@@ -22,7 +22,6 @@ class CloudBumpSettings(BaseModel):
 async def check_rate_limit(pool, uid: str):
     """
     Проверяет, когда пользователь последний раз нажимал кнопку.
-    Работает надежно даже при перезагрузке сервера.
     """
     try:
         async with pool.acquire() as conn:
@@ -31,13 +30,11 @@ async def check_rate_limit(pool, uid: str):
             
             if row and row['last_manual_check_at']:
                 diff = (datetime.now() - row['last_manual_check_at']).total_seconds()
-                # Если прошло меньше 30 секунд
                 if diff < 30:
                     wait_time = int(30 - diff)
                     return False, f"⏳ Подождите {wait_time} сек."
             
-            # 2. Если всё ок — обновляем время на ТЕКУЩЕЕ
-            # Используем UPSERT (вставка или обновление), чтобы не падать, если записи нет
+            # 2. Обновляем время
             await conn.execute("""
                 INSERT INTO autobump_tasks (user_uid, last_manual_check_at) 
                 VALUES ($1, NOW())
@@ -47,8 +44,7 @@ async def check_rate_limit(pool, uid: str):
                 
         return True, ""
     except Exception as e:
-        print(f"[SpamCheck Error] {e}")
-        return True, "" # В случае ошибки БД пропускаем, чтобы не блокировать работу
+        return True, "" 
 
 # --- DB HELPERS ---
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
@@ -69,48 +65,36 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
                 )
             else:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1 WHERE user_uid=$2", clean_msg, uid)
-    except Exception as e:
-        print(f"[DB Error] {e}")
+    except: pass
 
-# --- МОЩНЫЙ ПАРСЕР ВРЕМЕНИ ---
+# --- PARSERS ---
 def clean_html(raw_html: str) -> str:
-    """Удаляет теги и спецсимволы, чтобы найти '19 мин'."""
-    # 1. Декодируем &nbsp; и прочее
+    """Удаляет теги и спецсимволы."""
     text = html_lib.unescape(raw_html)
-    # 2. Удаляем теги <...>
     text = re.sub('<[^<]+?>', ' ', text)
     return text.lower()
 
 def parse_wait_time(text: str) -> int:
     if not text: return 0
-    # Чистим текст перед поиском
     text = clean_html(text)
     
-    # 1. Формат 02:59:59
+    # 1. HH:MM:SS
     time_match = re.search(r'(\d+):(\d+):(\d+)', text)
     if time_match:
         h, m, s = map(int, time_match.groups())
         return h * 3600 + m * 60 + s
 
-    # 2. Формат "3 ч 19 мин" (теперь найдет даже если между ними были теги)
+    # 2. Текст (ч, мин)
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     
-    hours = int(h.group(1)) if h else 0
-    minutes = int(m.group(1)) if m else 0
+    total = (int(h.group(1)) * 3600 if h else 0) + (int(m.group(1)) * 60 if m else 0)
     
-    total = (hours * 3600) + (minutes * 60)
-    
-    # Если нашли цифры — возвращаем
-    if total > 0: return total
+    if total == 0 and ("подож" in text or "wait" in text): return 3600
+    return total
 
-    # Fallback: Если цифр нет, но написано "подождите" — ставим час
-    if "подож" in text or "wait" in text: return 3600
-    
-    return 0
-
-def get_tokens_and_status(html: str):
-    csrf, gid, alert = None, None, None
+def get_tokens_smart(html: str):
+    csrf, gid = None, None
     
     # CSRF
     m = re.search(r'data-app-data="([^"]+)"', html)
@@ -124,27 +108,24 @@ def get_tokens_and_status(html: str):
         m = re.search(r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
         if m: csrf = m.group(1)
             
-    # Кнопка
-    btn_match = re.search(r'<button[^>]*class=["\'][^"\']*js-lot-raise[^"\']*["\'][^>]*>', html)
-    if btn_match:
-        btn_html = btn_match.group(0)
-        g_match = re.search(r'data-game=["\'](\d+)["\']', btn_html)
-        if g_match: gid = g_match.group(1)
-        else:
-            m = re.search(r'data-game-id=["\'](\d+)["\']', html)
-            if m: gid = m.group(1)
+    # GID (Game ID) - Ищем везде, даже если кнопки нет!
+    # 1. В кнопке
+    btn = re.search(r'class="[^"]*js-lot-raise"[^>]*data-game=["\'](\d+)["\']', html)
+    if btn: gid = btn.group(1)
+    
+    # 2. Глобально в коде
+    if not gid:
+        m = re.search(r'data-game-id=["\'](\d+)["\']', html) or re.search(r'data-game=["\'](\d+)["\']', html)
+        if m: gid = m.group(1)
 
-    # Алерт
-    alert_match = re.search(r'id=["\']site-message["\'][^>]*>(.*?)</div>', html, re.DOTALL)
-    if alert_match: alert = alert_match.group(1).strip()
-        
-    return csrf, gid, alert
+    return csrf, gid
 
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Fix: 19 min & DB Rate Limit)", flush=True)
-    connector = aiohttp.TCPConnector(ssl=False)
+    print(">>> [AutoBump] WORKER STARTED (Fresh Session + Force Check)", flush=True)
+    
+    # Таймаут для запросов
     timeout = aiohttp.ClientTimeout(total=45)
     
     HEADERS = {
@@ -169,7 +150,9 @@ async def worker(app):
 
             if not tasks: await asyncio.sleep(3); continue
 
-            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            # ВАЖНО: Создаем сессию ЗДЕСЬ, внутри цикла. 
+            # Это имитирует "рестарт" браузера для каждого юзера.
+            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False), timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
                     await update_status(pool, uid, "⚡ Работаю...", 120) 
@@ -194,6 +177,7 @@ async def worker(app):
                             get_hdrs = HEADERS.copy(); get_hdrs["Referer"] = url
                             html = ""
                             
+                            # 1. Загрузка страницы
                             for attempt in range(2):
                                 try:
                                     async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
@@ -203,73 +187,55 @@ async def worker(app):
                             
                             if "❌" in final_msg: break
 
-                            csrf, gid, alert_text = get_tokens_and_status(html)
+                            # 2. Поиск токенов
+                            csrf, gid = get_tokens_smart(html)
+                            
                             if not csrf and not global_csrf:
-                                # Fallback CSRF
+                                # Fallback на главную
                                 try:
                                     async with session.get("https://funpay.com/", headers=get_hdrs, cookies=cookies) as rh:
-                                        c, _, _ = get_tokens_and_status(await rh.text())
+                                        c, _ = get_tokens_smart(await rh.text())
                                         if c: global_csrf = c
                                 except: pass
                             if not csrf and global_csrf: csrf = global_csrf
 
-                            # --- ЛОГИКА ---
-                            if gid:
-                                # A. ЕСТЬ КНОПКА -> ЖМЕМ
+                            # 3. ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА (FORCE CHECK)
+                            # Если мы нашли ID игры (gid) - мы можем спросить у сервера "сколько ждать?", даже если кнопки нет.
+                            if gid and csrf:
                                 post_hdrs = HEADERS.copy()
                                 post_hdrs["Referer"] = url
                                 post_hdrs["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
-                                if csrf: post_hdrs["X-CSRF-Token"] = csrf
-                                payload = {"game_id": gid, "node_id": node}
-                                if csrf: payload["csrf_token"] = csrf
-
+                                post_hdrs["X-CSRF-Token"] = csrf
+                                
                                 try:
-                                    async with session.post("https://funpay.com/lots/raise", data=payload, cookies=cookies, headers=post_hdrs) as pr:
+                                    async with session.post("https://funpay.com/lots/raise", data={"game_id": gid, "node_id": node, "csrf_token": csrf}, cookies=cookies, headers=post_hdrs) as pr:
                                         txt = await pr.text()
                                         try:
                                             js = json.loads(txt)
-                                            if not js.get("error"): success_cnt += 1
+                                            # Успех
+                                            if not js.get("error") and not js.get("msg"): 
+                                                success_cnt += 1
+                                            # Ошибка с сообщением (таймер)
                                             else:
-                                                # Ошибка FP (там может быть таймер)
                                                 msg = js.get("msg", "")
                                                 w = parse_wait_time(msg)
                                                 if w > 0:
                                                     if w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
-                                                else: final_msg = f"⚠️ {msg[:30]}"
+                                                else:
+                                                    final_msg = f"⚠️ {msg[:30]}"
                                         except:
                                             if "поднято" in txt.lower(): success_cnt += 1
                                 except: final_msg = "❌ Ошибка сети"
                             
-                            elif alert_text:
-                                # B. ЕСТЬ АЛЕРТ (site-message)
-                                w = parse_wait_time(alert_text)
-                                if w > 0:
-                                    if w > final_delay:
-                                        final_delay = w
-                                        h = w // 3600
-                                        m = (w % 3600) // 60
-                                        final_msg = f"⏳ Ждем {h}ч {m}мин"
-                            
                             else:
-                                # C. ГЛУБОКИЙ ПОИСК (Ищем время во всем тексте)
-                                # Это исправит проблему "19 мин"
-                                w = parse_wait_time(html) 
-                                
+                                # Если даже GID не нашли (очень странно), читаем текст
+                                w = parse_wait_time(html)
                                 if w > 0:
-                                    if w > final_delay:
-                                        final_delay = w
-                                        h = w // 3600
-                                        m = (w % 3600) // 60
-                                        final_msg = f"⏳ Ждем {h}ч {m}мин"
+                                    if w > final_delay: final_delay = w; h=w//3600; m=(w%3600)//60; final_msg = f"⏳ Ждем {h}ч {m}мин"
                                 else:
-                                    # Если времени нигде нет -> Проверяем логин
-                                    if "href=\"/account/login\"" in html or "href='/account/login'" in html:
-                                        final_msg = "⚠️ Не авторизован"
-                                        final_delay = 60
-                                    elif final_delay == 0:
-                                        # Мы в системе, но времени нет. Это странно, но ставим 1 час.
-                                        final_msg = "⏳ Лот активен (1ч)"
-                                        final_delay = 3600
+                                    # Проверка авторизации
+                                    if "href=\"/account/login\"" in html: final_msg = "⚠️ Не авторизован"; final_delay = 60
+                                    elif final_delay == 0: final_msg = "⏳ Лот активен (1ч)"; final_delay = 3600
 
                             await asyncio.sleep(random.uniform(1.0, 2.0))
 
