@@ -25,19 +25,14 @@ async def check_rate_limit(pool, uid: str):
     Возвращает (разрешено: bool, сообщение: str).
     """
     async with pool.acquire() as conn:
-        # Получаем время последнего действия
         row = await conn.fetchrow("SELECT last_manual_check_at FROM autobump_tasks WHERE user_uid=$1", uid)
         
         if row and row['last_manual_check_at']:
-            # Вычисляем разницу в секундах
             diff = (datetime.now() - row['last_manual_check_at']).total_seconds()
             if diff < 30:
                 wait_time = int(30 - diff)
                 return False, f"⏳ Сервер: подождите {wait_time} сек."
         
-        # Если проверки прошли (или это первый раз), обновляем время
-        # Используем NOW(), но только если запись существует. 
-        # Если записи нет (первый запуск), она создастся в основном коде.
         if row:
             await conn.execute("UPDATE autobump_tasks SET last_manual_check_at=NOW() WHERE user_uid=$1", uid)
             
@@ -47,7 +42,6 @@ async def check_rate_limit(pool, uid: str):
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
     try:
         clean_msg = str(msg)[:150]
-        # Логируем
         if "✅" in clean_msg or "⏳" in clean_msg or "⚠️" in clean_msg:
             print(f"[AutoBump {uid}] {clean_msg}", flush=True)
             
@@ -55,7 +49,6 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                # Джиттер 30-60 сек
                 jitter = random.randint(30, 60) 
                 final_delay = next_delay + jitter
                 
@@ -69,6 +62,10 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
         print(f"[AutoBump DB Error] {e}")
 
 # --- PARSERS ---
+def strip_tags(html_text: str) -> str:
+    """Удаляет HTML теги, чтобы искать текст '19 мин' даже если он внутри <span>."""
+    return re.sub('<[^<]+?>', ' ', html_text)
+
 def parse_wait_time(text: str) -> int:
     if not text: return 0
     text = text.lower()
@@ -79,12 +76,13 @@ def parse_wait_time(text: str) -> int:
         h, m, s = map(int, time_match.groups())
         return h * 3600 + m * 60 + s
 
-    # 2. Текст
+    # 2. Текст (ч, мин)
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     
     total = (int(h.group(1)) * 3600 if h else 0) + (int(m.group(1)) * 60 if m else 0)
     
+    # Если цифр нет, но есть "подождите" -> 1 час
     if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total
 
@@ -105,7 +103,7 @@ def get_tokens_and_status(html: str):
             m = re.search(p, html)
             if m: csrf = m.group(1); break
             
-    # Кнопка (js-lot-raise)
+    # Кнопка
     btn_match = re.search(r'<button[^>]*class=["\'][^"\']*js-lot-raise[^"\']*["\'][^>]*>', html)
     if btn_match:
         btn_html = btn_match.group(0)
@@ -115,7 +113,7 @@ def get_tokens_and_status(html: str):
             m = re.search(r'data-game-id=["\'](\d+)["\']', html)
             if m: gid = m.group(1)
 
-    # Алерт
+    # Алерт (специальный блок)
     alert_match = re.search(r'id=["\']site-message["\'][^>]*>(.*?)</div>', html, re.DOTALL)
     if alert_match:
         alert = alert_match.group(1).strip()
@@ -125,7 +123,7 @@ def get_tokens_and_status(html: str):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (DB Rate Limit)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (Deep Search + DB Spam Protection)", flush=True)
     connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=45)
     
@@ -199,6 +197,7 @@ async def worker(app):
                             if not csrf and global_csrf: csrf = global_csrf
 
                             if gid:
+                                # A. ЖМЕМ КНОПКУ
                                 post_hdrs = HEADERS.copy()
                                 post_hdrs["Referer"] = url
                                 post_hdrs["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
@@ -225,6 +224,7 @@ async def worker(app):
                                     final_msg = "❌ Ошибка сети"; final_delay = 60
                             
                             elif alert_text:
+                                # B. ЕСТЬ АЛЕРТ
                                 w = parse_wait_time(alert_text)
                                 if w > 0:
                                     if w > final_delay:
@@ -234,12 +234,25 @@ async def worker(app):
                                         final_msg = f"⏳ Ждем {h}ч {m}мин"
                             
                             else:
-                                if "href=\"/account/login\"" in html or "href='/account/login'" in html:
-                                    final_msg = "⚠️ Не авторизован"
-                                    final_delay = 60
-                                elif final_delay == 0:
-                                    final_msg = "⏳ Лот активен (1ч)"
-                                    final_delay = 3600
+                                # C. ГЛУБОКИЙ ПОИСК ПО ТЕКСТУ (ДЛЯ "19 МИН")
+                                # Очищаем от тегов перед поиском
+                                clean_html = strip_tags(html)
+                                w = parse_wait_time(clean_html)
+                                
+                                if w > 0:
+                                    if w > final_delay:
+                                        final_delay = w
+                                        h = w // 3600
+                                        m = (w % 3600) // 60
+                                        final_msg = f"⏳ Ждем {h}ч {m}мин"
+                                else:
+                                    # Проверка авторизации
+                                    if "href=\"/account/login\"" in html or "href='/account/login'" in html:
+                                        final_msg = "⚠️ Не авторизован"
+                                        final_delay = 60
+                                    elif final_delay == 0:
+                                        final_msg = "⏳ Лот активен (1ч)"
+                                        final_delay = 3600
 
                             await asyncio.sleep(random.uniform(1.0, 2.0))
 
@@ -266,7 +279,6 @@ async def get_plugin_user(request: Request):
 
 @router.post("/set")
 async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_user)):
-    # Проверка через БД
     is_allowed, msg = await check_rate_limit(req.app.state.pool, u['uid'])
     if not is_allowed:
         return {"success": False, "message": msg}
@@ -288,7 +300,6 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
 
 @router.post("/force_check")
 async def force(req: Request, u=Depends(get_plugin_user)):
-    # Проверка через БД
     is_allowed, msg = await check_rate_limit(req.app.state.pool, u['uid'])
     if not is_allowed:
         return {"success": False, "message": msg}
