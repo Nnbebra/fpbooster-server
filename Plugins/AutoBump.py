@@ -20,6 +20,7 @@ class CloudBumpSettings(BaseModel):
 
 # --- ANTI-SPAM (DB BASED) ---
 async def check_rate_limit(pool, uid: str):
+    """Блокирует частые нажатия через БД."""
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT last_manual_check_at FROM autobump_tasks WHERE user_uid=$1", uid)
@@ -27,8 +28,9 @@ async def check_rate_limit(pool, uid: str):
                 diff = (datetime.now() - row['last_manual_check_at']).total_seconds()
                 if diff < 30:
                     wait_time = int(30 - diff)
-                    return False, f"⏳ Сервер: подождите {wait_time} сек"
+                    return False, f"⏳ Сервер: ждите {wait_time}с"
             
+            # Обновляем метку времени
             await conn.execute("""
                 INSERT INTO autobump_tasks (user_uid, last_manual_check_at) VALUES ($1, NOW())
                 ON CONFLICT (user_uid) DO UPDATE SET last_manual_check_at = NOW()
@@ -47,30 +49,31 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                final_delay = next_delay + random.randint(15, 40)
-                await conn.execute("UPDATE autobump_tasks SET status_message=$1, last_bump_at=NOW(), next_bump_at=NOW() + interval '1 second' * $2 WHERE user_uid=$3", clean_msg, final_delay, uid)
+                # Добавляем случайность, чтобы не спамить ровно в секунду
+                final_delay = next_delay + random.randint(20, 50)
+                await conn.execute(
+                    "UPDATE autobump_tasks SET status_message=$1, last_bump_at=NOW(), next_bump_at=NOW() + interval '1 second' * $2 WHERE user_uid=$3", 
+                    clean_msg, final_delay, uid
+                )
             else:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1 WHERE user_uid=$2", clean_msg, uid)
     except: pass
 
-# --- ADVANCED PARSERS ---
+# --- PARSERS ---
 def clean_text(text: str) -> str:
-    """Чистка текста от мусора."""
     if not text: return ""
-    text = html_lib.unescape(text)
-    text = re.sub(r'<[^>]+>', ' ', text)
-    return text.lower()
+    return html_lib.unescape(text).lower()
 
 def parse_wait_time(text: str) -> int:
-    """Парсит время из любого текста."""
+    """Парсит время из ответа сервера."""
     if not text: return 0
     text = clean_text(text)
     
-    # 1. HH:MM:SS
+    # 1. Формат "02:59:59"
     tm = re.search(r'(\d+):(\d+):(\d+)', text)
     if tm: return int(tm.group(1))*3600 + int(tm.group(2))*60 + int(tm.group(3))
 
-    # 2. Words
+    # 2. Формат "3 ч. 19 мин."
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     total = (int(h.group(1))*3600 if h else 0) + (int(m.group(1))*60 if m else 0)
@@ -78,42 +81,47 @@ def parse_wait_time(text: str) -> int:
     if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total
 
-def extract_app_data(html: str):
+def extract_tokens_from_json(html: str):
     """
-    Извлекает game_id и csrf из скрытого JSON data-app-data.
-    Это самый надежный метод, так как он не зависит от наличия кнопок.
+    Извлекает game_id и csrf из системного JSON data-app-data.
+    Самый надежный способ.
     """
-    # Ищем блок <div data-app-data="...">
-    m = re.search(r'data-app-data="([^"]+)"', html)
-    if m:
-        try:
-            # Декодируем HTML сущности (&quot; -> ")
+    try:
+        # Ищем JSON блок
+        m = re.search(r'data-app-data="([^"]+)"', html)
+        if m:
             json_str = html_lib.unescape(m.group(1))
             data = json.loads(json_str)
             
             csrf = data.get("csrf-token") or data.get("csrfToken")
-            # GameID часто лежит внутри ключа 'lot' или 'game'
-            gid = data.get("game_id") or data.get("gameId")
+            # ID игры может быть в разных полях, ищем числовой ID
+            gid = data.get("game_id") or data.get("gameId") or data.get("id")
             
             return csrf, str(gid) if gid else None
-        except: pass
+    except: pass
     
-    # Fallback (Старый метод)
+    # Fallback: Обычный поиск
     csrf = None
     m_csrf = re.search(r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
     if m_csrf: csrf = m_csrf.group(1)
     
     gid = None
-    m_gid = re.search(r'data-game-id=["\'](\d+)["\']', html)
-    if m_gid: gid = m_gid.group(1)
-    
+    # Ищем в кнопке
+    m_btn = re.search(r'data-game=["\'](\d+)["\']', html)
+    if m_btn: gid = m_btn.group(1)
+    else:
+        # Ищем глобально
+        m_gid = re.search(r'data-game-id=["\'](\d+)["\']', html)
+        if m_gid: gid = m_gid.group(1)
+        
     return csrf, gid
 
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (AppData JSON Parser)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (JSON Parser + Force Request)", flush=True)
     
+    connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=45)
     
     HEADERS = {
@@ -133,8 +141,8 @@ async def worker(app):
 
             if not tasks: await asyncio.sleep(3); continue
 
-            # Создаем НОВУЮ сессию для каждого цикла (Hard Reset)
-            async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False), timeout=timeout) as session:
+            # Создаем новую сессию для каждого цикла (Hard Reset)
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
                     await update_status(pool, uid, "⚡ Работаю...", 120) 
@@ -158,29 +166,30 @@ async def worker(app):
                             get_hdrs = HEADERS.copy(); get_hdrs["Referer"] = url
                             html = ""
                             
-                            # 1. Загрузка (2 попытки)
+                            # 1. Загружаем страницу
                             for _ in range(2):
                                 try:
                                     async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
                                         if "login" in str(resp.url): final_msg = "❌ Логин"; break
                                         html = await resp.text(); break
                                 except: await asyncio.sleep(1)
-                            if final_msg: break
-
-                            # 2. "Умный" поиск токенов через JSON
-                            csrf, gid = extract_app_data(html)
                             
-                            # Если не нашли CSRF на странице лота, ищем на главной
+                            if final_msg == "❌ Логин": break
+
+                            # 2. Достаем токены через JSON (или Fallback)
+                            csrf, gid = extract_tokens_from_json(html)
+                            
                             if not csrf and not global_csrf:
                                 try:
                                     async with session.get("https://funpay.com/", headers=get_hdrs, cookies=cookies) as rh:
-                                        c, _ = extract_app_data(await rh.text())
+                                        c, _ = extract_tokens_from_json(await rh.text())
                                         if c: global_csrf = c
                                 except: pass
                             if not csrf: csrf = global_csrf
 
                             # 3. FORCE POST
-                            # Если у нас есть GID и CSRF -> мы можем узнать статус, даже если кнопки нет
+                            # Если мы нашли GID - шлем запрос, не глядя на наличие кнопок.
+                            # Сервер FunPay ответит нам правду.
                             if gid and csrf:
                                 post_hdrs = HEADERS.copy()
                                 post_hdrs["Referer"] = url
@@ -195,7 +204,7 @@ async def worker(app):
                                             # Успех
                                             if not js.get("error") and not js.get("msg"): 
                                                 success_cnt += 1
-                                            # Ошибка -> Там лежит таймер
+                                            # Ошибка (Таймер лежит тут)
                                             else:
                                                 msg = js.get("msg", "")
                                                 w = parse_wait_time(msg)
@@ -205,18 +214,20 @@ async def worker(app):
                                                     final_msg = f"⚠️ {msg[:30]}"
                                         except:
                                             if "поднято" in txt.lower(): success_cnt += 1
-                                except: final_msg = "❌ Ошибка сети"
+                                except: final_msg = "❌ Сеть"
                             
                             else:
-                                # Если даже через JSON не нашли GID (значит, страница сломана или забанена)
+                                # Если даже через JSON не нашли GID (значит, страница битая или IP в бане)
                                 w = parse_wait_time(html)
                                 if w > 0:
                                     if w > final_delay: final_delay = w; h=w//3600; m=(w%3600)//60; final_msg = f"⏳ Ждем {h}ч {m}мин"
                                 else:
                                     if "account/login" in html: final_msg = "⚠️ Не авторизован"; final_delay = 60
+                                    # ВНИМАНИЕ: Если ничего не нашли, НЕ ставим "1ч" сразу.
+                                    # Лучше поставим короткую паузу и попробуем снова, чем врать про 1 час.
                                     elif final_delay == 0: 
-                                        # Только в крайнем случае ставим час
-                                        final_msg = "⏳ Лот активен (1ч)"; final_delay = 3600
+                                        final_msg = "⚠️ Не найден статус"
+                                        final_delay = 60 
 
                             await asyncio.sleep(random.uniform(1, 2))
 
@@ -238,10 +249,8 @@ async def get_plugin_user(request: Request): return await get_current_user_raw(r
 
 @router.post("/set")
 async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_user)):
-    # DB SPAM CHECK
     ok, msg = await check_rate_limit(req.app.state.pool, u['uid'])
     if not ok: return {"success": False, "message": msg}
-
     async with req.app.state.pool.acquire() as conn:
         enc = encrypt_data(data.golden_key); ns = ",".join(data.node_ids)
         await conn.execute("INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at, status_message, last_manual_check_at) VALUES ($1, $2, $3, $4, NOW(), 'Запуск...', NOW()) ON CONFLICT (user_uid) DO UPDATE SET encrypted_golden_key=EXCLUDED.encrypted_golden_key, node_ids=EXCLUDED.node_ids, is_active=EXCLUDED.is_active, next_bump_at=NOW(), status_message='Обновлено', last_manual_check_at=NOW()", u['uid'], enc, ns, data.active)
@@ -249,10 +258,8 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
 
 @router.post("/force_check")
 async def force(req: Request, u=Depends(get_plugin_user)):
-    # DB SPAM CHECK
     ok, msg = await check_rate_limit(req.app.state.pool, u['uid'])
     if not ok: return {"success": False, "message": msg}
-
     async with req.app.state.pool.acquire() as conn:
         await conn.execute("UPDATE autobump_tasks SET next_bump_at=NOW(), status_message='В очереди...' WHERE user_uid=$1", u['uid'])
     return {"status": "success"}
