@@ -20,9 +20,6 @@ class CloudBumpSettings(BaseModel):
 
 # --- DB HELPERS ---
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
-    """
-    Обновляет статус. Добавляет 2-3 минуты к next_delay для имитации человека.
-    """
     try:
         clean_msg = str(msg)[:150]
         if "❌" in clean_msg or "✅" in clean_msg:
@@ -32,10 +29,8 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                # === УМНЫЙ ТАЙМЕР (ИСПРАВЛЕНО) ===
-                # Всегда добавляем 120-180 секунд (2-3 минуты) к ожиданию
+                # УМНЫЙ ТАЙМЕР: 2-3 минуты (120-180 сек) джиттера
                 human_jitter = random.randint(120, 180) 
-                
                 final_delay = next_delay + human_jitter
                 
                 await conn.execute(
@@ -47,7 +42,7 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
     except Exception as e:
         print(f"[AutoBump DB Error] {e}")
 
-# ... (остальные функции парсинга без изменений) ...
+# ... (Функции parse_wait_time и get_tokens_smart оставляем без изменений, они работают) ...
 def parse_wait_time(text: str) -> int:
     if not text: return 14400 
     text = text.lower()
@@ -83,7 +78,7 @@ def get_tokens_smart(html: str):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Jitter 2-3 min)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED", flush=True)
     connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=60)
     HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "X-Requested-With": "XMLHttpRequest"}
@@ -108,7 +103,7 @@ async def worker(app):
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
-                    # Блокируем задачу на 15 мин
+                    # Ставим временный статус, чтобы не взять задачу дважды
                     await update_status(pool, uid, "⚡ В работе...", 900)
 
                     try:
@@ -151,7 +146,7 @@ async def worker(app):
                                         if gc: global_csrf = gc; csrf = gc
                                 except: pass
 
-                            # Если нашли таймер на странице
+                            # Проверяем таймер на странице
                             if not gid and ("Подождите" in html or "Wait" in html):
                                 m = re.search(r'class="[^"]*ajax-alert-danger"[^>]*>(.*?)</div>', html, re.DOTALL)
                                 alert = m.group(1).strip() if m else "Таймер"
@@ -177,25 +172,31 @@ async def worker(app):
                                         else:
                                             msg = js.get("msg", "")
                                             w = parse_wait_time(msg)
-                                            if w > 0 and w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
-                                            elif w == 0: final_msg = f"⚠️ {msg[:30]}"
+                                            # Если поймали таймер при POST, обновляем задержку
+                                            if w > 0:
+                                                if w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
+                                            else: final_msg = f"⚠️ {msg[:30]}"
                                     except:
                                         if "поднято" in txt.lower(): success_cnt += 1
                             except: final_msg = "❌ POST Error"; final_delay = 600
                             
                             await asyncio.sleep(random.uniform(1.5, 3.0))
 
-                        if "❌ Логин" in final_msg: pass
+                        # --- ИТОГИ ---
+                        if "❌ Логин" in final_msg: pass # Уже обработано
                         elif final_delay > 0:
-                            # Есть таймер от FP
+                            # Есть конкретный таймер
                             await update_status(pool, uid, final_msg or "⏳ Ожидание", final_delay)
                         elif success_cnt > 0:
-                            # Успех
+                            # Успех - ставим 4 часа
                             await update_status(pool, uid, f"✅ Поднято: {success_cnt}", 14400)
                         elif final_msg:
+                            # Ошибка без таймера (сеть, сбой)
                             await update_status(pool, uid, final_msg, 1800)
                         else:
-                            await update_status(pool, uid, "⚠️ Нет действий", 3600)
+                            # Если прошли весь цикл и ничего не случилось (лоты удалены или ошибки парсинга)
+                            # Ставим час ожидания, а не "Нет действий", чтобы не спамить
+                            await update_status(pool, uid, "⚠️ Нет действий (пауза)", 3600)
 
                     except Exception as e:
                         traceback.print_exc()
@@ -204,7 +205,7 @@ async def worker(app):
             await asyncio.sleep(1)
         except: await asyncio.sleep(5)
 
-# --- API ROUTES ---
+# --- API ---
 async def get_plugin_user(request: Request):
     return await get_current_user_raw(request.app, request)
 
@@ -213,7 +214,6 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
     async with req.app.state.pool.acquire() as conn:
         enc = encrypt_data(data.golden_key)
         ns = ",".join(data.node_ids)
-        # Ставим NOW() чтобы сразу запустить
         await conn.execute("""
             INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at, status_message) 
             VALUES ($1, $2, $3, $4, NOW(), 'Запуск...') 
@@ -222,7 +222,7 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
             node_ids=EXCLUDED.node_ids, 
             is_active=EXCLUDED.is_active, 
             next_bump_at=NOW(), 
-            status_message='Обновлено'
+            status_message='Настройки обновлены'
         """, u['uid'], enc, ns, data.active)
     return {"status": "success"}
 
@@ -235,10 +235,17 @@ async def force(req: Request, u=Depends(get_plugin_user)):
 @router.get("/status")
 async def get_stat(req: Request, u=Depends(get_plugin_user)):
     async with req.app.state.pool.acquire() as conn:
-        r = await conn.fetchrow("SELECT is_active, next_bump_at, status_message FROM autobump_tasks WHERE user_uid=$1", u['uid'])
-    if not r: return {"is_active": False, "next_bump": None, "status_message": "Не настроено"}
+        # Теперь возвращаем еще и node_ids, чтобы клиент мог их отобразить!
+        r = await conn.fetchrow("SELECT is_active, next_bump_at, status_message, node_ids FROM autobump_tasks WHERE user_uid=$1", u['uid'])
+    
+    if not r: return {"is_active": False, "next_bump": None, "status_message": "Не настроено", "node_ids": []}
+    
+    # Преобразуем строку "1,2,3" в список ["1","2","3"]
+    nodes_list = [x.strip() for x in r['node_ids'].split(',') if x.strip()] if r['node_ids'] else []
+
     return {
         "is_active": r['is_active'], 
         "next_bump": r['next_bump_at'], 
-        "status_message": r['status_message']
+        "status_message": r['status_message'],
+        "node_ids": nodes_list
     }
