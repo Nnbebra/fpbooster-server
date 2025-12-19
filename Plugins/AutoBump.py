@@ -20,28 +20,32 @@ class CloudBumpSettings(BaseModel):
     active: bool
 
 # === ЗАЩИТА ОТ СПАМА (СЕРВЕРНАЯ) ===
-# Хранит timestamp последнего действия: { 'user_uid': 1700000000.0 }
+# Хранит время последнего запроса: { 'user_uid': timestamp }
 USER_LAST_ACTION = {}
 
 def check_rate_limit(uid: str):
-    """Возвращает (разрешено_ли, сколько_ждать)."""
+    """
+    Проверяет лимит запросов (1 запрос в 30 секунд).
+    Возвращает (разрешено: bool, сообщение: str).
+    """
     now = time.time()
     last_time = USER_LAST_ACTION.get(uid, 0)
     
-    # Лимит 30 секунд
+    # Если прошло меньше 30 секунд
     if now - last_time < 30:
         wait_time = int(30 - (now - last_time))
-        return False, wait_time
+        return False, f"⏳ Не спамьте! Ждите {wait_time} сек."
     
+    # Обновляем время
     USER_LAST_ACTION[uid] = now
-    return True, 0
+    return True, ""
 # ===================================
 
 # --- DB HELPERS ---
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
     try:
         clean_msg = str(msg)[:150]
-        # Логируем в консоль сервера только важные статусы
+        # Логируем в консоль сервера только важные события
         if "✅" in clean_msg or "⏳" in clean_msg or "⚠️" in clean_msg:
             print(f"[AutoBump {uid}] {clean_msg}", flush=True)
             
@@ -49,8 +53,8 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                # Джиттер 10-30 сек
-                jitter = random.randint(10, 30) 
+                # Джиттер 10-20 секунд (для естественности)
+                jitter = random.randint(10, 20) 
                 final_delay = next_delay + jitter
                 
                 await conn.execute(
@@ -64,22 +68,17 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
 
 # --- PARSERS ---
 def parse_wait_time(text: str) -> int:
+    """Парсит время из текста ошибки FunPay."""
     if not text: return 0
     text = text.lower()
     
-    # 1. HH:MM:SS
+    # 1. Формат "02:59:59"
     time_match = re.search(r'(\d+):(\d+):(\d+)', text)
     if time_match:
         h, m, s = map(int, time_match.groups())
         return h * 3600 + m * 60 + s
 
-    # 2. HH:MM
-    time_match_short = re.search(r'(\d+):(\d+)', text)
-    if time_match_short and ("мин" not in text and "ч" not in text):
-        m, s = map(int, time_match_short.groups())
-        return m * 60 + s
-
-    # 3. Текст
+    # 2. Формат "3 ч. 15 мин."
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     
@@ -88,11 +87,16 @@ def parse_wait_time(text: str) -> int:
     
     total = (hours * 3600) + (minutes * 60)
     
+    # Если цифр нет, но есть текст ожидания -> 1 час
+    if total == 0 and ("подож" in text or "wait" in text): return 3600
+    
     return total
 
 def get_tokens_and_status(html: str):
+    """Извлекает CSRF, GameID кнопки и текст скрытого алерта."""
     csrf, gid, alert = None, None, None
     
+    # CSRF
     m = re.search(r'data-app-data="([^"]+)"', html)
     if m:
         try:
@@ -106,17 +110,18 @@ def get_tokens_and_status(html: str):
             m = re.search(p, html)
             if m: csrf = m.group(1); break
             
-    # Ищем кнопку
+    # КНОПКА (Ищем по классу js-lot-raise)
     btn_match = re.search(r'<button[^>]*class=["\'][^"\']*js-lot-raise[^"\']*["\'][^>]*>', html)
     if btn_match:
         btn_html = btn_match.group(0)
         g_match = re.search(r'data-game=["\'](\d+)["\']', btn_html)
         if g_match: gid = g_match.group(1)
         else:
+            # Fallback
             m = re.search(r'data-game-id=["\'](\d+)["\']', html)
             if m: gid = m.group(1)
 
-    # Ищем алерт
+    # АЛЕРТ (site-message)
     alert_match = re.search(r'id=["\']site-message["\'][^>]*>(.*?)</div>', html, re.DOTALL)
     if alert_match:
         alert = alert_match.group(1).strip()
@@ -126,7 +131,7 @@ def get_tokens_and_status(html: str):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Server-Side Rate Limit)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (Final Logic)", flush=True)
     connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=45)
     
@@ -156,6 +161,7 @@ async def worker(app):
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
+                    # Ставим статус "В работе", чтобы не взять дважды
                     await update_status(pool, uid, "⚡ Работаю...", 120) 
 
                     try:
@@ -178,6 +184,7 @@ async def worker(app):
                             get_hdrs = HEADERS.copy(); get_hdrs["Referer"] = url
                             html = ""
                             
+                            # 1. Загрузка страницы
                             for attempt in range(2):
                                 try:
                                     async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
@@ -189,6 +196,7 @@ async def worker(app):
                             if final_msg == "❌ Логин": 
                                 await update_status(pool, uid, "❌ Сессия (STOP)", disable=True); break
 
+                            # 2. Поиск данных
                             csrf, gid, alert_text = get_tokens_and_status(html)
                             
                             if not csrf and not global_csrf:
@@ -199,7 +207,9 @@ async def worker(app):
                                 except: pass
                             if not csrf and global_csrf: csrf = global_csrf
 
+                            # 3. Логика
                             if gid:
+                                # A. КНОПКА ЕСТЬ - ЖМЕМ
                                 post_hdrs = HEADERS.copy()
                                 post_hdrs["Referer"] = url
                                 post_hdrs["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
@@ -226,6 +236,7 @@ async def worker(app):
                                     final_msg = "❌ Ошибка сети"; final_delay = 60
                             
                             elif alert_text:
+                                # B. КНОПКИ НЕТ - ЧИТАЕМ АЛЕРТ
                                 w = parse_wait_time(alert_text)
                                 if w > 0:
                                     if w > final_delay:
@@ -235,15 +246,18 @@ async def worker(app):
                                         final_msg = f"⏳ Ждем {h}ч {m}мин"
                             
                             else:
+                                # C. НИЧЕГО НЕТ - ПРОВЕРЯЕМ ЛОГИН
                                 if "href=\"/account/login\"" in html or "href='/account/login'" in html:
                                     final_msg = "⚠️ Не авторизован"
                                     final_delay = 60
                                 elif final_delay == 0:
+                                    # Мы в системе, но таймеров нет -> Лот активен -> Ждем час
                                     final_msg = "⏳ Лот активен (1ч)"
                                     final_delay = 3600
 
                             await asyncio.sleep(random.uniform(1.0, 2.0))
 
+                        # --- ИТОГИ ---
                         if "❌ Логин" in final_msg: pass 
                         elif final_delay > 0:
                             await update_status(pool, uid, final_msg, final_delay)
@@ -261,16 +275,17 @@ async def worker(app):
             await asyncio.sleep(1)
         except: await asyncio.sleep(5)
 
-# --- API ---
+# --- API ENDPOINTS ---
 async def get_plugin_user(request: Request):
     return await get_current_user_raw(request.app, request)
 
 @router.post("/set")
 async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_user)):
-    # 🛑 ПРОВЕРКА СПАМА НА СЕРВЕРЕ 🛑
-    allowed, wait_time = check_rate_limit(u['uid'])
-    if not allowed:
-        return {"success": False, "message": f"⏳ Сервер: подождите {wait_time} сек"}
+    # 🛑 СЕРВЕРНАЯ ЗАЩИТА ОТ СПАМА 🛑
+    is_allowed, msg = check_rate_limit(u['uid'])
+    if not is_allowed:
+        # Возвращаем False, чтобы клиент показал ошибку
+        return {"success": False, "message": msg}
     # -------------------------------
 
     async with req.app.state.pool.acquire() as conn:
@@ -290,10 +305,10 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
 
 @router.post("/force_check")
 async def force(req: Request, u=Depends(get_plugin_user)):
-    # 🛑 ПРОВЕРКА СПАМА НА СЕРВЕРЕ 🛑
-    allowed, wait_time = check_rate_limit(u['uid'])
-    if not allowed:
-        return {"success": False, "message": f"⏳ Сервер: подождите {wait_time} сек"}
+    # 🛑 СЕРВЕРНАЯ ЗАЩИТА ОТ СПАМА 🛑
+    is_allowed, msg = check_rate_limit(u['uid'])
+    if not is_allowed:
+        return {"success": False, "message": msg}
     # -------------------------------
 
     async with req.app.state.pool.acquire() as conn:
