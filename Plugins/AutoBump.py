@@ -4,6 +4,7 @@ import html as html_lib
 import random
 import json
 import aiohttp
+import time  # <--- Добавлено для таймера
 import traceback
 from datetime import datetime
 from fastapi import APIRouter, Depends, Request
@@ -18,11 +19,26 @@ class CloudBumpSettings(BaseModel):
     node_ids: list[str]
     active: bool
 
+# --- ANTI-SPAM SYSTEM ---
+# Хранит время последнего запроса для каждого юзера: { 'user_uid': timestamp }
+USER_LAST_ACTION = {}
+
+def check_spam_limit(uid: str):
+    """Проверяет, прошло ли 30 секунд с последнего действия."""
+    now = time.time()
+    last_time = USER_LAST_ACTION.get(uid, 0)
+    
+    if now - last_time < 30:
+        wait_time = int(30 - (now - last_time))
+        return False, f"⏳ Спам-защита: подождите {wait_time} сек."
+    
+    USER_LAST_ACTION[uid] = now
+    return True, ""
+
 # --- DB HELPERS ---
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
     try:
         clean_msg = str(msg)[:150]
-        # Логируем
         if "✅" in clean_msg or "⏳" in clean_msg or "⚠️" in clean_msg:
             print(f"[AutoBump {uid}] {clean_msg}", flush=True)
             
@@ -30,7 +46,7 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                # Джиттер 30-60 секунд (чтобы наверняка)
+                # Джиттер 30-60 сек
                 jitter = random.randint(30, 60) 
                 final_delay = next_delay + jitter
                 
@@ -45,7 +61,6 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
 
 # --- PARSERS ---
 def parse_wait_time(text: str) -> int:
-    """Парсит время из текста FunPay."""
     if not text: return 0
     text = text.lower()
     
@@ -55,22 +70,16 @@ def parse_wait_time(text: str) -> int:
         h, m, s = map(int, time_match.groups())
         return h * 3600 + m * 60 + s
 
-    # 2. "3 ч. 15 мин." или "2 часа"
+    # 2. "3 ч. 15 мин."
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     
-    hours = int(h.group(1)) if h else 0
-    minutes = int(m.group(1)) if m else 0
+    total = (int(h.group(1)) * 3600 if h else 0) + (int(m.group(1)) * 60 if m else 0)
     
-    total = (hours * 3600) + (minutes * 60)
-    
-    # Если цифр нет, но есть слова "подождите" -> 1 час
     if total == 0 and ("подож" in text or "wait" in text): return 3600
-    
     return total
 
 def get_tokens_and_status(html: str):
-    """Возвращает (csrf, game_id, hidden_alert_text)."""
     csrf, gid, alert = None, None, None
     
     # 1. CSRF
@@ -88,20 +97,16 @@ def get_tokens_and_status(html: str):
             if m: csrf = m.group(1); break
             
     # 2. GameID (Кнопка)
-    # Ищем строго класс js-lot-raise
     btn_match = re.search(r'<button[^>]*class=["\'][^"\']*js-lot-raise[^"\']*["\'][^>]*>', html)
     if btn_match:
         btn_html = btn_match.group(0)
-        # Вытаскиваем data-game
         g_match = re.search(r'data-game=["\'](\d+)["\']', btn_html)
         if g_match: gid = g_match.group(1)
         else:
-            # Если data-game нет в кнопке, ищем data-node или глобально
             m = re.search(r'data-game-id=["\'](\d+)["\']', html)
             if m: gid = m.group(1)
 
-    # 3. Hidden Alert (site-message)
-    # <div id="site-message" ...>Подождите 2 часа.</div>
+    # 3. Alert
     alert_match = re.search(r'id=["\']site-message["\'][^>]*>(.*?)</div>', html, re.DOTALL)
     if alert_match:
         alert = alert_match.group(1).strip()
@@ -111,7 +116,7 @@ def get_tokens_and_status(html: str):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Strict Logic)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (Final + Spam Protection)", flush=True)
     connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=45)
     
@@ -141,7 +146,6 @@ async def worker(app):
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
-                    # Короткий статус "Работаю", чтобы не блокировать надолго
                     await update_status(pool, uid, "⚡ Работаю...", 120) 
 
                     try:
@@ -164,7 +168,6 @@ async def worker(app):
                             get_hdrs = HEADERS.copy(); get_hdrs["Referer"] = url
                             html = ""
                             
-                            # 1. Загрузка страницы
                             for attempt in range(2):
                                 try:
                                     async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
@@ -176,10 +179,8 @@ async def worker(app):
                             if final_msg == "❌ Логин": 
                                 await update_status(pool, uid, "❌ Сессия (STOP)", disable=True); break
 
-                            # 2. Поиск данных (Кнопка и Алерт)
                             csrf, gid, alert_text = get_tokens_and_status(html)
                             
-                            # Fallback CSRF
                             if not csrf and not global_csrf:
                                 try:
                                     async with session.get("https://funpay.com/", headers=get_hdrs, cookies=cookies) as rh:
@@ -188,9 +189,8 @@ async def worker(app):
                                 except: pass
                             if not csrf and global_csrf: csrf = global_csrf
 
-                            # 3. Принятие решений
                             if gid:
-                                # А. ЕСТЬ КНОПКА -> ЖМЕМ
+                                # А. ЖМЕМ КНОПКУ
                                 post_hdrs = HEADERS.copy()
                                 post_hdrs["Referer"] = url
                                 post_hdrs["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
@@ -206,60 +206,45 @@ async def worker(app):
                                             if not js.get("error"): 
                                                 success_cnt += 1
                                             else:
-                                                # Ошибка FP (обычно таймер)
                                                 msg = js.get("msg", "")
                                                 w = parse_wait_time(msg)
                                                 if w > 0:
                                                     if w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
                                                 else: final_msg = f"⚠️ {msg[:30]}"
                                         except:
-                                            # Не JSON, но может быть успех
                                             if "поднято" in txt.lower(): success_cnt += 1
                                 except: 
                                     final_msg = "❌ Ошибка сети"; final_delay = 60
                             
                             elif alert_text:
-                                # Б. НЕТ КНОПКИ, НО ЕСТЬ ALERT (id="site-message")
-                                # Это то, что вы просили: парсим "Подождите 2 часа" отсюда
+                                # Б. ТАЙМЕР ИЗ АЛЕРТА
                                 w = parse_wait_time(alert_text)
                                 if w > 0:
                                     if w > final_delay:
                                         final_delay = w
-                                        # Красивый вывод
                                         h = w // 3600
                                         m = (w % 3600) // 60
                                         final_msg = f"⏳ Ждем {h}ч {m}мин"
-                                else:
-                                    pass # Алерт есть, но время не поняли
                             
                             else:
-                                # В. НЕТ КНОПКИ И НЕТ АЛЕРТА
-                                # Проверяем, точно ли мы не авторизованы?
-                                # Ищем "Войти" (login) в HTML. Если есть -> точно вылетели.
-                                # Если нет -> скорее всего, лот активен, просто таймер скрыт.
+                                # В. ПРОВЕРКА АВТОРИЗАЦИИ
                                 if "href=\"/account/login\"" in html or "href='/account/login'" in html:
                                     final_msg = "⚠️ Не авторизован"
                                     final_delay = 60
                                 elif final_delay == 0:
-                                    # Мы вроде в системе, кнопки нет -> считаем что лот активен
                                     final_msg = "⏳ Лот активен (1ч)"
                                     final_delay = 3600
 
                             await asyncio.sleep(random.uniform(1.0, 2.0))
 
-                        # --- ИТОГИ ---
                         if "❌ Логин" in final_msg: pass 
                         elif final_delay > 0:
-                            # Найденный таймер (из кнопки или div)
                             await update_status(pool, uid, final_msg, final_delay)
                         elif success_cnt > 0:
-                            # Успех -> 4 часа
                             await update_status(pool, uid, f"✅ Поднято: {success_cnt}", 14400)
                         elif final_msg:
-                            # Ошибки
                             await update_status(pool, uid, final_msg, 60)
                         else:
-                            # Если прошли цикл и ничего не нашли -> час
                             await update_status(pool, uid, "⏳ Ожидание (1ч)", 3600)
 
                     except Exception as e:
@@ -275,6 +260,12 @@ async def get_plugin_user(request: Request):
 
 @router.post("/set")
 async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_user)):
+    # === SPAM PROTECTION ===
+    is_ok, msg = check_spam_limit(u['uid'])
+    if not is_ok:
+        return {"success": False, "message": msg}
+    # =======================
+
     async with req.app.state.pool.acquire() as conn:
         enc = encrypt_data(data.golden_key)
         ns = ",".join(data.node_ids)
@@ -292,8 +283,13 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
 
 @router.post("/force_check")
 async def force(req: Request, u=Depends(get_plugin_user)):
+    # === SPAM PROTECTION ===
+    is_ok, msg = check_spam_limit(u['uid'])
+    if not is_ok:
+        return {"success": False, "message": msg}
+    # =======================
+
     async with req.app.state.pool.acquire() as conn:
-        # Сбрасываем таймер на NOW(), чтобы воркер подхватил сразу
         await conn.execute("UPDATE autobump_tasks SET next_bump_at=NOW(), status_message='В очереди...' WHERE user_uid=$1", u['uid'])
     return {"status": "success"}
 
