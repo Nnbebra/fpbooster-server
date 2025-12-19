@@ -22,7 +22,7 @@ class CloudBumpSettings(BaseModel):
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
     try:
         clean_msg = str(msg)[:150]
-        # Пишем в лог только результаты или таймеры
+        # Логируем
         if "✅" in clean_msg or "⏳" in clean_msg or "⚠️" in clean_msg:
             print(f"[AutoBump {uid}] {clean_msg}", flush=True)
             
@@ -30,8 +30,8 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                # УМНЫЙ ТАЙМЕР: 2-3 минуты джиттера
-                jitter = random.randint(120, 180) 
+                # Джиттер 30-60 секунд (чтобы наверняка)
+                jitter = random.randint(30, 60) 
                 final_delay = next_delay + jitter
                 
                 await conn.execute(
@@ -45,17 +45,17 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
 
 # --- PARSERS ---
 def parse_wait_time(text: str) -> int:
-    """Парсит время из текста ошибки или алерта."""
+    """Парсит время из текста FunPay."""
     if not text: return 0
     text = text.lower()
     
-    # 1. Формат "02:59:59"
+    # 1. HH:MM:SS
     time_match = re.search(r'(\d+):(\d+):(\d+)', text)
     if time_match:
         h, m, s = map(int, time_match.groups())
         return h * 3600 + m * 60 + s
 
-    # 2. Формат "3 ч. 15 мин."
+    # 2. "3 ч. 15 мин." или "2 часа"
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     
@@ -64,52 +64,56 @@ def parse_wait_time(text: str) -> int:
     
     total = (hours * 3600) + (minutes * 60)
     
+    # Если цифр нет, но есть слова "подождите" -> 1 час
+    if total == 0 and ("подож" in text or "wait" in text): return 3600
+    
     return total
 
-def get_game_id(html: str):
-    """Ищет data-game в кнопке js-lot-raise."""
-    # Ищем тег кнопки целиком
-    # <button ... class="... js-lot-raise ..." ... data-game="250" ...>
-    btn_match = re.search(r'<button[^>]*class=["\'][^"\']*js-lot-raise[^"\']*["\'][^>]*>', html)
-    if btn_match:
-        btn_html = btn_match.group(0)
-        g_match = re.search(r'data-game=["\'](\d+)["\']', btn_html)
-        if g_match: return g_match.group(1)
+def get_tokens_and_status(html: str):
+    """Возвращает (csrf, game_id, hidden_alert_text)."""
+    csrf, gid, alert = None, None, None
     
-    # Резервный поиск, если структура кнопки другая
-    m = re.search(r'data-game-id=["\'](\d+)["\']', html) or re.search(r'data-game=["\'](\d+)["\']', html)
-    if m: return m.group(1)
-    return None
-
-def get_csrf(html: str):
+    # 1. CSRF
     m = re.search(r'data-app-data="([^"]+)"', html)
     if m:
         try:
             blob = html_lib.unescape(m.group(1))
             t = re.search(r'"csrf-token"\s*:\s*"([^"]+)"', blob) or re.search(r'"csrfToken"\s*:\s*"([^"]+)"', blob)
-            if t: return t.group(1)
+            if t: csrf = t.group(1)
         except: pass
-        
-    patterns = [r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', r'name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']']
-    for p in patterns:
-        m = re.search(p, html)
-        if m: return m.group(1)
-    return None
+    if not csrf:
+        patterns = [r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', r'name=["\']csrf-token["\'][^>]+content=["\']([^"\']+)["\']']
+        for p in patterns:
+            m = re.search(p, html)
+            if m: csrf = m.group(1); break
+            
+    # 2. GameID (Кнопка)
+    # Ищем строго класс js-lot-raise
+    btn_match = re.search(r'<button[^>]*class=["\'][^"\']*js-lot-raise[^"\']*["\'][^>]*>', html)
+    if btn_match:
+        btn_html = btn_match.group(0)
+        # Вытаскиваем data-game
+        g_match = re.search(r'data-game=["\'](\d+)["\']', btn_html)
+        if g_match: gid = g_match.group(1)
+        else:
+            # Если data-game нет в кнопке, ищем data-node или глобально
+            m = re.search(r'data-game-id=["\'](\d+)["\']', html)
+            if m: gid = m.group(1)
 
-def get_hidden_alert_time(html: str):
-    """Ищет текст в div id='site-message' (даже скрытом)."""
-    # <div id="site-message" class="ajax-alert ajax-alert-danger" ...>Подождите 2 часа.</div>
-    m = re.search(r'id=["\']site-message["\'][^>]*>(.*?)</div>', html, re.DOTALL)
-    if m:
-        return parse_wait_time(m.group(1).strip())
-    return 0
+    # 3. Hidden Alert (site-message)
+    # <div id="site-message" ...>Подождите 2 часа.</div>
+    alert_match = re.search(r'id=["\']site-message["\'][^>]*>(.*?)</div>', html, re.DOTALL)
+    if alert_match:
+        alert = alert_match.group(1).strip()
+        
+    return csrf, gid, alert
 
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Forced Actualization)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (Strict Logic)", flush=True)
     connector = aiohttp.TCPConnector(ssl=False)
-    timeout = aiohttp.ClientTimeout(total=40)
+    timeout = aiohttp.ClientTimeout(total=45)
     
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -137,7 +141,7 @@ async def worker(app):
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
-                    # Ставим статус "Работаю", чтобы не взять задачу повторно
+                    # Короткий статус "Работаю", чтобы не блокировать надолго
                     await update_status(pool, uid, "⚡ Работаю...", 120) 
 
                     try:
@@ -153,8 +157,6 @@ async def worker(app):
                         final_msg = ""
                         final_delay = 0
                         success_cnt = 0
-                        
-                        # Кэш CSRF на случай, если на странице лота его нет
                         global_csrf = None
 
                         for node in nodes:
@@ -162,40 +164,37 @@ async def worker(app):
                             get_hdrs = HEADERS.copy(); get_hdrs["Referer"] = url
                             html = ""
                             
-                            # 1. ЗАГРУЗКА СТРАНИЦЫ
+                            # 1. Загрузка страницы
                             for attempt in range(2):
                                 try:
                                     async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
                                         if "login" in str(resp.url): final_msg = "❌ Логин"; break
                                         if resp.status == 404: break 
-                                        if resp.status != 200: await asyncio.sleep(1); continue
                                         html = await resp.text(); break
                                 except: await asyncio.sleep(1)
                             
                             if final_msg == "❌ Логин": 
                                 await update_status(pool, uid, "❌ Сессия (STOP)", disable=True); break
 
-                            # 2. ПОИСК ДАННЫХ
-                            gid = get_game_id(html)
-                            csrf = get_csrf(html)
+                            # 2. Поиск данных (Кнопка и Алерт)
+                            csrf, gid, alert_text = get_tokens_and_status(html)
                             
-                            # Fallback CSRF с главной
+                            # Fallback CSRF
                             if not csrf and not global_csrf:
                                 try:
                                     async with session.get("https://funpay.com/", headers=get_hdrs, cookies=cookies) as rh:
-                                        _, gc = get_csrf(await rh.text())
-                                        if gc: global_csrf = gc
+                                        c, _, _ = get_tokens_and_status(await rh.text())
+                                        if c: global_csrf = c
                                 except: pass
                             if not csrf and global_csrf: csrf = global_csrf
 
-                            # 3. ЛОГИКА ДЕЙСТВИЙ
+                            # 3. Принятие решений
                             if gid:
-                                # КНОПКА ЕСТЬ -> НАЖИМАЕМ
+                                # А. ЕСТЬ КНОПКА -> ЖМЕМ
                                 post_hdrs = HEADERS.copy()
                                 post_hdrs["Referer"] = url
                                 post_hdrs["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
                                 if csrf: post_hdrs["X-CSRF-Token"] = csrf
-                                
                                 payload = {"game_id": gid, "node_id": node}
                                 if csrf: payload["csrf_token"] = csrf
 
@@ -204,58 +203,64 @@ async def worker(app):
                                         txt = await pr.text()
                                         try:
                                             js = json.loads(txt)
-                                            # УСПЕХ
                                             if not js.get("error"): 
                                                 success_cnt += 1
                                             else:
-                                                # ОШИБКА (ТАЙМЕР)
+                                                # Ошибка FP (обычно таймер)
                                                 msg = js.get("msg", "")
                                                 w = parse_wait_time(msg)
                                                 if w > 0:
                                                     if w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
-                                                else: 
-                                                    final_msg = f"⚠️ {msg[:30]}"
+                                                else: final_msg = f"⚠️ {msg[:30]}"
                                         except:
+                                            # Не JSON, но может быть успех
                                             if "поднято" in txt.lower(): success_cnt += 1
                                 except: 
-                                    final_msg = "❌ Ошибка запроса"; final_delay = 60
-                            else:
-                                # КНОПКИ НЕТ -> СМОТРИМ АЛЕРТ (site-message)
-                                alert_time = get_hidden_alert_time(html)
-                                if alert_time > 0:
-                                    if alert_time > final_delay:
-                                        final_delay = alert_time
-                                        # Формируем читаемое сообщение
-                                        h = alert_time // 3600
-                                        m = (alert_time % 3600) // 60
-                                        final_msg = f"⏳ Подождите {h}ч {m}мин"
+                                    final_msg = "❌ Ошибка сети"; final_delay = 60
+                            
+                            elif alert_text:
+                                # Б. НЕТ КНОПКИ, НО ЕСТЬ ALERT (id="site-message")
+                                # Это то, что вы просили: парсим "Подождите 2 часа" отсюда
+                                w = parse_wait_time(alert_text)
+                                if w > 0:
+                                    if w > final_delay:
+                                        final_delay = w
+                                        # Красивый вывод
+                                        h = w // 3600
+                                        m = (w % 3600) // 60
+                                        final_msg = f"⏳ Ждем {h}ч {m}мин"
                                 else:
-                                    # НЕТ КНОПКИ И НЕТ АЛЕРТА
-                                    # Проверка авторизации по косвенным признакам
-                                    is_logged_in = ("user-link-dropdown" in html or "user-link-name" in html or "balance-count" in html)
-                                    
-                                    if is_logged_in and final_delay == 0:
-                                        # Мы в аккаунте, но кнопки нет -> Лот активен -> Ставим 1 час
-                                        final_msg = "⏳ Лот активен (1ч)"
-                                        final_delay = 3600 
-                                    elif not is_logged_in:
-                                        final_msg = "⚠️ Не авторизован"
-                                        final_delay = 60
+                                    pass # Алерт есть, но время не поняли
+                            
+                            else:
+                                # В. НЕТ КНОПКИ И НЕТ АЛЕРТА
+                                # Проверяем, точно ли мы не авторизованы?
+                                # Ищем "Войти" (login) в HTML. Если есть -> точно вылетели.
+                                # Если нет -> скорее всего, лот активен, просто таймер скрыт.
+                                if "href=\"/account/login\"" in html or "href='/account/login'" in html:
+                                    final_msg = "⚠️ Не авторизован"
+                                    final_delay = 60
+                                elif final_delay == 0:
+                                    # Мы вроде в системе, кнопки нет -> считаем что лот активен
+                                    final_msg = "⏳ Лот активен (1ч)"
+                                    final_delay = 3600
 
                             await asyncio.sleep(random.uniform(1.0, 2.0))
 
                         # --- ИТОГИ ---
                         if "❌ Логин" in final_msg: pass 
                         elif final_delay > 0:
-                            # Есть конкретный таймер (из кнопки или алерта)
+                            # Найденный таймер (из кнопки или div)
                             await update_status(pool, uid, final_msg, final_delay)
                         elif success_cnt > 0:
-                            # Успех
+                            # Успех -> 4 часа
                             await update_status(pool, uid, f"✅ Поднято: {success_cnt}", 14400)
                         elif final_msg:
+                            # Ошибки
                             await update_status(pool, uid, final_msg, 60)
                         else:
-                            await update_status(pool, uid, "⏳ Пауза (1ч)", 3600)
+                            # Если прошли цикл и ничего не нашли -> час
+                            await update_status(pool, uid, "⏳ Ожидание (1ч)", 3600)
 
                     except Exception as e:
                         traceback.print_exc()
@@ -288,6 +293,7 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
 @router.post("/force_check")
 async def force(req: Request, u=Depends(get_plugin_user)):
     async with req.app.state.pool.acquire() as conn:
+        # Сбрасываем таймер на NOW(), чтобы воркер подхватил сразу
         await conn.execute("UPDATE autobump_tasks SET next_bump_at=NOW(), status_message='В очереди...' WHERE user_uid=$1", u['uid'])
     return {"status": "success"}
 
