@@ -18,7 +18,7 @@ class CloudBumpSettings(BaseModel):
     node_ids: list[str]
     active: bool
 
-# --- ANTI-SPAM (DB) ---
+# --- ANTI-SPAM (DB BASED) ---
 async def check_rate_limit(pool, uid: str):
     try:
         async with pool.acquire() as conn:
@@ -26,43 +26,51 @@ async def check_rate_limit(pool, uid: str):
             if row and row['last_manual_check_at']:
                 diff = (datetime.now() - row['last_manual_check_at']).total_seconds()
                 if diff < 30:
-                    return False, f"⏳ Сервер: ждите {int(30 - diff)}с"
-            await conn.execute("INSERT INTO autobump_tasks (user_uid, last_manual_check_at) VALUES ($1, NOW()) ON CONFLICT (user_uid) DO UPDATE SET last_manual_check_at = NOW()", uid)
+                    wait_time = int(30 - diff)
+                    return False, f"⏳ Сервер: подождите {wait_time} сек"
+            
+            await conn.execute("""
+                INSERT INTO autobump_tasks (user_uid, last_manual_check_at) VALUES ($1, NOW())
+                ON CONFLICT (user_uid) DO UPDATE SET last_manual_check_at = NOW()
+            """, uid)
         return True, ""
     except: return True, ""
 
-# --- DB UPDATE ---
+# --- DB HELPERS ---
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
     try:
         clean_msg = str(msg)[:150]
         if "✅" in clean_msg or "⏳" in clean_msg or "⚠️" in clean_msg:
             print(f"[AutoBump {uid}] {clean_msg}", flush=True)
+            
         async with pool.acquire() as conn:
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                final_delay = next_delay + random.randint(10, 30)
+                final_delay = next_delay + random.randint(15, 40)
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, last_bump_at=NOW(), next_bump_at=NOW() + interval '1 second' * $2 WHERE user_uid=$3", clean_msg, final_delay, uid)
             else:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1 WHERE user_uid=$2", clean_msg, uid)
     except: pass
 
-# --- PARSERS ---
+# --- ADVANCED PARSERS ---
 def clean_text(text: str) -> str:
-    """Убирает HTML теги и декодирует символы."""
+    """Чистка текста от мусора."""
+    if not text: return ""
     text = html_lib.unescape(text)
     text = re.sub(r'<[^>]+>', ' ', text)
     return text.lower()
 
 def parse_wait_time(text: str) -> int:
+    """Парсит время из любого текста."""
     if not text: return 0
     text = clean_text(text)
     
-    # 1. Формат 02:59:59
+    # 1. HH:MM:SS
     tm = re.search(r'(\d+):(\d+):(\d+)', text)
     if tm: return int(tm.group(1))*3600 + int(tm.group(2))*60 + int(tm.group(3))
 
-    # 2. Текст (3 ч 19 мин)
+    # 2. Words
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     total = (int(h.group(1))*3600 if h else 0) + (int(m.group(1))*60 if m else 0)
@@ -70,42 +78,44 @@ def parse_wait_time(text: str) -> int:
     if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total
 
-def extract_game_id(html: str) -> str:
-    """Ищет ID игры ВЕЗДЕ."""
-    # 1. В кнопке
-    m = re.search(r'data-game=["\'](\d+)["\']', html)
-    if m: return m.group(1)
-    
-    # 2. Глобальный ID
-    m = re.search(r'data-game-id=["\'](\d+)["\']', html)
-    if m: return m.group(1)
-    
-    # 3. В скриптах/JSON
-    m = re.search(r'"game_id":\s*(\d+)', html)
-    if m: return m.group(1)
-    
-    return None
-
-def extract_csrf(html: str) -> str:
+def extract_app_data(html: str):
+    """
+    Извлекает game_id и csrf из скрытого JSON data-app-data.
+    Это самый надежный метод, так как он не зависит от наличия кнопок.
+    """
+    # Ищем блок <div data-app-data="...">
     m = re.search(r'data-app-data="([^"]+)"', html)
     if m:
         try:
-            js = json.loads(html_lib.unescape(m.group(1)))
-            return js.get("csrf-token") or js.get("csrfToken")
+            # Декодируем HTML сущности (&quot; -> ")
+            json_str = html_lib.unescape(m.group(1))
+            data = json.loads(json_str)
+            
+            csrf = data.get("csrf-token") or data.get("csrfToken")
+            # GameID часто лежит внутри ключа 'lot' или 'game'
+            gid = data.get("game_id") or data.get("gameId")
+            
+            return csrf, str(gid) if gid else None
         except: pass
-    m = re.search(r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
-    if m: return m.group(1)
-    return None
+    
+    # Fallback (Старый метод)
+    csrf = None
+    m_csrf = re.search(r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
+    if m_csrf: csrf = m_csrf.group(1)
+    
+    gid = None
+    m_gid = re.search(r'data-game-id=["\'](\d+)["\']', html)
+    if m_gid: gid = m_gid.group(1)
+    
+    return csrf, gid
 
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Fresh Session + Aggressive Force)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (AppData JSON Parser)", flush=True)
     
-    connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=45)
     
-    # Эмуляция реального браузера
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "X-Requested-With": "XMLHttpRequest",
@@ -123,7 +133,7 @@ async def worker(app):
 
             if not tasks: await asyncio.sleep(3); continue
 
-            # ВАЖНО: Сессия создается ЗДЕСЬ. Это "Hard Reset" для каждого цикла.
+            # Создаем НОВУЮ сессию для каждого цикла (Hard Reset)
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False), timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
@@ -141,14 +151,14 @@ async def worker(app):
                         final_delay = 0
                         success_cnt = 0
                         
-                        global_csrf = None # Кэш CSRF в рамках одного юзера
+                        global_csrf = None
 
                         for node in nodes:
                             url = f"https://funpay.com/lots/{node}/trade"
                             get_hdrs = HEADERS.copy(); get_hdrs["Referer"] = url
                             html = ""
                             
-                            # 1. Загрузка страницы
+                            # 1. Загрузка (2 попытки)
                             for _ in range(2):
                                 try:
                                     async with session.get(url, headers=get_hdrs, cookies=cookies) as resp:
@@ -157,19 +167,20 @@ async def worker(app):
                                 except: await asyncio.sleep(1)
                             if final_msg: break
 
-                            # 2. Поиск токенов
-                            gid = extract_game_id(html)
-                            csrf = extract_csrf(html)
+                            # 2. "Умный" поиск токенов через JSON
+                            csrf, gid = extract_app_data(html)
                             
+                            # Если не нашли CSRF на странице лота, ищем на главной
                             if not csrf and not global_csrf:
                                 try:
                                     async with session.get("https://funpay.com/", headers=get_hdrs, cookies=cookies) as rh:
-                                        global_csrf = extract_csrf(await rh.text())
+                                        c, _ = extract_app_data(await rh.text())
+                                        if c: global_csrf = c
                                 except: pass
                             if not csrf: csrf = global_csrf
 
-                            # 3. ПРИНУДИТЕЛЬНЫЙ POST (FORCE CHECK)
-                            # Мы игнорируем наличие кнопки. Если нашли GID - шлем запрос.
+                            # 3. FORCE POST
+                            # Если у нас есть GID и CSRF -> мы можем узнать статус, даже если кнопки нет
                             if gid and csrf:
                                 post_hdrs = HEADERS.copy()
                                 post_hdrs["Referer"] = url
@@ -184,7 +195,7 @@ async def worker(app):
                                             # Успех
                                             if not js.get("error") and not js.get("msg"): 
                                                 success_cnt += 1
-                                            # Ошибка (Таймер)
+                                            # Ошибка -> Там лежит таймер
                                             else:
                                                 msg = js.get("msg", "")
                                                 w = parse_wait_time(msg)
@@ -197,13 +208,15 @@ async def worker(app):
                                 except: final_msg = "❌ Ошибка сети"
                             
                             else:
-                                # Если даже GID не нашли (Fallack)
+                                # Если даже через JSON не нашли GID (значит, страница сломана или забанена)
                                 w = parse_wait_time(html)
                                 if w > 0:
                                     if w > final_delay: final_delay = w; h=w//3600; m=(w%3600)//60; final_msg = f"⏳ Ждем {h}ч {m}мин"
                                 else:
-                                    if "account/login" in html: final_msg = "⚠️ Не авторизован"; final_delay=60
-                                    elif final_delay == 0: final_msg = "⏳ Лот активен (1ч)"; final_delay=3600
+                                    if "account/login" in html: final_msg = "⚠️ Не авторизован"; final_delay = 60
+                                    elif final_delay == 0: 
+                                        # Только в крайнем случае ставим час
+                                        final_msg = "⏳ Лот активен (1ч)"; final_delay = 3600
 
                             await asyncio.sleep(random.uniform(1, 2))
 
@@ -225,8 +238,10 @@ async def get_plugin_user(request: Request): return await get_current_user_raw(r
 
 @router.post("/set")
 async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_user)):
+    # DB SPAM CHECK
     ok, msg = await check_rate_limit(req.app.state.pool, u['uid'])
     if not ok: return {"success": False, "message": msg}
+
     async with req.app.state.pool.acquire() as conn:
         enc = encrypt_data(data.golden_key); ns = ",".join(data.node_ids)
         await conn.execute("INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at, status_message, last_manual_check_at) VALUES ($1, $2, $3, $4, NOW(), 'Запуск...', NOW()) ON CONFLICT (user_uid) DO UPDATE SET encrypted_golden_key=EXCLUDED.encrypted_golden_key, node_ids=EXCLUDED.node_ids, is_active=EXCLUDED.is_active, next_bump_at=NOW(), status_message='Обновлено', last_manual_check_at=NOW()", u['uid'], enc, ns, data.active)
@@ -234,8 +249,10 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
 
 @router.post("/force_check")
 async def force(req: Request, u=Depends(get_plugin_user)):
+    # DB SPAM CHECK
     ok, msg = await check_rate_limit(req.app.state.pool, u['uid'])
     if not ok: return {"success": False, "message": msg}
+
     async with req.app.state.pool.acquire() as conn:
         await conn.execute("UPDATE autobump_tasks SET next_bump_at=NOW(), status_message='В очереди...' WHERE user_uid=$1", u['uid'])
     return {"status": "success"}
