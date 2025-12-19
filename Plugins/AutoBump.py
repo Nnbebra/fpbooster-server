@@ -4,7 +4,6 @@ import html as html_lib
 import random
 import json
 import aiohttp
-import time
 import traceback
 from datetime import datetime
 from fastapi import APIRouter, Depends, Request
@@ -19,26 +18,36 @@ class CloudBumpSettings(BaseModel):
     node_ids: list[str]
     active: bool
 
-# === ЗАЩИТА ОТ СПАМА (СЕРВЕРНАЯ) ===
-USER_LAST_ACTION = {}
-
-def check_rate_limit(uid: str):
-    """Возвращает (разрешено, сообщение). Лимит 30 сек."""
-    now = time.time()
-    last_time = USER_LAST_ACTION.get(uid, 0)
-    
-    if now - last_time < 30:
-        wait_time = int(30 - (now - last_time))
-        return False, f"⏳ Сервер: не спамьте! Ждите {wait_time} сек."
-    
-    USER_LAST_ACTION[uid] = now
+# --- ANTI-SPAM (DB BASED) ---
+async def check_rate_limit(pool, uid: str):
+    """
+    Проверяет лимит действий через БД.
+    Возвращает (разрешено: bool, сообщение: str).
+    """
+    async with pool.acquire() as conn:
+        # Получаем время последнего действия
+        row = await conn.fetchrow("SELECT last_manual_check_at FROM autobump_tasks WHERE user_uid=$1", uid)
+        
+        if row and row['last_manual_check_at']:
+            # Вычисляем разницу в секундах
+            diff = (datetime.now() - row['last_manual_check_at']).total_seconds()
+            if diff < 30:
+                wait_time = int(30 - diff)
+                return False, f"⏳ Сервер: подождите {wait_time} сек."
+        
+        # Если проверки прошли (или это первый раз), обновляем время
+        # Используем NOW(), но только если запись существует. 
+        # Если записи нет (первый запуск), она создастся в основном коде.
+        if row:
+            await conn.execute("UPDATE autobump_tasks SET last_manual_check_at=NOW() WHERE user_uid=$1", uid)
+            
     return True, ""
-# ===================================
 
 # --- DB HELPERS ---
 async def update_status(pool, uid, msg, next_delay=None, disable=False):
     try:
         clean_msg = str(msg)[:150]
+        # Логируем
         if "✅" in clean_msg or "⏳" in clean_msg or "⚠️" in clean_msg:
             print(f"[AutoBump {uid}] {clean_msg}", flush=True)
             
@@ -46,8 +55,8 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
             if disable:
                 await conn.execute("UPDATE autobump_tasks SET status_message=$1, is_active=FALSE WHERE user_uid=$2", clean_msg, uid)
             elif next_delay is not None:
-                # Джиттер 10-20 сек
-                jitter = random.randint(10, 20) 
+                # Джиттер 30-60 сек
+                jitter = random.randint(30, 60) 
                 final_delay = next_delay + jitter
                 
                 await conn.execute(
@@ -60,42 +69,23 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
         print(f"[AutoBump DB Error] {e}")
 
 # --- PARSERS ---
-def strip_tags(html: str) -> str:
-    """Удаляет HTML теги для чистого поиска текста."""
-    return re.sub('<[^<]+?>', ' ', html)
-
 def parse_wait_time(text: str) -> int:
-    """
-    Парсит время из текста. Понимает:
-    - 02:59:59
-    - 3 ч. 15 мин
-    - 19 мин
-    """
     if not text: return 0
-    
-    # Сначала чистим от тегов, чтобы найти "19 мин" даже если там 19<b>мин</b>
-    clean_text = strip_tags(text).lower()
+    text = text.lower()
     
     # 1. HH:MM:SS
-    time_match = re.search(r'(\d+):(\d+):(\d+)', clean_text)
+    time_match = re.search(r'(\d+):(\d+):(\d+)', text)
     if time_match:
         h, m, s = map(int, time_match.groups())
         return h * 3600 + m * 60 + s
 
-    # 2. Поиск слов (ч, мин, сек)
-    h = re.search(r'(\d+)\s*(?:ч|h|hour)', clean_text)
-    m = re.search(r'(\d+)\s*(?:м|min|мин)', clean_text)
-    s = re.search(r'(\d+)\s*(?:с|sec|сек)', clean_text)
+    # 2. Текст
+    h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
+    m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     
-    hours = int(h.group(1)) if h else 0
-    minutes = int(m.group(1)) if m else 0
-    seconds = int(s.group(1)) if s else 0
+    total = (int(h.group(1)) * 3600 if h else 0) + (int(m.group(1)) * 60 if m else 0)
     
-    total = (hours * 3600) + (minutes * 60) + seconds
-    
-    # Fallback: Если цифр нет, но есть "подождите" -> 1 час
-    if total == 0 and ("подож" in clean_text or "wait" in clean_text): return 3600
-    
+    if total == 0 and ("подож" in text or "wait" in text): return 3600
     return total
 
 def get_tokens_and_status(html: str):
@@ -115,7 +105,7 @@ def get_tokens_and_status(html: str):
             m = re.search(p, html)
             if m: csrf = m.group(1); break
             
-    # КНОПКА
+    # Кнопка (js-lot-raise)
     btn_match = re.search(r'<button[^>]*class=["\'][^"\']*js-lot-raise[^"\']*["\'][^>]*>', html)
     if btn_match:
         btn_html = btn_match.group(0)
@@ -125,7 +115,7 @@ def get_tokens_and_status(html: str):
             m = re.search(r'data-game-id=["\'](\d+)["\']', html)
             if m: gid = m.group(1)
 
-    # АЛЕРТ
+    # Алерт
     alert_match = re.search(r'id=["\']site-message["\'][^>]*>(.*?)</div>', html, re.DOTALL)
     if alert_match:
         alert = alert_match.group(1).strip()
@@ -135,10 +125,15 @@ def get_tokens_and_status(html: str):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Fixed Timer + Spam)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (DB Rate Limit)", flush=True)
     connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=45)
-    HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "X-Requested-With": "XMLHttpRequest"}
+    
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://funpay.com"
+    }
 
     while True:
         try:
@@ -216,7 +211,8 @@ async def worker(app):
                                         txt = await pr.text()
                                         try:
                                             js = json.loads(txt)
-                                            if not js.get("error"): success_cnt += 1
+                                            if not js.get("error"): 
+                                                success_cnt += 1
                                             else:
                                                 msg = js.get("msg", "")
                                                 w = parse_wait_time(msg)
@@ -225,7 +221,8 @@ async def worker(app):
                                                 else: final_msg = f"⚠️ {msg[:30]}"
                                         except:
                                             if "поднято" in txt.lower(): success_cnt += 1
-                                except: final_msg = "❌ Ошибка сети"; final_delay = 60
+                                except: 
+                                    final_msg = "❌ Ошибка сети"; final_delay = 60
                             
                             elif alert_text:
                                 w = parse_wait_time(alert_text)
@@ -237,24 +234,12 @@ async def worker(app):
                                         final_msg = f"⏳ Ждем {h}ч {m}мин"
                             
                             else:
-                                # ПОИСК В ТЕКСТЕ СТРАНИЦЫ (FALLBACK)
-                                # Используем strip_tags чтобы найти "19 мин" сквозь теги
-                                clean_html = strip_tags(html)
-                                w = parse_wait_time(clean_html)
-                                
-                                if w > 0:
-                                    if w > final_delay:
-                                        final_delay = w
-                                        h = w // 3600
-                                        m = (w % 3600) // 60
-                                        final_msg = f"⏳ Ждем {h}ч {m}мин"
-                                else:
-                                    if "href=\"/account/login\"" in html or "href='/account/login'" in html:
-                                        final_msg = "⚠️ Не авторизован"
-                                        final_delay = 60
-                                    elif final_delay == 0:
-                                        final_msg = "⏳ Лот активен (1ч)"
-                                        final_delay = 3600
+                                if "href=\"/account/login\"" in html or "href='/account/login'" in html:
+                                    final_msg = "⚠️ Не авторизован"
+                                    final_delay = 60
+                                elif final_delay == 0:
+                                    final_msg = "⏳ Лот активен (1ч)"
+                                    final_delay = 3600
 
                             await asyncio.sleep(random.uniform(1.0, 2.0))
 
@@ -281,15 +266,17 @@ async def get_plugin_user(request: Request):
 
 @router.post("/set")
 async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_user)):
-    is_ok, msg = check_rate_limit(u['uid'])
-    if not is_ok: return {"success": False, "message": msg}
+    # Проверка через БД
+    is_allowed, msg = await check_rate_limit(req.app.state.pool, u['uid'])
+    if not is_allowed:
+        return {"success": False, "message": msg}
 
     async with req.app.state.pool.acquire() as conn:
         enc = encrypt_data(data.golden_key)
         ns = ",".join(data.node_ids)
         await conn.execute("""
-            INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at, status_message) 
-            VALUES ($1, $2, $3, $4, NOW(), 'Запуск...') 
+            INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at, status_message, last_manual_check_at) 
+            VALUES ($1, $2, $3, $4, NOW(), 'Запуск...', NOW()) 
             ON CONFLICT (user_uid) DO UPDATE SET 
             encrypted_golden_key=EXCLUDED.encrypted_golden_key, 
             node_ids=EXCLUDED.node_ids, 
@@ -301,8 +288,10 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
 
 @router.post("/force_check")
 async def force(req: Request, u=Depends(get_plugin_user)):
-    is_ok, msg = check_rate_limit(u['uid'])
-    if not is_ok: return {"success": False, "message": msg}
+    # Проверка через БД
+    is_allowed, msg = await check_rate_limit(req.app.state.pool, u['uid'])
+    if not is_allowed:
+        return {"success": False, "message": msg}
 
     async with req.app.state.pool.acquire() as conn:
         await conn.execute("UPDATE autobump_tasks SET next_bump_at=NOW(), status_message='В очереди...' WHERE user_uid=$1", u['uid'])
