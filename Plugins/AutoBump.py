@@ -44,13 +44,29 @@ async def update_status(pool, uid, msg, next_delay=None, disable=False):
 
 # --- PARSERS ---
 def parse_wait_time(text: str) -> int:
-    """Парсит время из строк вида '3 ч. 15 мин.', '1 hour', 'подождите 50 сек'"""
+    """
+    Парсит время из форматов:
+    - '3 ч. 15 мин.'
+    - '02:59:59' (HH:MM:SS)
+    - 'подождите 50 сек'
+    """
     if not text: return 14400 
     text = text.lower()
     
-    # Поиск часов
+    # 1. Попытка найти HH:MM:SS
+    time_match = re.search(r'(\d+):(\d+):(\d+)', text)
+    if time_match:
+        h, m, s = map(int, time_match.groups())
+        return h * 3600 + m * 60 + s
+
+    # 2. Попытка найти HH:MM
+    time_match_short = re.search(r'(\d+):(\d+)', text)
+    if time_match_short and ("мин" not in text and "ч" not in text):
+        m, s = map(int, time_match_short.groups())
+        return m * 60 + s
+
+    # 3. Стандартный поиск слов
     h = re.search(r'(\d+)\s*(?:ч|h|hour)', text)
-    # Поиск минут
     m = re.search(r'(\d+)\s*(?:м|min|мин)', text)
     
     hours = int(h.group(1)) if h else 0
@@ -58,13 +74,12 @@ def parse_wait_time(text: str) -> int:
     
     total = (hours * 3600) + (minutes * 60)
     
-    # Если нашли конкретное время - возвращаем его
     if total > 0: return total
     
-    # Если цифр нет, но есть слова ожидания - возвращаем 1 час (fallback)
+    # Fallback: Если есть слова ожидания, но нет цифр -> 1 час
     if "подож" in text or "wait" in text or "через" in text: return 3600
     
-    return 0 # Не нашли время
+    return 0 
 
 def get_tokens_smart(html: str):
     csrf, gid = None, None
@@ -90,7 +105,7 @@ def get_tokens_smart(html: str):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoBump] WORKER STARTED (Deep Search Enabled)", flush=True)
+    print(">>> [AutoBump] WORKER STARTED (Advanced Parser)", flush=True)
     connector = aiohttp.TCPConnector(ssl=False)
     timeout = aiohttp.ClientTimeout(total=60)
     HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "X-Requested-With": "XMLHttpRequest"}
@@ -115,7 +130,6 @@ async def worker(app):
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 for task in tasks:
                     uid = task['user_uid']
-                    # Блокируем задачу (защита от двойного запуска)
                     await update_status(pool, uid, "⚡ Проверяю...", 900)
 
                     try:
@@ -149,12 +163,15 @@ async def worker(app):
                             if final_msg == "❌ Логин": 
                                 await update_status(pool, uid, "❌ Сессия (STOP)", disable=True); break
 
-                            # --- ГЛУБОКИЙ ПОИСК СТАТУСА ---
+                            # --- ЛОГИКА АНАЛИЗА СТРАНИЦЫ ---
                             gid, csrf = get_tokens_smart(html)
                             html_lower = html.lower()
 
-                            # Если нашли кнопку (gid), пробуем поднять
+                            # Проверка на авторизацию
+                            is_logged_in = "user-link-dropdown" in html or "user-link-name" in html
+
                             if gid:
+                                # КНОПКА ЕСТЬ - ЖМЕМ
                                 if not csrf and global_csrf: csrf = global_csrf
                                 if not csrf:
                                     try:
@@ -177,50 +194,50 @@ async def worker(app):
                                             js = json.loads(txt)
                                             if not js.get("error"): success_cnt += 1
                                             else:
-                                                # Ошибка от FP (таймер)
                                                 msg = js.get("msg", "")
                                                 w = parse_wait_time(msg)
-                                                if w > 0 and w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
-                                                elif w == 0: final_msg = f"⚠️ {msg[:30]}"
+                                                if w > 0: 
+                                                    if w > final_delay: final_delay = w; final_msg = f"⏳ {msg}"
+                                                else: final_msg = f"⚠️ {msg[:30]}"
                                         except:
                                             if "поднято" in txt.lower(): success_cnt += 1
                                 except: final_msg = "❌ POST Error"; final_delay = 600
                             
                             else:
-                                # Если кнопки НЕТ, ищем текст таймера на самой странице
-                                # Например: "Поднять через 2 ч." или "Подождите..."
+                                # КНОПКИ НЕТ - ИЩЕМ ПРИЧИНУ
                                 found_time = 0
-                                # Ищем любые цифры рядом со словами "ч." "мин"
+                                
+                                # Ищем любые упоминания времени
                                 if "поднять" in html_lower or "через" in html_lower or "wait" in html_lower or "подождите" in html_lower:
-                                    # Парсим весь текст страницы
                                     found_time = parse_wait_time(html)
                                 
                                 if found_time > 0:
                                     if found_time > final_delay:
                                         final_delay = found_time
-                                        # Формируем красивое сообщение
+                                        # Красивый вывод
                                         h = found_time // 3600
                                         m = (found_time % 3600) // 60
                                         final_msg = f"⏳ Ждем {h}ч {m}мин"
                                 else:
-                                    # Если таймера нет, но и кнопки нет - возможно лот неактивен?
-                                    pass
+                                    # Если кнопки нет и таймера нет, но мы залогинены
+                                    # Скорее всего, лот уже в топе или баг верстки
+                                    if is_logged_in and final_delay == 0:
+                                        final_msg = "⏳ Лот активен (пауза)"
+                                        final_delay = 3600 # Ставим час ожидания для безопасности
 
                             await asyncio.sleep(random.uniform(1.5, 3.0))
 
                         # --- ИТОГИ ---
                         if "❌ Логин" in final_msg: pass 
                         elif final_delay > 0:
-                            # Нашли таймер (или при POST, или на странице)
                             await update_status(pool, uid, final_msg, final_delay)
                         elif success_cnt > 0:
                             await update_status(pool, uid, f"✅ Поднято: {success_cnt}", 14400)
                         elif final_msg:
                             await update_status(pool, uid, final_msg, 1800)
                         else:
-                            # Если прошли все лоты, не нашли кнопок и не нашли таймеров
-                            # Ставим 10 минут (600 сек), а не час, чтобы быстрее перепроверить
-                            await update_status(pool, uid, "⚠️ Нет кнопок (10 мин)", 600)
+                            # Если вообще ничего не нашли, но прошли цикл
+                            await update_status(pool, uid, "⚠️ Проверка (10 мин)", 600)
 
                     except Exception as e:
                         traceback.print_exc()
@@ -238,7 +255,6 @@ async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_u
     async with req.app.state.pool.acquire() as conn:
         enc = encrypt_data(data.golden_key)
         ns = ",".join(data.node_ids)
-        # Сразу ставим NOW(), чтобы воркер подхватил задачу немедленно
         await conn.execute("""
             INSERT INTO autobump_tasks (user_uid, encrypted_golden_key, node_ids, is_active, next_bump_at, status_message) 
             VALUES ($1, $2, $3, $4, NOW(), 'Запуск...') 
@@ -264,7 +280,6 @@ async def get_stat(req: Request, u=Depends(get_plugin_user)):
     
     if not r: return {"is_active": False, "next_bump": None, "status_message": "Не настроено", "node_ids": []}
     
-    # Возвращаем список лотов, чтобы клиент мог их отобразить при старте
     nodes_list = [x.strip() for x in r['node_ids'].split(',') if x.strip()] if r['node_ids'] else []
 
     return {
