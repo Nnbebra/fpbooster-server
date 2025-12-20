@@ -71,17 +71,36 @@ def parse_edit_page(html: str):
 
 # --- API ---
 
+async def get_funpay_user_id(session, headers, cookies):
+    """Определяет ID текущего пользователя FunPay"""
+    try:
+        async with session.get("https://funpay.com/", headers=headers, cookies=cookies) as r:
+            html = await r.text()
+            
+            # Способ 1: Ссылка на профиль в шапке
+            # <a href="https://funpay.com/users/4692340/" class="user-link-photo" ...>
+            m = re.search(r'href="https://funpay.com/users/(\d+)/"', html)
+            if m: return m.group(1)
+            
+            # Способ 2: data-app-data
+            m_json = re.search(r'data-app-data="([^"]+)"', html)
+            if m_json:
+                try:
+                    data = json.loads(html_lib.unescape(m_json.group(1)))
+                    if data.get("userId"): return str(data.get("userId"))
+                except: pass
+    except: pass
+    return None
+
 @router.post("/fetch_offers")
 async def fetch_offers(data: FetchRequest, req: Request):
     """
-    Умный поиск: 
-    1. Заходит в категорию (Node).
-    2. Ищет ссылки на редактирование (значит лот твой).
-    3. Вытаскивает инфу по каждому лоту.
+    1. Узнает UserID владельца ключа.
+    2. Фильтрует категорию по UserID.
+    3. Парсит найденные лоты.
     """
     results = []
     
-    # Заголовки как у браузера
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
@@ -89,37 +108,43 @@ async def fetch_offers(data: FetchRequest, req: Request):
     cookies = {"golden_key": data.golden_key}
     
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
+        # Сначала получаем ID пользователя, чтобы найти ЕГО лоты в общей куче
+        user_id = await get_funpay_user_id(session, HEADERS, cookies)
+        
+        if not user_id:
+            return {"success": False, "message": "Не удалось определить UserID. Проверьте Golden Key."}
+
         for node in data.node_ids:
             node = str(node).strip()
             if not node.isdigit(): continue
             
             try:
-                # 1. Заходим на страницу категории (Trade)
-                trade_url = f"https://funpay.com/lots/{node}/trade"
+                # Фильтруем по юзеру!
+                trade_url = f"https://funpay.com/lots/{node}/trade?user={user_id}"
+                
                 async with session.get(trade_url, headers=HEADERS, cookies=cookies) as resp:
-                    if "login" in str(resp.url): 
-                        return {"success": False, "message": "Golden Key невалиден (Login Redirect)"}
-                    
                     html_trade = await resp.text()
 
-                # 2. Ищем ссылки вида offerEdit?offer=12345
-                # Это самый надежный способ найти СВОИ лоты в таблице
+                # Ищем ссылки на редактирование
                 found_offers = set(re.findall(r'offerEdit\?offer=(\d+)', html_trade))
                 
-                # Fallback: Если это одиночный лот (аккаунт), ссылок в таблице может не быть,
-                # или редирект сразу на offerEdit. Попробуем прямой заход.
+                # Если нашли 0, возможно это "прямой" лот (без таблицы)
                 if not found_offers:
+                    # Пробуем прямой заход (как раньше), иногда срабатывает для уникальных категорий
                     direct_url = f"https://funpay.com/lots/offerEdit?node={node}"
                     async with session.get(direct_url, headers=HEADERS, cookies=cookies) as r2:
-                        h2 = await r2.text()
-                        oid, name, _, _ = parse_edit_page(h2)
-                        if oid: found_offers.add(oid)
+                        if "offer_id" in await r2.text():
+                            h2 = await r2.text()
+                            oid, name, _, _ = parse_edit_page(h2)
+                            if oid: 
+                                results.append({"node_id": node, "offer_id": oid, "name": name, "valid": True})
+                                continue
 
                 if not found_offers:
                     results.append({"node_id": node, "valid": False, "error": "Лоты не найдены"})
                     continue
 
-                # 3. Проходим по каждому найденному OfferID и берем детали
+                # Детальный парсинг каждого найденного лота
                 for oid in found_offers:
                     edit_url = f"https://funpay.com/lots/offerEdit?offer={oid}"
                     async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r_edit:
@@ -133,10 +158,10 @@ async def fetch_offers(data: FetchRequest, req: Request):
                                 "name": real_name,
                                 "valid": True
                             })
-                    await asyncio.sleep(0.2) # Небольшая пауза, чтобы не спамить
+                    await asyncio.sleep(0.1)
 
             except Exception as e:
-                results.append({"node_id": node, "valid": False, "error": f"Ошибка: {str(e)[:30]}"})
+                results.append({"node_id": node, "valid": False, "error": f"Ошибка: {str(e)[:20]}"})
                 
             await asyncio.sleep(0.5)
 
@@ -202,7 +227,7 @@ async def get_status(req: Request, u=Depends(get_current_user_raw)):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoRestock] WORKER STARTED (Deep Parsing)", flush=True)
+    print(">>> [AutoRestock] WORKER STARTED (Targeted User Filter)", flush=True)
     
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
     
@@ -232,7 +257,7 @@ async def worker(app):
                             node_id = lot['node_id']
                             min_q = lot['min_qty']
                             
-                            # 1. Загружаем Edit Page
+                            # 1. Загружаем
                             edit_url = f"https://funpay.com/lots/offerEdit?offer={offer_id}"
                             async with session.get(edit_url, headers=headers, cookies=cookies) as r:
                                 html = await r.text()
@@ -262,7 +287,6 @@ async def worker(app):
                                     "active": "on",
                                     "save": "Сохранить"
                                 }
-                                # Важно: X-Requested-With
                                 post_hdrs = headers.copy()
                                 post_hdrs["X-Requested-With"] = "XMLHttpRequest"
                                 post_hdrs["Referer"] = edit_url
