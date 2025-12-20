@@ -11,7 +11,6 @@ from utils_crypto import encrypt_data, decrypt_data
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# --- МОДЕЛИ ---
 class FetchRequest(BaseModel):
     golden_key: str
     node_ids: list[str]
@@ -40,67 +39,44 @@ def count_lines(text: str):
     return len([l for l in text.split('\n') if l.strip()])
 
 def parse_edit_page(html: str):
-    """Парсит страницу редактирования лота (offerEdit)"""
+    """Извлекает ID, Имя и Токен со страницы редактирования"""
     offer_id = None
     name = "Без названия"
     
-    # Offer ID
+    # 1. Offer ID
     m_oid = re.search(r'name=["\']offer_id["\'][^>]+value=["\'](\d+)["\']', html)
     if m_oid: offer_id = m_oid.group(1)
     
-    # Name (RU)
+    # 2. Название (RU > EN > Title)
     m_name = re.search(r'name=["\']fields\[summary\]\[ru\]["\'][^>]*value=["\']([^"\']+)["\']', html)
     if m_name: 
         name = html_lib.unescape(m_name.group(1))
     else:
-        # Name (EN) - Fallback
         m_en = re.search(r'name=["\']fields\[summary\]\[en\]["\'][^>]*value=["\']([^"\']+)["\']', html)
         if m_en: name = html_lib.unescape(m_en.group(1))
         
-    # Textarea (Secrets)
-    secrets = ""
-    m_sec = re.search(r'<textarea[^>]*name=["\']secrets["\'][^>]*>(.*?)</textarea>', html, re.DOTALL)
-    if m_sec: secrets = html_lib.unescape(m_sec.group(1))
-
-    # CSRF
+    # 3. CSRF (для сохранения)
     csrf = None
     m_csrf = re.search(r'name=["\']csrf_token["\'][^>]+value=["\']([^"\']+)["\']', html)
     if m_csrf: csrf = m_csrf.group(1)
+
+    # 4. Текущий текст (Secrets)
+    secrets = ""
+    m_sec = re.search(r'<textarea[^>]*name=["\']secrets["\'][^>]*>(.*?)</textarea>', html, re.DOTALL)
+    if m_sec: secrets = html_lib.unescape(m_sec.group(1))
 
     return offer_id, name, secrets, csrf
 
 # --- API ---
 
-async def get_funpay_user_id(session, headers, cookies):
-    """Определяет ID текущего пользователя FunPay"""
-    try:
-        async with session.get("https://funpay.com/", headers=headers, cookies=cookies) as r:
-            html = await r.text()
-            
-            # Способ 1: Ссылка на профиль в шапке
-            # <a href="https://funpay.com/users/4692340/" class="user-link-photo" ...>
-            m = re.search(r'href="https://funpay.com/users/(\d+)/"', html)
-            if m: return m.group(1)
-            
-            # Способ 2: data-app-data
-            m_json = re.search(r'data-app-data="([^"]+)"', html)
-            if m_json:
-                try:
-                    data = json.loads(html_lib.unescape(m_json.group(1)))
-                    if data.get("userId"): return str(data.get("userId"))
-                except: pass
-    except: pass
-    return None
-
 @router.post("/fetch_offers")
 async def fetch_offers(data: FetchRequest, req: Request):
     """
-    1. Узнает UserID владельца ключа.
-    2. Фильтрует категорию по UserID.
-    3. Парсит найденные лоты.
+    Сканирует категорию на наличие лотов, принадлежащих владельцу ключа.
     """
     results = []
     
+    # Заголовки (как браузер)
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
@@ -108,44 +84,37 @@ async def fetch_offers(data: FetchRequest, req: Request):
     cookies = {"golden_key": data.golden_key}
     
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-        # Сначала получаем ID пользователя, чтобы найти ЕГО лоты в общей куче
-        user_id = await get_funpay_user_id(session, HEADERS, cookies)
-        
-        if not user_id:
-            return {"success": False, "message": "Не удалось определить UserID. Проверьте Golden Key."}
-
         for node in data.node_ids:
             node = str(node).strip()
             if not node.isdigit(): continue
             
             try:
-                # Фильтруем по юзеру!
-                trade_url = f"https://funpay.com/lots/{node}/trade?user={user_id}"
-                
+                # 1. Загружаем страницу торгов
+                trade_url = f"https://funpay.com/lots/{node}/trade"
                 async with session.get(trade_url, headers=HEADERS, cookies=cookies) as resp:
+                    if "login" in str(resp.url): 
+                        return {"success": False, "message": "Golden Key невалиден"}
                     html_trade = await resp.text()
 
-                # Ищем ссылки на редактирование
-                found_offers = set(re.findall(r'offerEdit\?offer=(\d+)', html_trade))
+                # 2. Ищем ссылки на редактирование (они есть ТОЛЬКО у владельца)
+                # Формат: href="https://funpay.com/lots/offerEdit?offer=12345"
+                # Используем set, чтобы убрать дубликаты
+                my_offer_ids = set(re.findall(r'offerEdit\?offer=(\d+)', html_trade))
                 
-                # Если нашли 0, возможно это "прямой" лот (без таблицы)
-                if not found_offers:
-                    # Пробуем прямой заход (как раньше), иногда срабатывает для уникальных категорий
+                # FALLBACK: Если это категория аккаунтов (нет таблицы), ищем прямой редирект
+                if not my_offer_ids:
                     direct_url = f"https://funpay.com/lots/offerEdit?node={node}"
                     async with session.get(direct_url, headers=HEADERS, cookies=cookies) as r2:
-                        if "offer_id" in await r2.text():
-                            h2 = await r2.text()
-                            oid, name, _, _ = parse_edit_page(h2)
-                            if oid: 
-                                results.append({"node_id": node, "offer_id": oid, "name": name, "valid": True})
-                                continue
+                        h2 = await r2.text()
+                        oid, name, _, _ = parse_edit_page(h2)
+                        if oid: my_offer_ids.add(oid)
 
-                if not found_offers:
-                    results.append({"node_id": node, "valid": False, "error": "Лоты не найдены"})
+                if not my_offer_ids:
+                    results.append({"node_id": node, "valid": False, "error": "Ваши лоты не найдены в этой категории"})
                     continue
 
-                # Детальный парсинг каждого найденного лота
-                for oid in found_offers:
+                # 3. Для каждого найденного ID заходим в редактор и берем название
+                for oid in my_offer_ids:
                     edit_url = f"https://funpay.com/lots/offerEdit?offer={oid}"
                     async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r_edit:
                         h_edit = await r_edit.text()
@@ -158,7 +127,7 @@ async def fetch_offers(data: FetchRequest, req: Request):
                                 "name": real_name,
                                 "valid": True
                             })
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.2) # Небольшая задержка
 
             except Exception as e:
                 results.append({"node_id": node, "valid": False, "error": f"Ошибка: {str(e)[:20]}"})
@@ -180,7 +149,9 @@ async def save_settings(data: RestockSettings, req: Request, u=Depends(get_curre
         final_lots = []
         for nl in data.lots:
             oid = str(nl.offer_id)
+            # Объединяем старые ключи с новыми
             pool = existing_pools.get(oid, []) + [s.strip() for s in nl.add_secrets if s.strip()]
+            
             final_lots.append({
                 "node_id": nl.node_id, 
                 "offer_id": oid, 
@@ -227,14 +198,15 @@ async def get_status(req: Request, u=Depends(get_current_user_raw)):
 # --- WORKER ---
 async def worker(app):
     await asyncio.sleep(5)
-    print(">>> [AutoRestock] WORKER STARTED (Targeted User Filter)", flush=True)
+    print(">>> [AutoRestock] WORKER STARTED (User Lots Scanner)", flush=True)
     
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
+    HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
     
     while True:
         try:
             if not hasattr(app.state, 'pool'): await asyncio.sleep(5); continue
             
+            # Берем задачи раз в 2 часа
             async with app.state.pool.acquire() as conn:
                 tasks = await conn.fetch("SELECT * FROM autorestock_tasks WHERE is_active = TRUE AND (last_check_at IS NULL OR last_check_at <= NOW() - INTERVAL '2 hours')")
             
@@ -251,15 +223,15 @@ async def worker(app):
                         cookies = {"golden_key": key}
 
                         for lot in lots:
-                            if not lot.get('secrets_pool'): continue
+                            pool = lot.get('secrets_pool', [])
+                            if not pool: continue # Нечего заливать
                             
                             offer_id = lot['offer_id']
-                            node_id = lot['node_id']
                             min_q = lot['min_qty']
                             
-                            # 1. Загружаем
+                            # 1. Загружаем страницу редактирования (САМЫЙ НАДЕЖНЫЙ СПОСОБ)
                             edit_url = f"https://funpay.com/lots/offerEdit?offer={offer_id}"
-                            async with session.get(edit_url, headers=headers, cookies=cookies) as r:
+                            async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r:
                                 html = await r.text()
                                 
                             real_oid, _, cur_text, csrf = parse_edit_page(html)
@@ -270,10 +242,10 @@ async def worker(app):
                                 
                             cur_qty = count_lines(cur_text)
                             
-                            # 2. Проверяем лимит
+                            # 2. Если мало ключей - доливаем
                             if cur_qty < min_q:
-                                to_add = lot['secrets_pool'][:50]
-                                remaining = lot['secrets_pool'][50:]
+                                to_add = pool[:50]
+                                remaining = pool[50:]
                                 
                                 new_text = cur_text.strip() + "\n" + "\n".join(to_add)
                                 
@@ -281,13 +253,14 @@ async def worker(app):
                                 payload = {
                                     "csrf_token": csrf,
                                     "offer_id": offer_id,
-                                    "node_id": node_id,
+                                    "node_id": lot['node_id'],
                                     "secrets": new_text,
                                     "auto_delivery": "on",
                                     "active": "on",
                                     "save": "Сохранить"
                                 }
-                                post_hdrs = headers.copy()
+                                # Для сохранения нужен заголовок AJAX
+                                post_hdrs = HEADERS.copy()
                                 post_hdrs["X-Requested-With"] = "XMLHttpRequest"
                                 post_hdrs["Referer"] = edit_url
                                 
