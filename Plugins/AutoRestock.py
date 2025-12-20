@@ -4,9 +4,8 @@ import html as html_lib
 import json
 import aiohttp
 import traceback
-import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -14,17 +13,17 @@ from pydantic import BaseModel
 from auth.guards import get_current_user as get_current_user_raw 
 from utils_crypto import encrypt_data, decrypt_data 
 
-# Настраиваем логгер
-logging.basicConfig(filename='restock_critical.log', level=logging.ERROR)
+# Убрали logging в файл, чтобы избежать PermissionError
+# Используем print() для логов в консоль
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# --- УПРОЩЕННЫЕ МОДЕЛИ (Чтобы избежать ошибок валидации) ---
+# --- МОДЕЛЬ (УПРОЩЕННАЯ) ---
 class FetchRequest(BaseModel):
     golden_key: str
     node_ids: list[str]
 
-# Используем Dict/Any для гибкости, чтобы Pydantic не крашил сервер 500-й ошибкой
+# Принимаем как словарь, чтобы избежать ошибок валидации Pydantic
 class RestockSettings(BaseModel):
     golden_key: str
     active: bool
@@ -32,7 +31,8 @@ class RestockSettings(BaseModel):
 
 # --- HELPERS ---
 def count_lines(text: str):
-    return len([l for l in text.split('\n') if l.strip()]) if text else 0
+    if not text: return 0
+    return len([l for l in text.split('\n') if l.strip()])
 
 def parse_edit_page(html: str):
     offer_id, name, secrets, csrf = None, "Без названия", "", None
@@ -74,6 +74,9 @@ async def ensure_table_exists(pool):
                     last_check_at TIMESTAMP WITHOUT TIME ZONE
                 );
             """)
+            # Миграция колонок (на всякий случай)
+            await conn.execute("ALTER TABLE autorestock_tasks ADD COLUMN IF NOT EXISTS lots_config JSONB;")
+            await conn.execute("ALTER TABLE autorestock_tasks ADD COLUMN IF NOT EXISTS check_interval INTEGER DEFAULT 7200;")
     except: pass
 
 async def update_status(pool, uid_obj, msg):
@@ -86,7 +89,6 @@ async def update_status(pool, uid_obj, msg):
 
 @router.post("/fetch_offers")
 async def fetch_offers(data: FetchRequest, req: Request):
-    """(Стабильная версия) Ищет офферы на странице /trade"""
     results = []
     HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "*/*"}
     cookies = {"golden_key": data.golden_key}
@@ -96,16 +98,15 @@ async def fetch_offers(data: FetchRequest, req: Request):
             node = str(node).strip()
             if not node.isdigit(): continue
             try:
-                # 1. Загрузка /trade
+                # 1. Загрузка
                 async with session.get(f"https://funpay.com/lots/{node}/trade", headers=HEADERS, cookies=cookies) as resp:
                     if "login" in str(resp.url): return {"success": False, "message": "Golden Key невалиден"}
                     html = await resp.text()
 
-                # 2. Поиск ссылок
+                # 2. Поиск
                 found_ids = set(re.findall(r'offerEdit\?[^"\']*offer=(\d+)', html))
-                
-                # Fallback для одиночных
                 if not found_ids:
+                    # Fallback
                     async with session.get(f"https://funpay.com/lots/offerEdit?node={node}", headers=HEADERS, cookies=cookies) as r2:
                         h2 = await r2.text()
                         oid, name, _, _, _, _ = parse_edit_page(h2)
@@ -129,21 +130,22 @@ async def fetch_offers(data: FetchRequest, req: Request):
 
 @router.post("/set")
 async def save_settings(data: RestockSettings, req: Request, u=Depends(get_current_user_raw)):
-    # Глобальный перехват ошибок
+    # Глобальный try-except для перехвата 500 ошибок
     try:
         pool = getattr(req.app.state, 'pool', None)
-        if not pool: raise Exception("Database pool is not initialized")
+        if not pool: 
+            return JSONResponse(status_code=200, content={"success": False, "message": "DB not ready"})
 
-        # 1. Конвертация UID в объект UUID (Critical Fix)
+        # Конвертация UID
         try:
             user_uid_obj = uuid.UUID(str(u['uid']))
         except:
-            raise Exception(f"Invalid User UID: {u.get('uid')}")
+            return JSONResponse(status_code=200, content={"success": False, "message": "Invalid User UID"})
 
         await ensure_table_exists(pool)
 
         async with pool.acquire() as conn:
-            # 2. Чтение старых данных
+            # 1. Читаем старые данные
             existing_pools = {}
             try:
                 row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", user_uid_obj)
@@ -154,42 +156,36 @@ async def save_settings(data: RestockSettings, req: Request, u=Depends(get_curre
                         for l in loaded:
                             existing_pools[str(l.get('offer_id'))] = l.get('secrets_pool', [])
             except Exception as e:
-                print(f"[Warning] Config read failed: {e}")
+                print(f"Config Read Warn: {e}")
 
-            # 3. Сборка нового конфига (из словарей data.lots)
+            # 2. Формируем новый конфиг
             final_lots = []
             for lot_dict in data.lots:
-                # Извлекаем данные из словаря (Pydantic model.lots -> List[Dict])
+                # Используем .get() так как это теперь словарь
                 oid = str(lot_dict.get('offer_id', ''))
-                nid = str(lot_dict.get('node_id', ''))
-                nm = str(lot_dict.get('name', ''))
-                mq = int(lot_dict.get('min_qty', 5))
-                new_keys_list = lot_dict.get('add_secrets', [])
+                if not oid: continue
                 
-                # Чистим ключи
-                clean_new_keys = [str(k).strip() for k in new_keys_list if str(k).strip()]
-                
-                # Объединяем
-                pool_keys = existing_pools.get(oid, []) + clean_new_keys
+                new_keys = [str(k).strip() for k in lot_dict.get('add_secrets', []) if str(k).strip()]
+                pool_keys = existing_pools.get(oid, []) + new_keys
                 
                 final_lots.append({
-                    "node_id": nid, 
+                    "node_id": str(lot_dict.get('node_id', '')), 
                     "offer_id": oid, 
-                    "name": nm, 
-                    "min_qty": mq, 
+                    "name": str(lot_dict.get('name', 'Item')), 
+                    "min_qty": int(lot_dict.get('min_qty', 5)), 
                     "secrets_pool": pool_keys
                 })
 
-            # 4. Шифрование
+            # 3. Шифрование
             try:
                 enc = encrypt_data(data.golden_key)
             except:
-                raise Exception("Encryption module failed")
+                return JSONResponse(status_code=200, content={"success": False, "message": "Encryption Error"})
             
-            # 5. Сохранение (JSON -> String -> CAST)
+            # 4. Сохранение (Строгая типизация для SQL)
             json_str = json.dumps(final_lots)
             
-            # Используем CAST($4 AS jsonb), чтобы избежать ошибки типов
+            # Используем CAST(... AS jsonb)
             await conn.execute("""
                 INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
                 VALUES ($1, $2, $3, CAST($4 AS jsonb), NOW(), 'Обновлено')
@@ -200,18 +196,14 @@ async def save_settings(data: RestockSettings, req: Request, u=Depends(get_curre
                 status_message = 'Настройки сохранены'
             """, user_uid_obj, enc, data.active, json_str)
             
-        return {"success": True, "message": "Конфигурация успешно сохранена"}
+        return {"success": True, "message": "Сохранено"}
 
     except Exception as e:
-        err_text = f"{type(e).__name__}: {str(e)}"
-        print(f"!!! SAVE ERROR: {err_text}")
+        # В случае любой ошибки возвращаем её текст в клиент
+        err = f"{type(e).__name__}: {str(e)}"
+        print(f"ERROR: {err}")
         traceback.print_exc()
-        
-        # ВОЗВРАЩАЕМ 200, ЧТОБЫ КЛИЕНТ ПОКАЗАЛ ОШИБКУ, А НЕ 500
-        return JSONResponse(
-            status_code=200, 
-            content={"success": False, "message": f"Server Error: {str(e)}"}
-        )
+        return JSONResponse(status_code=200, content={"success": False, "message": f"Err: {err}"})
 
 @router.get("/status")
 async def get_status(req: Request, u=Depends(get_current_user_raw)):
@@ -267,7 +259,7 @@ async def worker(app):
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 for t in tasks:
                     try:
-                        uid_val = t['user_uid'] # Это UUID объект
+                        uid_val = t['user_uid']
                         key = decrypt_data(t['encrypted_golden_key'])
                         raw = t['lots_config']
                         lots = json.loads(raw) if isinstance(raw, str) else raw
@@ -315,13 +307,10 @@ async def worker(app):
 
                         if is_changed:
                             async with app.state.pool.acquire() as c:
-                                # Явное приведение для UUID не нужно, если передаем объект
-                                # Для JSONB нужно
                                 await c.execute("UPDATE autorestock_tasks SET lots_config=CAST($1 AS jsonb) WHERE user_uid=$2", json.dumps(lots), uid_val)
                         
                         await update_status(app.state.pool, uid_val, ", ".join(log_msg) if log_msg else "✅ Проверено")
                     except Exception as e:
                         print(f"Worker Err: {e}")
-                        # await update_status(app.state.pool, uid_val, "Ошибка")
             await asyncio.sleep(5)
         except: await asyncio.sleep(5)
