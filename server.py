@@ -18,7 +18,8 @@ from auth.jwt_utils import verify_password, make_jwt
 
 # --- ИМПОРТ ПЛАГИНОВ ---
 # Здесь мы подключаем наш новый модульный функционал
-from Plugins import AutoBump 
+from Plugins import AutoBump, AutoRestock
+
 
 async def current_user(request: Request):
     return await get_current_user_raw(request.app, request)
@@ -76,6 +77,7 @@ app.include_router(purchases_router, tags=["purchases"])
 # --- ПОДКЛЮЧЕНИЕ ПЛАГИНОВ ---
 # Это добавит API методы плагина (например /api/plus/autobump/set)
 app.include_router(AutoBump.router)
+app.include_router(AutoRestock.router)
 
 # --- СТАТИКА ---
 from fastapi.staticfiles import StaticFiles
@@ -117,6 +119,7 @@ async def startup():
     # 2. Запуск фоновых задач плагинов (AutoBump)
     # Передаем 'app', чтобы воркер имел доступ к пулу БД (app.state.pool)
     asyncio.create_task(AutoBump.worker(app))
+    asyncio.create_task(AutoRestock.worker(app))
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -597,3 +600,4 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
