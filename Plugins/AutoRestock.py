@@ -9,25 +9,11 @@ from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+# from pydantic import BaseModel # Убрали BaseModel, чтобы не было 500-к на валидации
 from auth.guards import get_current_user as get_current_user_raw 
 from utils_crypto import encrypt_data, decrypt_data 
 
-# Убрали logging в файл, чтобы избежать PermissionError
-# Используем print() для логов в консоль
-
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
-
-# --- МОДЕЛЬ (УПРОЩЕННАЯ) ---
-class FetchRequest(BaseModel):
-    golden_key: str
-    node_ids: list[str]
-
-# Принимаем как словарь, чтобы избежать ошибок валидации Pydantic
-class RestockSettings(BaseModel):
-    golden_key: str
-    active: bool
-    lots: List[Dict[str, Any]] 
 
 # --- HELPERS ---
 def count_lines(text: str):
@@ -88,25 +74,36 @@ async def update_status(pool, uid_obj, msg):
 # --- API ---
 
 @router.post("/fetch_offers")
-async def fetch_offers(data: FetchRequest, req: Request):
+async def fetch_offers(req: Request):
+    """
+    Принимает Raw JSON, чтобы избежать ошибок валидации.
+    """
+    try:
+        body = await req.json()
+        golden_key = body.get("golden_key")
+        node_ids = body.get("node_ids", [])
+    except:
+        return {"success": False, "message": "Invalid JSON"}
+
     results = []
     HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "*/*"}
-    cookies = {"golden_key": data.golden_key}
+    cookies = {"golden_key": golden_key}
     
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-        for node in data.node_ids:
+        for node in node_ids:
             node = str(node).strip()
             if not node.isdigit(): continue
             try:
-                # 1. Загрузка
+                # 1. Загрузка /trade
                 async with session.get(f"https://funpay.com/lots/{node}/trade", headers=HEADERS, cookies=cookies) as resp:
                     if "login" in str(resp.url): return {"success": False, "message": "Golden Key невалиден"}
                     html = await resp.text()
 
-                # 2. Поиск
+                # 2. Поиск offerEdit (только свои)
                 found_ids = set(re.findall(r'offerEdit\?[^"\']*offer=(\d+)', html))
+                
+                # Fallback для одиночных
                 if not found_ids:
-                    # Fallback
                     async with session.get(f"https://funpay.com/lots/offerEdit?node={node}", headers=HEADERS, cookies=cookies) as r2:
                         h2 = await r2.text()
                         oid, name, _, _, _, _ = parse_edit_page(h2)
@@ -116,7 +113,7 @@ async def fetch_offers(data: FetchRequest, req: Request):
                     results.append({"node_id": node, "valid": False, "error": "Лоты не найдены"})
                     continue
 
-                # 3. Детали
+                # 3. Детализация
                 for oid in found_ids:
                     async with session.get(f"https://funpay.com/lots/offerEdit?offer={oid}", headers=HEADERS, cookies=cookies) as r_edit:
                         oid_real, name, _, _, _, _ = parse_edit_page(await r_edit.text())
@@ -129,14 +126,27 @@ async def fetch_offers(data: FetchRequest, req: Request):
     return {"success": True, "data": results}
 
 @router.post("/set")
-async def save_settings(data: RestockSettings, req: Request, u=Depends(get_current_user_raw)):
-    # Глобальный try-except для перехвата 500 ошибок
+async def save_settings(req: Request, u=Depends(get_current_user_raw)):
+    """
+    Принимает сырой Request, парсит JSON вручную и сохраняет в БД.
+    Гарантированно возвращает 200 OK с текстом ошибки в поле message.
+    """
     try:
+        # 1. Проверка пула БД
         pool = getattr(req.app.state, 'pool', None)
         if not pool: 
             return JSONResponse(status_code=200, content={"success": False, "message": "DB not ready"})
 
-        # Конвертация UID
+        # 2. Парсинг тела запроса (Manual JSON Parse)
+        try:
+            body = await req.json()
+            golden_key = body.get("golden_key")
+            active = body.get("active", False)
+            lots_data = body.get("lots", [])
+        except Exception as e:
+            return JSONResponse(status_code=200, content={"success": False, "message": f"Invalid JSON body: {e}"})
+
+        # 3. Конвертация UID
         try:
             user_uid_obj = uuid.UUID(str(u['uid']))
         except:
@@ -145,7 +155,7 @@ async def save_settings(data: RestockSettings, req: Request, u=Depends(get_curre
         await ensure_table_exists(pool)
 
         async with pool.acquire() as conn:
-            # 1. Читаем старые данные
+            # 5. Чтение старых данных
             existing_pools = {}
             try:
                 row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", user_uid_obj)
@@ -158,9 +168,9 @@ async def save_settings(data: RestockSettings, req: Request, u=Depends(get_curre
             except Exception as e:
                 print(f"Config Read Warn: {e}")
 
-            # 2. Формируем новый конфиг
+            # 6. Сборка нового конфига
             final_lots = []
-            for lot_dict in data.lots:
+            for lot_dict in lots_data:
                 # Используем .get() так как это теперь словарь
                 oid = str(lot_dict.get('offer_id', ''))
                 if not oid: continue
@@ -176,16 +186,16 @@ async def save_settings(data: RestockSettings, req: Request, u=Depends(get_curre
                     "secrets_pool": pool_keys
                 })
 
-            # 3. Шифрование
+            # 7. Шифрование
             try:
-                enc = encrypt_data(data.golden_key)
+                enc = encrypt_data(golden_key)
             except:
                 return JSONResponse(status_code=200, content={"success": False, "message": "Encryption Error"})
             
-            # 4. Сохранение (Строгая типизация для SQL)
+            # 8. Сохранение (JSON string explicit cast)
             json_str = json.dumps(final_lots)
             
-            # Используем CAST(... AS jsonb)
+            # Используем CAST($4 AS jsonb)
             await conn.execute("""
                 INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
                 VALUES ($1, $2, $3, CAST($4 AS jsonb), NOW(), 'Обновлено')
@@ -194,16 +204,16 @@ async def save_settings(data: RestockSettings, req: Request, u=Depends(get_curre
                 is_active = EXCLUDED.is_active,
                 lots_config = EXCLUDED.lots_config,
                 status_message = 'Настройки сохранены'
-            """, user_uid_obj, enc, data.active, json_str)
+            """, user_uid_obj, enc, active, json_str)
             
-        return {"success": True, "message": "Сохранено"}
+        return {"success": True, "message": "Сохранено успешно"}
 
     except Exception as e:
-        # В случае любой ошибки возвращаем её текст в клиент
-        err = f"{type(e).__name__}: {str(e)}"
-        print(f"ERROR: {err}")
+        # ЛОВИМ ВСЁ И ОТДАЕМ КЛИЕНТУ
+        err_msg = f"{type(e).__name__}: {str(e)}"
+        print(f"!!! CRITICAL SAVE ERROR: {err_msg}")
         traceback.print_exc()
-        return JSONResponse(status_code=200, content={"success": False, "message": f"Err: {err}"})
+        return JSONResponse(status_code=200, content={"success": False, "message": f"Server Err: {err_msg}"})
 
 @router.get("/status")
 async def get_status(req: Request, u=Depends(get_current_user_raw)):
