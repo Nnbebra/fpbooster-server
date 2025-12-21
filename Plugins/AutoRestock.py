@@ -33,6 +33,7 @@ def count_lines(text: str):
     return len([l for l in text.split('\n') if l.strip()])
 
 def parse_edit_page(html: str):
+    """Извлекает данные лота, CSRF и статусы галочек"""
     offer_id, secrets, csrf, node_id = None, "", None, None
     is_active, is_auto = False, False
     
@@ -55,11 +56,11 @@ def parse_edit_page(html: str):
 
     return offer_id, secrets, csrf, is_active, is_auto, node_id
 
-# --- API ENDPOINTS (То, что вызывается из софта) ---
+# --- API ENDPOINTS ---
 
 @router.post("/fetch_offers")
 async def fetch_offers(req: Request):
-    """Метод получения офферов для софта"""
+    """Получение списка офферов пользователя по категориям"""
     try:
         body = await req.json()
         golden_key = body.get("golden_key") or body.get("GoldenKey")
@@ -98,7 +99,7 @@ async def fetch_offers(req: Request):
 
 @router.post("/set")
 async def save_settings(req: Request):
-    """Метод сохранения конфигурации из софта"""
+    """Сохранение конфигурации пополнения с поддержкой auto_enable"""
     from auth.guards import get_current_user
     from utils_crypto import encrypt_data
     try:
@@ -111,10 +112,8 @@ async def save_settings(req: Request):
         active = body.get("active") if "active" in body else body.get("Active", False)
         lots_data = body.get("lots") or body.get("Lots") or []
 
-        # Формируем конфиг
         final_lots = []
         async with pool.acquire() as conn:
-            # Читаем старые пулы для мерджа
             existing_pools = {}
             row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
             if row and row['lots_config']:
@@ -132,6 +131,7 @@ async def save_settings(req: Request):
                     "offer_id": oid,
                     "name": str(lot.get('name') or lot.get('Name', 'Lot')),
                     "min_qty": int(lot.get('min_qty') or lot.get('MinQty', 5)),
+                    "auto_enable": bool(lot.get('auto_enable', lot.get('AutoEnable', True))), # Сохраняем настройку
                     "secrets_pool": pool_keys
                 })
 
@@ -151,7 +151,7 @@ async def save_settings(req: Request):
 
 @router.get("/status")
 async def get_status(req: Request):
-    """Метод получения статуса для софта"""
+    """Получение текущего статуса и конфигурации"""
     from auth.guards import get_current_user
     try:
         u = await get_current_user(req.app, req)
@@ -169,13 +169,16 @@ async def get_status(req: Request):
                     display_lots.append({
                         "node_id": l.get('node_id'), "offer_id": l.get('offer_id'),
                         "name": l.get('name', 'Лот'), "min_qty": l.get('min_qty'),
+                        "auto_enable": l.get('auto_enable', True), # Возвращаем настройку софту
                         "keys_in_db": len(l.get('secrets_pool', []))
                     })
         return {"active": r['is_active'], "message": r['status_message'], "lots": display_lots}
     except: return {"active": False, "message": "Error", "lots": []}
 
-# --- WORKER (ЛОГИКА ПРОВЕРКИ) ---
+# --- WORKER (ОБНОВЛЕННАЯ ЛОГИКА) ---
+
 async def worker(app):
+    """Фоновый воркер для проверки и пополнения товаров"""
     await asyncio.sleep(10)
     log_debug("Worker: Запущен. Ожидаю задачи...")
     from utils_crypto import decrypt_data
@@ -209,40 +212,75 @@ async def worker(app):
 
                         for lot in lots_conf:
                             pool = lot.get('secrets_pool', [])
+                            if not pool: continue # Нет товара в пуле - нечего делать
+
                             offer_id = lot['offer_id']
-                            min_q = int(lot.get('min_qty', 5))
+                            target_qty = int(lot.get('min_qty', 5))
+                            auto_enable_cfg = lot.get('auto_enable', True)
                             
+                            # 1. Загрузка страницы редактирования
                             edit_url = f"https://funpay.com/lots/offerEdit?offer={offer_id}"
                             async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r:
                                 html_txt = await r.text()
                             
                             oid, current_text, csrf, is_act, is_aut, real_node = parse_edit_page(html_txt)
-                            if not csrf: continue
+                            if not csrf:
+                                log_debug(f"[{uid}] Ошибка: Нет доступа к офферу {offer_id}")
+                                continue
 
-                            # Умная проверка типа товара (ссылки)
+                            # Разбиваем текущее содержимое на строки
                             current_lines = [l.strip() for l in current_text.split('\n') if l.strip()]
-                            if pool and current_lines and current_lines[0] != pool[0]:
-                                current_lines = [] # Ссылка изменилась в софте - очищаем старое
+                            
+                            # ЛОГИКА: Если первая строка на FunPay не совпадает с пулом - товар сменился в софте. Очищаем старое.
+                            if current_lines and current_lines[0] != pool[0]:
+                                log_debug(f"[{uid}] Смена товара в оффере {offer_id}. Очищаю и заменяю.")
+                                current_lines = []
 
-                            if len(current_lines) < min_q and pool:
-                                needed = min_q - len(current_lines)
-                                to_add = pool[:needed]
-                                remaining_pool = pool[needed:]
+                            # ЛОГИКА: Проверка галочки автовыдачи
+                            effective_auto = is_aut
+                            if not is_aut:
+                                if auto_enable_cfg:
+                                    log_debug(f"[{uid}] Оффер {offer_id}: автовыдача была выключена. ВКЛЮЧАЮ.")
+                                    effective_auto = True
+                                else:
+                                    log_msg.append(f"AutoOff:{offer_id}")
+                                    continue
+
+                            # ЛОГИКА: Пополнение до ТОЧНОГО количества target_qty (размножение ссылки из пула)
+                            if len(current_lines) < target_qty:
+                                needed = target_qty - len(current_lines)
+                                
+                                # Размножаем ссылки из пула до нужного количества
+                                to_add = []
+                                while len(to_add) < needed:
+                                    portion = pool[:(needed - len(to_add))]
+                                    to_add.extend(portion)
+                                    if len(portion) == 0: break # Пул пуст
+
                                 final_list = current_lines + to_add
                                 new_secrets_text = "\n".join(final_list)
 
                                 payload = {
-                                    "csrf_token": csrf, "offer_id": oid, "node_id": real_node or lot['node_id'],
-                                    "secrets": new_secrets_text, "auto_delivery": "on",
-                                    "active": "on" if is_act else "", "save": "Сохранить"
+                                    "csrf_token": csrf, "offer_id": oid, "node_id": real_node or lot.get('node_id'),
+                                    "secrets": new_secrets_text, 
+                                    "auto_delivery": "on" if effective_auto else "",
+                                    "active": "on" if is_act else "", 
+                                    "save": "Сохранить"
                                 }
                                 if not is_act: payload.pop("active", None)
 
                                 async with session.post("https://funpay.com/lots/offerSave", data=payload, cookies=cookies, headers=POST_HEADERS) as pr:
                                     if pr.status == 200:
-                                        log_msg.append(f"✅ {offer_id}: +{len(to_add)}")
-                                        lot['secrets_pool'] = remaining_pool
+                                        log_debug(f"[{uid}] Оффер {offer_id} успешно пополнен до {target_qty} строк.")
+                                        log_msg.append(f"✅{offer_id}:{target_qty}")
+                                        
+                                        # Обновляем пул в памяти (убираем использованные элементы, если они были уникальными)
+                                        # Но так как мы их размножали, мы просто имитируем потребление части пула
+                                        lot['secrets_pool'] = pool[len(to_add):] if len(pool) > len(to_add) else []
                                         is_changed = True
+                                    else:
+                                        log_debug(f"[{uid}] Ошибка сохранения {offer_id}: {pr.status}")
+                            
                             await asyncio.sleep(2)
 
                         if is_changed:
@@ -252,6 +290,9 @@ async def worker(app):
                         status = ", ".join(log_msg) if log_msg else "✅ Проверено"
                         async with app.state.pool.acquire() as c_upd:
                             await c_upd.execute("UPDATE autorestock_tasks SET status_message=$1, last_check_at=NOW() WHERE user_uid=$2", status[:100], uid)
-                    except: pass
+                    except Exception as e:
+                        log_debug(f"Ошибка задачи {uid}: {traceback.format_exc()}")
             await asyncio.sleep(20)
-        except: await asyncio.sleep(30)
+        except Exception as e:
+            log_debug(f"Критическая ошибка воркера: {e}")
+            await asyncio.sleep(30)
