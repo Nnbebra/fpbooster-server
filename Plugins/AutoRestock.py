@@ -12,23 +12,24 @@ from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-# Импортируем зависимости, но будем использовать их осторожно
-from auth.guards import get_current_user as get_current_user_raw 
+
+# Импортируем авторизацию, но вызывать будем вручную
+from auth.guards import get_current_user 
 from utils_crypto import encrypt_data, decrypt_data 
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# --- ЖЕСТКОЕ ЛОГИРОВАНИЕ В ФАЙЛ ---
-LOG_FILE = "restock_hardcore.log"
+# --- ЛОГИРОВАНИЕ (Абсолютный путь) ---
+# Лог будет лежать прямо там, откуда запущен скрипт
+LOG_FILE = os.path.join(os.getcwd(), "restock_final_debug.log")
 
 def log_debug(msg):
-    """Пишет лог сразу в файл, чтобы не потерять при краше"""
     try:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%H:%M:%S")
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{timestamp}] {msg}\n")
-    except:
-        print(f"LOG FAIL: {msg}")
+    except Exception as e:
+        print(f"LOGGING FAILED: {e}")
 
 # --- HELPERS ---
 def count_lines(text: str):
@@ -75,7 +76,6 @@ async def ensure_table_exists(pool):
                     last_check_at TIMESTAMP WITHOUT TIME ZONE
                 );
             """)
-            # Добавляем колонки для старых версий БД
             try: await conn.execute("ALTER TABLE autorestock_tasks ADD COLUMN IF NOT EXISTS lots_config JSONB;")
             except: pass
             try: await conn.execute("ALTER TABLE autorestock_tasks ADD COLUMN IF NOT EXISTS check_interval INTEGER DEFAULT 7200;")
@@ -138,52 +138,55 @@ async def fetch_offers(req: Request):
     return {"success": True, "data": results}
 
 @router.post("/set")
-async def save_settings(req: Request, u=Depends(get_current_user_raw)):
+async def save_settings(req: Request):
     """
-    DEBUG SAVE: Пишет каждый шаг в лог-файл.
+    БЕЗОПАСНЫЙ SAVE: Без Depends в аргументах.
     """
-    log_debug("=== STARTING REQUEST: /set ===")
+    log_debug("\n=== NEW REQUEST: /set ===")
     try:
-        # 1. Проверяем БД
+        # 1. Проверяем пул БД
         pool = getattr(req.app.state, 'pool', None)
         if not pool:
-            log_debug("FAIL: DB Pool is missing in app.state")
-            return JSONResponse(status_code=200, content={"success": False, "message": "Server Error: DB Pool Missing"})
-        log_debug("Step 1: DB Pool OK")
+            log_debug("FAIL: DB Pool is missing")
+            return JSONResponse(status_code=200, content={"success": False, "message": "Server DB Error (No Pool)"})
 
-        # 2. Проверяем UID
-        raw_uid = u.get('uid')
-        log_debug(f"Step 2: Raw UID from token: {raw_uid} (Type: {type(raw_uid)})")
+        # 2. РУЧНАЯ АВТОРИЗАЦИЯ (Внутри try/except)
+        # Мы убрали Depends из аргументов, чтобы поймать ошибку авторизации
+        u = None
         try:
-            user_uid_obj = uuid.UUID(str(raw_uid))
-            log_debug(f"Step 2: UUID Converted successfully: {user_uid_obj}")
+            log_debug("Checking auth...")
+            u = await get_current_user(req)
+            log_debug(f"Auth Success. User: {u.get('uid')}")
         except Exception as e:
-            log_debug(f"FAIL: UUID conversion error: {e}")
+            log_debug(f"AUTH FAIL: {e}")
+            return JSONResponse(status_code=200, content={"success": False, "message": f"Auth Error: {e}"})
+
+        # 3. Преобразование UID
+        try:
+            user_uid_obj = uuid.UUID(str(u['uid']))
+        except Exception as e:
+            log_debug(f"UUID ERROR: {e}")
             return JSONResponse(status_code=200, content={"success": False, "message": f"Bad UID: {e}"})
 
-        # 3. Парсим JSON
+        # 4. Парсинг JSON
         try:
             body = await req.json()
-            log_debug(f"Step 3: JSON Received. Keys: {list(body.keys())}")
+            log_debug(f"JSON Body received. Keys: {len(body.keys())}")
             
             golden_key = body.get("golden_key") or body.get("GoldenKey")
             active = body.get("active") if "active" in body else body.get("Active", False)
             lots_data = body.get("lots") or body.get("Lots") or []
-            
-            log_debug(f"Step 3: Parsed - Active={active}, Lots={len(lots_data)}")
         except Exception as e:
-            log_debug(f"FAIL: JSON Parsing Error: {e}")
+            log_debug(f"JSON ERROR: {e}")
             return JSONResponse(status_code=200, content={"success": False, "message": f"JSON Error: {e}"})
 
-        # 4. Инициализация таблицы
+        # 5. БД Init
         await ensure_table_exists(pool)
-        log_debug("Step 4: Table check passed")
 
         async with pool.acquire() as conn:
-            # 5. Чтение старого конфига
+            # 6. Чтение старого конфига
             existing_pools = {}
             try:
-                log_debug("Step 5: Reading old config...")
                 row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", user_uid_obj)
                 if row and row['lots_config']:
                     raw = row['lots_config']
@@ -191,11 +194,10 @@ async def save_settings(req: Request, u=Depends(get_current_user_raw)):
                     if isinstance(loaded, list):
                         for l in loaded:
                             existing_pools[str(l.get('offer_id'))] = l.get('secrets_pool', [])
-                log_debug("Step 5: Old config read OK")
             except Exception as e:
-                log_debug(f"Step 5 WARNING: Failed to read old config: {e}")
+                log_debug(f"Read Config Warn: {e}")
 
-            # 6. Сборка нового конфига
+            # 7. Новый конфиг
             final_lots = []
             for lot in lots_data:
                 try:
@@ -221,25 +223,20 @@ async def save_settings(req: Request, u=Depends(get_current_user_raw)):
                         "min_qty": mq, 
                         "secrets_pool": pool_keys
                     })
-                except Exception as e_lot:
-                    log_debug(f"Skipping bad lot data: {e_lot}")
+                except Exception as e:
+                    log_debug(f"Lot parse error: {e}")
 
-            log_debug(f"Step 6: Prepared {len(final_lots)} lots for save")
-
-            # 7. Шифрование
+            # 8. Шифрование
             try:
                 if not golden_key:
-                    log_debug("FAIL: Empty Golden Key")
                     return JSONResponse(status_code=200, content={"success": False, "message": "Empty GoldenKey"})
                 enc = encrypt_data(golden_key)
-                log_debug("Step 7: Key encrypted")
             except Exception as e:
-                log_debug(f"FAIL: Encrypt Error: {e}")
                 return JSONResponse(status_code=200, content={"success": False, "message": f"Encrypt Error: {e}"})
             
-            # 8. Запись в БД
+            # 9. SQL ЗАПИСЬ
             json_str = json.dumps(final_lots)
-            log_debug("Step 8: Executing SQL INSERT...")
+            log_debug("Executing INSERT...")
             
             try:
                 await conn.execute("""
@@ -251,22 +248,23 @@ async def save_settings(req: Request, u=Depends(get_current_user_raw)):
                     lots_config = EXCLUDED.lots_config,
                     status_message = 'Настройки сохранены'
                 """, user_uid_obj, enc, active, json_str)
-                log_debug("Step 8: SQL Success")
-            except Exception as e_sql:
-                log_debug(f"FAIL: SQL Execution Error: {e_sql}")
-                return JSONResponse(status_code=200, content={"success": False, "message": f"SQL Error: {str(e_sql)}"})
+                log_debug("SQL Success!")
+            except Exception as e:
+                log_debug(f"SQL FAIL: {e}")
+                return JSONResponse(status_code=200, content={"success": False, "message": f"DB Error: {e}"})
             
-        log_debug("=== SUCCESS ===")
-        return {"success": True, "message": "Настройки успешно сохранены"}
+        return {"success": True, "message": "Настройки сохранены!"}
 
     except Exception as e:
         full_err = traceback.format_exc()
-        log_debug(f"!!! CRITICAL EXCEPTION !!!\n{full_err}")
-        return JSONResponse(status_code=200, content={"success": False, "message": f"Sys Error: {str(e)}"})
+        log_debug(f"CRITICAL: {full_err}")
+        return JSONResponse(status_code=200, content={"success": False, "message": f"Internal Error: {str(e)}"})
 
 @router.get("/status")
-async def get_status(req: Request, u=Depends(get_current_user_raw)):
+async def get_status(req: Request):
+    """Тоже безопасный get status"""
     try:
+        u = await get_current_user(req)
         user_uid_obj = uuid.UUID(str(u['uid']))
         pool = req.app.state.pool
         
@@ -350,7 +348,7 @@ async def worker(app):
                                 log_msg.append(f"⚠️ {offer_id}: нет доступа")
                                 continue
                             
-                            if not is_auto: continue 
+                            if not is_auto: continue
                             
                             cur_qty = count_lines(cur_text)
                             
