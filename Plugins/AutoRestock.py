@@ -13,14 +13,13 @@ from typing import Dict, Any, List
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
-# Импортируем авторизацию, но вызывать будем вручную
+# Импортируем авторизацию
 from auth.guards import get_current_user 
 from utils_crypto import encrypt_data, decrypt_data 
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# --- ЛОГИРОВАНИЕ (Абсолютный путь) ---
-# Лог будет лежать прямо там, откуда запущен скрипт
+# --- ЛОГИРОВАНИЕ ---
 LOG_FILE = os.path.join(os.getcwd(), "restock_final_debug.log")
 
 def log_debug(msg):
@@ -93,7 +92,6 @@ async def update_status(pool, uid_obj, msg):
 
 @router.post("/fetch_offers")
 async def fetch_offers(req: Request):
-    """Получение офферов"""
     try:
         body = await req.json()
         golden_key = body.get("golden_key") or body.get("GoldenKey")
@@ -150,12 +148,12 @@ async def save_settings(req: Request):
             log_debug("FAIL: DB Pool is missing")
             return JSONResponse(status_code=200, content={"success": False, "message": "Server DB Error (No Pool)"})
 
-        # 2. РУЧНАЯ АВТОРИЗАЦИЯ (Внутри try/except)
-        # Мы убрали Depends из аргументов, чтобы поймать ошибку авторизации
+        # 2. РУЧНАЯ АВТОРИЗАЦИЯ (ИСПРАВЛЕНО)
         u = None
         try:
             log_debug("Checking auth...")
-            u = await get_current_user(req)
+            # ПЕРЕДАЕМ APP и REQUEST, КАК ТОГО ТРЕБУЕТ ВАШ ГАРД
+            u = await get_current_user(req.app, req)
             log_debug(f"Auth Success. User: {u.get('uid')}")
         except Exception as e:
             log_debug(f"AUTH FAIL: {e}")
@@ -264,7 +262,7 @@ async def save_settings(req: Request):
 async def get_status(req: Request):
     """Тоже безопасный get status"""
     try:
-        u = await get_current_user(req)
+        u = await get_current_user(req.app, req)
         user_uid_obj = uuid.UUID(str(u['uid']))
         pool = req.app.state.pool
         
