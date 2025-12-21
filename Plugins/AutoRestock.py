@@ -84,22 +84,21 @@ async def update_status(pool, uid_obj, msg):
             await conn.execute("UPDATE autorestock_tasks SET status_message=$1, last_check_at=NOW() WHERE user_uid=$2::uuid", str(msg)[:100], uid_obj)
     except: pass
 
-# --- WORKER ---
+# --- ВОРКЕР (ОБНОВЛЕННАЯ ЛОГИКА) ---
 async def worker(app):
-    """Фоновый процесс проверки и пополнения."""
-    await asyncio.sleep(10) # Ждем старта БД
-    log_debug("Worker: Фоновый процесс запущен.")
+    await asyncio.sleep(10)
+    log_debug("Worker: Запущен. Ожидаю задачи...")
+    
+    from utils_crypto import decrypt_data
 
-    # Хедеры как в браузере
-    HEADERS_GET = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
-    HEADERS_POST = HEADERS_GET.copy()
-    HEADERS_POST["X-Requested-With"] = "XMLHttpRequest"
+    HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
+    POST_HEADERS = HEADERS.copy()
+    POST_HEADERS["X-Requested-With"] = "XMLHttpRequest"
 
     while True:
         try:
             if not hasattr(app.state, 'pool'): await asyncio.sleep(5); continue
             
-            # 1. Поиск задач
             async with app.state.pool.acquire() as conn:
                 tasks = await conn.fetch("""
                     SELECT * FROM autorestock_tasks 
@@ -108,252 +107,91 @@ async def worker(app):
                 """)
 
             if not tasks:
-                await asyncio.sleep(10)
+                await asyncio.sleep(15)
                 continue
             
-            log_debug(f"Worker: Найдено задач: {len(tasks)}")
-
-            # Ленивый импорт внутри цикла
-            from utils_crypto import decrypt_data
-
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 for t in tasks:
-                    uid_val = t['user_uid']
+                    uid = t['user_uid']
                     try:
-                        log_debug(f"[{uid_val}] Начинаю проверку...")
-                        
-                        # 2. Дешифровка ключа
                         key = decrypt_data(t['encrypted_golden_key'])
                         cookies = {"golden_key": key}
+                        lots_conf = json.loads(t['lots_config']) if isinstance(t['lots_config'], str) else t['lots_config']
                         
-                        # 3. Конфиг лотов
-                        raw = t['lots_config']
-                        lots = json.loads(raw) if isinstance(raw, str) else raw
-                        if not isinstance(lots, list):
-                            log_debug(f"[{uid_val}] Ошибка: lots_config не является списком.")
-                            continue
-
                         is_changed = False
-                        log_msg_list = []
+                        log_msg = []
 
-                        for lot in lots:
-                            offer_id = lot.get('offer_id')
-                            min_q = int(lot.get('min_qty', 5))
+                        for lot in lots_conf:
                             pool = lot.get('secrets_pool', [])
-
-                            if not pool:
-                                log_msg_list.append(f"Empty:{offer_id}")
-                                continue
-
-                            # ШАГ A: Загрузка страницы редактирования
-                            log_debug(f"[{uid_val}] Загружаю оффер {offer_id}...")
+                            offer_id = lot['offer_id']
+                            min_q = int(lot.get('min_qty', 5))
+                            
+                            # Загрузка страницы
                             edit_url = f"https://funpay.com/lots/offerEdit?offer={offer_id}"
-                            async with session.get(edit_url, headers=HEADERS_GET, cookies=cookies) as r:
-                                if r.status != 200:
-                                    log_debug(f"[{uid_val}] Ошибка HTTP {r.status} для оффера {offer_id}")
-                                    continue
+                            async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r:
                                 html = await r.text()
                             
-                            # ШАГ B: Парсинг страницы
-                            oid, cur_text, csrf, lot_active, lot_auto, real_node_id = parse_edit_page(html)
+                            oid, current_text, csrf, is_act, is_aut, real_node = parse_edit_page(html)
+                            if not csrf: continue
+
+                            # Разбиваем текущее содержимое на строки
+                            current_lines = [l.strip() for l in current_text.split('\n') if l.strip()]
                             
-                            if not csrf:
-                                log_debug(f"[{uid_val}] Ошибка: Не найден CSRF для {offer_id}. Ключ валиден?")
-                                log_msg_list.append(f"Error:{offer_id}")
-                                continue
+                            # --- УМНАЯ ПРОВЕРКА СООТВЕТСТВИЯ ---
+                            # Если в пуле (в софте) есть товары, проверяем, не изменились ли они
+                            if pool and current_lines:
+                                # Сравниваем первую строку на FunPay с первой строкой в нашем пуле.
+                                # Если они разные — значит пользователь сменил ссылку в софте.
+                                if current_lines[0] != pool[0]:
+                                    log_debug(f"[{uid}] Смена товара в оффере {offer_id}. Очищаю старые ссылки.")
+                                    current_lines = [] 
 
-                            # ШАГ C: Проверка автовыдачи (по ТЗ)
-                            if not lot_auto:
-                                log_debug(f"[{uid_val}] Пропускаю {offer_id}: автовыдача выключена.")
-                                log_msg_list.append(f"AutoOff:{offer_id}")
-                                continue
+                            # --- ПОПОЛНЕНИЕ ---
+                            if len(current_lines) < min_q and pool:
+                                needed_count = min_q - len(current_lines)
+                                # Берем нужное кол-во ссылок из пула
+                                to_add = pool[:needed_count]
+                                remaining_pool = pool[needed_count:]
 
-                            # ШАГ D: Считаем строки
-                            cur_qty = count_lines(cur_text)
-                            log_debug(f"[{uid_val}] Оффер {offer_id}: в наличии {cur_qty}, нужно минимум {min_q}")
+                                # Объединяем (дубликаты РАЗРЕШЕНЫ, так как это бесконечный товар)
+                                final_list = current_lines + to_add
+                                new_secrets_text = "\n".join(final_list)
 
-                            if cur_qty < min_q:
-                                # ШАГ E: Доливаем из базы
-                                to_add = pool[:50] # Не более 50 за раз
-                                remaining_pool = pool[50:]
-                                
-                                log_debug(f"[{uid_val}] Доливаю {len(to_add)} шт. в оффер {offer_id}...")
-                                new_text = cur_text.strip() + "\n" + "\n".join(to_add)
-                                new_text = new_text.strip()
-                                
-                                # ШАГ F: Отправка сохранения
+                                # Сохранение
                                 payload = {
-                                    "csrf_token": csrf,
-                                    "offer_id": oid,
-                                    "node_id": real_node_id or lot.get('node_id'),
-                                    "secrets": new_text,
-                                    "auto_delivery": "on",
-                                    "active": "on" if lot_active else "",
+                                    "csrf_token": csrf, "offer_id": oid, "node_id": real_node or lot['node_id'],
+                                    "secrets": new_secrets_text, 
+                                    "auto_delivery": "on", # ВСЕГДА ВКЛЮЧАЕМ
+                                    "active": "on" if is_act else "", 
                                     "save": "Сохранить"
                                 }
-                                if not lot_active: payload.pop("active", None)
+                                if not is_act: payload.pop("active", None)
+
+                                post_h = POST_HEADERS.copy()
+                                post_h["Referer"] = edit_url
                                 
-                                post_headers = HEADERS_POST.copy()
-                                post_headers["Referer"] = edit_url
-                                
-                                async with session.post("https://funpay.com/lots/offerSave", data=payload, cookies=cookies, headers=post_headers) as pr:
+                                async with session.post("https://funpay.com/lots/offerSave", data=payload, cookies=cookies, headers=post_h) as pr:
                                     if pr.status == 200:
-                                        log_debug(f"[{uid_val}] Успешно пополнено: {offer_id}")
-                                        log_msg_list.append(f"✅{offer_id}:+{len(to_add)}")
+                                        log_msg.append(f"✅ {offer_id}: +{len(to_add)}")
                                         lot['secrets_pool'] = remaining_pool
                                         is_changed = True
                                     else:
-                                        log_debug(f"[{uid_val}] Ошибка сохранения {offer_id}: HTTP {pr.status}")
-                                        log_msg_list.append(f"FailSave:{offer_id}")
+                                        log_msg.append(f"❌ {offer_id}: {pr.status}")
                             
-                            await asyncio.sleep(2) # Пауза между офферами
+                            await asyncio.sleep(2)
 
-                        # 4. Обновляем базу данных, если были изменения в пуле ключей
                         if is_changed:
                             async with app.state.pool.acquire() as c:
-                                await c.execute("UPDATE autorestock_tasks SET lots_config=$1::jsonb WHERE user_uid=$2", json.dumps(lots), uid_val)
+                                await c.execute("UPDATE autorestock_tasks SET lots_config=$1::jsonb WHERE user_uid=$2", json.dumps(lots_conf), uid)
                         
-                        # 5. Обновляем статус в базе для софта
-                        final_status = ", ".join(log_msg_list) if log_msg_list else "✅ Проверено"
-                        await update_status(app.state.pool, uid_val, final_status)
-                        log_debug(f"[{uid_val}] Проверка завершена: {final_status}")
+                        status = ", ".join(log_msg) if log_msg else "✅ Проверено"
+                        async with app.state.pool.acquire() as c_upd:
+                            await c_upd.execute("UPDATE autorestock_tasks SET status_message=$1, last_check_at=NOW() WHERE user_uid=$2", status[:100], uid)
 
                     except Exception as e:
-                        log_debug(f"[{uid_val}] Критическая ошибка задачи: {e}")
-                        log_debug(traceback.format_exc())
-                        await update_status(app.state.pool, uid_val, "Ошибка")
-
-            await asyncio.sleep(5)
+                        log_debug(f"Worker task error {uid}: {e}")
+            
+            await asyncio.sleep(20)
         except Exception as e:
-            log_debug(f"Worker Loop Error: {e}")
-            await asyncio.sleep(10)
-
-# --- API ENDPOINTS ---
-
-@router.post("/fetch_offers")
-async def fetch_offers(req: Request):
-    try:
-        body = await req.json()
-        golden_key = body.get("golden_key") or body.get("GoldenKey")
-        node_ids = body.get("node_ids") or body.get("NodeIds") or []
-    except: return {"success": False, "message": "JSON Bad"}
-
-    results = []
-    HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "*/*"}
-    cookies = {"golden_key": golden_key}
-    
-    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
-        for node in node_ids:
-            node = str(node).strip()
-            if not node.isdigit(): continue
-            try:
-                async with session.get(f"https://funpay.com/lots/{node}/trade", headers=HEADERS, cookies=cookies) as resp:
-                    if "login" in str(resp.url): return {"success": False, "message": "Key Expired"}
-                    html = await resp.text()
-
-                found_ids = set(re.findall(r'offerEdit\?[^"\']*offer=(\d+)', html))
-                if not found_ids:
-                    async with session.get(f"https://funpay.com/lots/offerEdit?node={node}", headers=HEADERS, cookies=cookies) as r2:
-                        h2 = await r2.text()
-                        oid_m = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', h2)
-                        if oid_m: found_ids.add(oid_m.group(1))
-
-                for oid in found_ids:
-                    async with session.get(f"https://funpay.com/lots/offerEdit?offer={oid}", headers=HEADERS, cookies=cookies) as r_edit:
-                        ht = await r_edit.text()
-                        m_nm = re.search(r'name=["\']fields\[summary\]\[ru\]["\'][^>]*value=["\']([^"\']+)["\']', ht)
-                        nm = html_lib.unescape(m_nm.group(1)) if m_nm else "Item"
-                        results.append({"node_id": node, "offer_id": oid, "name": nm, "valid": True})
-                    await asyncio.sleep(0.1)
-            except: pass
-    return {"success": True, "data": results}
-
-@router.post("/set")
-async def save_settings(req: Request):
-    from auth.guards import get_current_user
-    from utils_crypto import encrypt_data
-    try:
-        pool = getattr(req.app.state, 'pool', None)
-        if not pool: return JSONResponse(status_code=200, content={"success": False, "message": "No Pool"})
-
-        # Auth
-        try:
-            u = await get_current_user(req.app, req)
-            uid_obj = uuid.UUID(str(u['uid']))
-        except Exception as e:
-            return JSONResponse(status_code=200, content={"success": False, "message": f"Auth Fail: {e}"})
-
-        # Data
-        try:
-            body = await req.json()
-            golden_key = body.get("golden_key") or body.get("GoldenKey")
-            active = body.get("active") if "active" in body else body.get("Active", False)
-            lots_data = body.get("lots") or body.get("Lots") or []
-        except: return JSONResponse(status_code=200, content={"success": False, "message": "JSON Bad"})
-
-        await ensure_table_exists(pool)
-
-        async with pool.acquire() as conn:
-            existing_pools = {}
-            try:
-                row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
-                if row and row['lots_config']:
-                    raw_db = row['lots_config']
-                    loaded = json.loads(raw_db) if isinstance(raw_db, str) else raw_db
-                    if isinstance(loaded, list):
-                        for l in loaded:
-                            existing_pools[str(l.get('offer_id'))] = l.get('secrets_pool', [])
-            except: pass
-
-            final_lots = []
-            for lot in lots_data:
-                oid = str(lot.get('offer_id') or lot.get('OfferId', ''))
-                nid = str(lot.get('node_id') or lot.get('NodeId', ''))
-                nm = str(lot.get('name') or lot.get('Name', 'Lot'))
-                mq = int(lot.get('min_qty') or lot.get('MinQty', 5))
-                new_keys = [str(k).strip() for k in (lot.get('add_secrets') or lot.get('AddSecrets') or []) if str(k).strip()]
-                
-                if not oid: continue
-                pool_keys = existing_pools.get(oid, []) + new_keys
-                final_lots.append({"node_id": nid, "offer_id": oid, "name": nm, "min_qty": mq, "secrets_pool": pool_keys})
-
-            enc = encrypt_data(golden_key)
-            # ВАЖНО: last_check_at = NULL позволяет воркеру сработать мгновенно
-            await conn.execute("""
-                INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
-                VALUES ($1, $2, $3, $4::jsonb, NULL, 'В очереди...')
-                ON CONFLICT (user_uid) DO UPDATE SET
-                encrypted_golden_key = EXCLUDED.encrypted_golden_key,
-                is_active = EXCLUDED.is_active,
-                lots_config = EXCLUDED.lots_config,
-                status_message = 'Обновлено', last_check_at = NULL
-            """, uid_obj, enc, active, json.dumps(final_lots))
-
-        return {"success": True, "message": "Настройки сохранены!"}
-    except Exception as e:
-        log_debug(f"SAVE ERROR: {traceback.format_exc()}")
-        return JSONResponse(status_code=200, content={"success": False, "message": f"Err: {str(e)}"})
-
-@router.get("/status")
-async def get_status(req: Request):
-    from auth.guards import get_current_user
-    try:
-        u = await get_current_user(req.app, req)
-        uid_obj = uuid.UUID(str(u['uid']))
-        async with req.app.state.pool.acquire() as conn:
-            r = await conn.fetchrow("SELECT is_active, status_message, lots_config FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
-        if not r: return {"active": False, "message": "Не настроено", "lots": []}
-        
-        display_lots = []
-        if r['lots_config']:
-            raw_db = r['lots_config']
-            loaded = json.loads(raw_db) if isinstance(raw_db, str) else raw_db
-            if isinstance(loaded, list):
-                for l in loaded:
-                    display_lots.append({
-                        "node_id": l.get('node_id'), "offer_id": l.get('offer_id'),
-                        "name": l.get('name', 'Лот'), "min_qty": l.get('min_qty'),
-                        "keys_in_db": len(l.get('secrets_pool', []))
-                    })
-        return {"active": r['is_active'], "message": r['status_message'], "lots": display_lots}
-    except: return {"active": False, "message": "Error", "lots": []}
+            log_debug(f"Worker critical error: {e}")
+            await asyncio.sleep(30)
