@@ -11,8 +11,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-# ВАЖНО: Никаких импортов из auth или utils здесь!
-# Они перенесены внутрь функций, чтобы сервер не падал с ошибкой 502.
+# ВАЖНО: Импорты перенесены внутрь функций, чтобы не было ошибки 502 при старте сервера
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
@@ -75,9 +74,9 @@ async def update_status(pool, uid_obj, msg):
             await conn.execute("UPDATE autorestock_tasks SET status_message=$1, last_check_at=NOW() WHERE user_uid=$2::uuid", str(msg)[:100], uid_obj)
     except: pass
 
-# --- ВОРКЕР (Фоновая задача) ---
+# --- ВОРКЕР ---
 async def background_worker(pool):
-    # Импорт внутри функции (защита от 502)
+    # Импорт внутри (защита от 502)
     from utils_crypto import decrypt_data
     
     log("Воркер запущен")
@@ -95,7 +94,7 @@ async def background_worker(pool):
             tasks = []
             try:
                 async with pool.acquire() as conn:
-                    # Берем активные задачи, которые проверялись давно или никогда
+                    # Ищем задачи (активные + (время вышло или никогда не проверялись))
                     tasks = await conn.fetch("""
                         SELECT * FROM autorestock_tasks 
                         WHERE is_active = TRUE 
@@ -144,7 +143,7 @@ async def background_worker(pool):
                             
                             # 3. Проверка галочки
                             if not is_auto:
-                                continue # Пропускаем, если автовыдача выкл
+                                continue 
 
                             # 4. Проверка кол-ва
                             cur_qty = count_lines(secrets_text)
