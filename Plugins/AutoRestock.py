@@ -26,36 +26,31 @@ def log_debug(msg):
         print(f"[AutoRestock] {msg}", flush=True)
     except: pass
 
-# --- PARSING ---
+# --- ПАРСИНГ ---
 def parse_edit_page(html: str):
     offer_id, secrets, csrf, node_id = None, "", None, None
     is_active, is_auto = False, False
     
-    # Ищем ID
     m_oid = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', html)
     if not m_oid: m_oid = re.search(r'value=["\'](\d+)["\'][^>]*name=["\']offer_id["\']', html)
     if m_oid: offer_id = m_oid.group(1)
     
-    # Ищем Node ID
     m_node = re.search(r'name=["\']node_id["\'][^>]*value=["\'](\d+)["\']', html)
     if m_node: node_id = m_node.group(1)
 
-    # Ищем текущий текст товаров
     m_sec = re.search(r'<textarea[^>]*name=["\']secrets["\'][^>]*>(.*?)</textarea>', html, re.DOTALL)
     if m_sec: secrets = html_lib.unescape(m_sec.group(1))
 
-    # CSRF
     m_csrf = re.search(r'name=["\']csrf_token["\'][^>]*value=["\']([^"\']+)["\']', html)
     if not m_csrf: m_csrf = re.search(r'value=["\']([^"\']+)["\']', html)
     if m_csrf: csrf = m_csrf.group(1)
 
-    # Checkboxes
     if re.search(r'name=["\']active["\'][^>]*checked', html): is_active = True
     if re.search(r'name=["\']auto_delivery["\'][^>]*checked', html): is_auto = True
 
     return offer_id, secrets, csrf, is_active, is_auto, node_id
 
-# --- API ENDPOINTS ---
+# --- API ---
 
 @router.post("/fetch_offers")
 async def fetch_offers(req: Request):
@@ -67,27 +62,20 @@ async def fetch_offers(req: Request):
 
     results = []
     HEADERS = {"User-Agent": "Mozilla/5.0"}
-    
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         for node in node_ids:
             node = str(node).strip()
             if not node.isdigit(): continue
             try:
-                # 1. Загружаем страницу лотов
                 async with session.get(f"https://funpay.com/lots/{node}/trade", headers=HEADERS, cookies={"golden_key": golden_key}) as resp:
                     html = await resp.text()
-                
-                # 2. Ищем ID офферов
                 found_ids = set(re.findall(r'offerEdit\?[^"\']*offer=(\d+)', html))
-                
-                # Fallback: если лот один, FunPay редиректит сразу в редактор, ищем ID там
                 if not found_ids:
                     async with session.get(f"https://funpay.com/lots/offerEdit?node={node}", headers=HEADERS, cookies={"golden_key": golden_key}) as r2:
                         h2 = await r2.text()
                         m = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', h2)
                         if m: found_ids.add(m.group(1))
 
-                # 3. Получаем имена
                 for oid in found_ids:
                     async with session.get(f"https://funpay.com/lots/offerEdit?offer={oid}", headers=HEADERS, cookies={"golden_key": golden_key}) as r_edit:
                         ht = await r_edit.text()
@@ -108,31 +96,29 @@ async def save_settings(req: Request):
         uid_obj = uuid.UUID(str(u['uid']))
         body = await req.json()
         
-        # Получаем старую конфигурацию, чтобы не стереть ссылки, если пользователь прислал пустой список
-        existing_pools = {}
+        # Загружаем старое, чтобы не тереть конфиг
+        existing_conf = {}
         pool_obj = getattr(req.app.state, 'pool', None)
         if pool_obj:
             async with pool_obj.acquire() as conn:
                 row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
                 if row and row['lots_config']:
-                    loaded = json.loads(row['lots_config']) if isinstance(row['lots_config'], str) else row['lots_config']
-                    if isinstance(loaded, list):
-                        for l in loaded: existing_pools[str(l.get('offer_id'))] = l.get('secrets_pool', [])
+                    try:
+                        loaded = json.loads(row['lots_config']) if isinstance(row['lots_config'], str) else row['lots_config']
+                        for l in loaded: existing_conf[str(l.get('offer_id'))] = l.get('source_text', '')
+                    except: pass
 
         final_lots = []
         for lot in (body.get("lots") or []):
             oid = str(lot.get('offer_id', ''))
             
-            # Парсим новые ключи из софта
+            # ТЕПЕРЬ МЫ ХРАНИМ ИСХОДНЫЙ ТЕКСТ (ССЫЛКУ) КАК ОН ЕСТЬ
             raw_secrets = lot.get('add_secrets', [])
-            new_keys = []
-            for item in raw_secrets:
-                # Разбиваем по строкам, если вдруг пришло одной строкой
-                for line in item.split('\n'):
-                    if line.strip(): new_keys.append(line.strip())
-
-            # Если пользователь что-то ввел - сохраняем это. Если нет - оставляем старое.
-            final_pool = new_keys if new_keys else existing_pools.get(oid, [])
+            # Если с клиента пришел список строк, собираем его обратно в текст
+            new_text = "\n".join(raw_secrets).strip()
+            
+            # Если пользователь прислал пустой текст, оставляем старый
+            final_text = new_text if new_text else existing_conf.get(oid, "")
 
             final_lots.append({
                 "node_id": str(lot.get('node_id', '')),
@@ -140,13 +126,12 @@ async def save_settings(req: Request):
                 "name": str(lot.get('name', 'Lot')),
                 "min_qty": int(lot.get('min_qty', 5)),
                 "auto_enable": bool(lot.get('auto_enable', True)),
-                "secrets_pool": final_pool
+                "source_text": final_text # Храним исходник (ссылку)
             })
 
         enc = encrypt_data(body.get("golden_key", ""))
         
         async with req.app.state.pool.acquire() as conn:
-            # last_check_at = NULL заставит воркер сработать сразу
             await conn.execute("""
                 INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
                 VALUES ($1, $2, $3, $4::jsonb, NULL, 'Настройки сохранены')
@@ -156,9 +141,7 @@ async def save_settings(req: Request):
             """, uid_obj, enc, body.get("active", False), json.dumps(final_lots))
             
         return {"success": True, "message": "Сохранено"}
-    except Exception as e: 
-        log_debug(f"Save error: {e}")
-        return JSONResponse(status_code=200, content={"success": False, "message": str(e)})
+    except Exception as e: return JSONResponse(status_code=200, content={"success": False, "message": str(e)})
 
 @router.get("/status")
 async def get_status(req: Request):
@@ -177,15 +160,15 @@ async def get_status(req: Request):
                 "node_id": l.get('node_id'), "offer_id": l.get('offer_id'),
                 "name": l.get('name'), "min_qty": l.get('min_qty'),
                 "auto_enable": l.get('auto_enable', True),
-                "keys_in_db": len(l.get('secrets_pool', []))
+                "keys_in_db": 1 if l.get('source_text') else 0 # Просто флаг есть ли текст
             })
         return {"active": r['is_active'], "message": r['status_message'], "lots": display}
     except: return {"active": False, "message": "Error", "lots": []}
 
-# --- WORKER ---
+# --- ВОРКЕР (СТРОГО ПО ЛОГИКЕ КЛИЕНТА) ---
 async def worker(app):
     await asyncio.sleep(10)
-    log_debug("Worker started (Infinite Mode).")
+    log_debug("Worker started (Direct Logic).")
     from utils_crypto import decrypt_data
     
     HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -216,11 +199,11 @@ async def worker(app):
                         lots_conf = json.loads(t['lots_config']) if isinstance(t['lots_config'], str) else t['lots_config']
                         
                         log_msg = []
-                        is_changed = False
                         
                         for lot in lots_conf:
-                            pool = lot.get('secrets_pool', [])
-                            if not pool: continue # Нет ссылок в базе для этого товара
+                            # Получаем исходный текст (ссылку), который пользователь ввел
+                            source_text = lot.get('source_text', '').strip()
+                            if not source_text: continue 
 
                             offer_id = lot['offer_id']
                             min_q = int(lot['min_qty'])
@@ -230,11 +213,9 @@ async def worker(app):
                                 html = await r.text()
                             
                             oid, cur_text, csrf, active_lot, auto_dlv, real_node = parse_edit_page(html)
-                            if not csrf: 
-                                log_debug(f"[{uid}] No CSRF for {offer_id}")
-                                continue
+                            if not csrf: continue
 
-                            # 2. Проверяем, нужно ли включить автовыдачу
+                            # 2. Автовыдача (Если выключена, а должна работать -> включаем)
                             should_be_auto = lot.get('auto_enable', True)
                             final_auto = auto_dlv
                             if not auto_dlv and should_be_auto:
@@ -244,25 +225,30 @@ async def worker(app):
                             cur_lines = [l for l in cur_text.split('\n') if l.strip()]
                             cur_count = len(cur_lines)
 
-                            # 4. Если меньше минимума - доливаем
+                            # 4. Проверяем валидность (как в твоем C# коде)
+                            # В C# логика: если товара < min_qty -> добавляем
                             if cur_count < min_q:
                                 needed = min_q - cur_count
                                 
-                                # БЕСКОНЕЧНЫЙ РЕЖИМ: Берем из пула по кругу
+                                # Генерируем строки для добавления из source_text
+                                # Если source_text это одна ссылка - она будет дублироваться
+                                # Если source_text это список ключей - они будут браться по кругу
+                                source_lines = [l for l in source_text.split('\n') if l.strip()]
+                                if not source_lines: continue
+
                                 to_add = []
-                                pool_len = len(pool)
+                                src_len = len(source_lines)
                                 for i in range(needed):
-                                    # Используем остаток от деления (modulo), чтобы ходить по кругу
-                                    item = pool[i % pool_len]
-                                    to_add.append(item)
+                                    to_add.append(source_lines[i % src_len])
 
-                                # Дописываем новые строки в конец существующих
-                                new_text = cur_text.strip() + "\n" + "\n".join(to_add)
-                                new_text = new_text.strip()
+                                # Формируем итоговый текст (Старое + Новое)
+                                new_full_text = cur_text.strip() + "\n" + "\n".join(to_add)
+                                new_full_text = new_full_text.strip()
 
+                                # 5. Сохраняем
                                 payload = {
                                     "csrf_token": csrf, "offer_id": oid, "node_id": real_node or lot['node_id'],
-                                    "secrets": new_text,
+                                    "secrets": new_full_text,
                                     "auto_delivery": "on" if final_auto else "",
                                     "active": "on" if active_lot else "",
                                     "save": "Сохранить"
@@ -272,7 +258,6 @@ async def worker(app):
                                 async with session.post("https://funpay.com/lots/offerSave", data=payload, headers=POST_H, cookies=cookies) as pr:
                                     if pr.status == 200:
                                         log_msg.append(f"✅{offer_id}: +{len(to_add)}")
-                                        is_changed = True
                                     else:
                                         log_msg.append(f"❌{offer_id}: {pr.status}")
                             
@@ -287,6 +272,4 @@ async def worker(app):
                         log_debug(f"Task Err {uid}: {e}")
             
             await asyncio.sleep(20)
-        except Exception as e:
-            log_debug(f"Critical Worker Err: {e}")
-            await asyncio.sleep(30)
+        except: await asyncio.sleep(30)
