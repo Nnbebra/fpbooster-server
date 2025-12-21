@@ -6,19 +6,29 @@ import aiohttp
 import traceback
 import uuid
 import sys
+import os
+from datetime import datetime
 from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+# Импортируем зависимости, но будем использовать их осторожно
 from auth.guards import get_current_user as get_current_user_raw 
 from utils_crypto import encrypt_data, decrypt_data 
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# --- ЛОГГЕР ---
-def log(msg):
-    """Пишет в консоль сервера принудительно"""
-    print(f"[AutoRestock DEBUG] {msg}", file=sys.stdout, flush=True)
+# --- ЖЕСТКОЕ ЛОГИРОВАНИЕ В ФАЙЛ ---
+LOG_FILE = "restock_hardcore.log"
+
+def log_debug(msg):
+    """Пишет лог сразу в файл, чтобы не потерять при краше"""
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {msg}\n")
+    except:
+        print(f"LOG FAIL: {msg}")
 
 # --- HELPERS ---
 def count_lines(text: str):
@@ -65,13 +75,13 @@ async def ensure_table_exists(pool):
                     last_check_at TIMESTAMP WITHOUT TIME ZONE
                 );
             """)
-            # Добавление колонок (безопасно)
+            # Добавляем колонки для старых версий БД
             try: await conn.execute("ALTER TABLE autorestock_tasks ADD COLUMN IF NOT EXISTS lots_config JSONB;")
             except: pass
             try: await conn.execute("ALTER TABLE autorestock_tasks ADD COLUMN IF NOT EXISTS check_interval INTEGER DEFAULT 7200;")
             except: pass
     except Exception as e:
-        log(f"DB Init Error: {e}")
+        log_debug(f"DB Init Error: {e}")
 
 async def update_status(pool, uid_obj, msg):
     try:
@@ -83,6 +93,7 @@ async def update_status(pool, uid_obj, msg):
 
 @router.post("/fetch_offers")
 async def fetch_offers(req: Request):
+    """Получение офферов"""
     try:
         body = await req.json()
         golden_key = body.get("golden_key") or body.get("GoldenKey")
@@ -129,47 +140,50 @@ async def fetch_offers(req: Request):
 @router.post("/set")
 async def save_settings(req: Request, u=Depends(get_current_user_raw)):
     """
-    DEBUG endpoint: Ловит все ошибки и возвращает их клиенту.
+    DEBUG SAVE: Пишет каждый шаг в лог-файл.
     """
+    log_debug("=== STARTING REQUEST: /set ===")
     try:
-        log(">>> Entered save_settings")
-        
-        # 1. Проверка базы
+        # 1. Проверяем БД
         pool = getattr(req.app.state, 'pool', None)
         if not pool:
-            log("FAIL: Pool is None")
-            return JSONResponse(status_code=200, content={"success": False, "message": "CRITICAL: DB Pool is missing"})
+            log_debug("FAIL: DB Pool is missing in app.state")
+            return JSONResponse(status_code=200, content={"success": False, "message": "Server Error: DB Pool Missing"})
+        log_debug("Step 1: DB Pool OK")
 
-        # 2. Проверка User ID
+        # 2. Проверяем UID
         raw_uid = u.get('uid')
-        log(f"Raw User UID: {raw_uid} type={type(raw_uid)}")
+        log_debug(f"Step 2: Raw UID from token: {raw_uid} (Type: {type(raw_uid)})")
         try:
             user_uid_obj = uuid.UUID(str(raw_uid))
-            log(f"Converted UUID: {user_uid_obj}")
+            log_debug(f"Step 2: UUID Converted successfully: {user_uid_obj}")
         except Exception as e:
+            log_debug(f"FAIL: UUID conversion error: {e}")
             return JSONResponse(status_code=200, content={"success": False, "message": f"Bad UID: {e}"})
 
-        # 3. Парсинг тела (Manual)
+        # 3. Парсим JSON
         try:
             body = await req.json()
-            log(f"Body keys: {body.keys()}")
+            log_debug(f"Step 3: JSON Received. Keys: {list(body.keys())}")
             
             golden_key = body.get("golden_key") or body.get("GoldenKey")
             active = body.get("active") if "active" in body else body.get("Active", False)
             lots_data = body.get("lots") or body.get("Lots") or []
             
-            log(f"Parsed: active={active}, lots={len(lots_data)}")
+            log_debug(f"Step 3: Parsed - Active={active}, Lots={len(lots_data)}")
         except Exception as e:
+            log_debug(f"FAIL: JSON Parsing Error: {e}")
             return JSONResponse(status_code=200, content={"success": False, "message": f"JSON Error: {e}"})
 
         # 4. Инициализация таблицы
         await ensure_table_exists(pool)
+        log_debug("Step 4: Table check passed")
 
         async with pool.acquire() as conn:
             # 5. Чтение старого конфига
             existing_pools = {}
             try:
-                log("Reading old config...")
+                log_debug("Step 5: Reading old config...")
                 row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", user_uid_obj)
                 if row and row['lots_config']:
                     raw = row['lots_config']
@@ -177,73 +191,78 @@ async def save_settings(req: Request, u=Depends(get_current_user_raw)):
                     if isinstance(loaded, list):
                         for l in loaded:
                             existing_pools[str(l.get('offer_id'))] = l.get('secrets_pool', [])
-                log("Old config read OK")
+                log_debug("Step 5: Old config read OK")
             except Exception as e:
-                log(f"Warning reading old config: {e}")
+                log_debug(f"Step 5 WARNING: Failed to read old config: {e}")
 
-            # 6. Сборка новых данных
+            # 6. Сборка нового конфига
             final_lots = []
             for lot in lots_data:
-                oid = str(lot.get('offer_id') or lot.get('OfferId', ''))
-                nid = str(lot.get('node_id') or lot.get('NodeId', ''))
-                nm = str(lot.get('name') or lot.get('Name', 'Lot'))
-                
-                # MinQty
-                mq_val = lot.get('min_qty') if 'min_qty' in lot else lot.get('MinQty', 5)
-                try: mq = int(mq_val)
-                except: mq = 5
+                try:
+                    oid = str(lot.get('offer_id') or lot.get('OfferId', ''))
+                    nid = str(lot.get('node_id') or lot.get('NodeId', ''))
+                    nm = str(lot.get('name') or lot.get('Name', 'Lot'))
+                    
+                    mq_val = lot.get('min_qty') if 'min_qty' in lot else lot.get('MinQty', 5)
+                    try: mq = int(mq_val)
+                    except: mq = 5
 
-                # Keys
-                new_keys_raw = lot.get('add_secrets') or lot.get('AddSecrets') or []
-                new_keys = [str(k).strip() for k in new_keys_raw if str(k).strip()]
-                
-                if not oid: continue
-                
-                pool_keys = existing_pools.get(oid, []) + new_keys
-                
-                final_lots.append({
-                    "node_id": nid, 
-                    "offer_id": oid, 
-                    "name": nm, 
-                    "min_qty": mq, 
-                    "secrets_pool": pool_keys
-                })
-            
-            log(f"Prepared {len(final_lots)} lots for save")
+                    new_keys_raw = lot.get('add_secrets') or lot.get('AddSecrets') or []
+                    new_keys = [str(k).strip() for k in new_keys_raw if str(k).strip()]
+                    
+                    if not oid: continue
+                    
+                    pool_keys = existing_pools.get(oid, []) + new_keys
+                    
+                    final_lots.append({
+                        "node_id": nid, 
+                        "offer_id": oid, 
+                        "name": nm, 
+                        "min_qty": mq, 
+                        "secrets_pool": pool_keys
+                    })
+                except Exception as e_lot:
+                    log_debug(f"Skipping bad lot data: {e_lot}")
+
+            log_debug(f"Step 6: Prepared {len(final_lots)} lots for save")
 
             # 7. Шифрование
             try:
                 if not golden_key:
+                    log_debug("FAIL: Empty Golden Key")
                     return JSONResponse(status_code=200, content={"success": False, "message": "Empty GoldenKey"})
                 enc = encrypt_data(golden_key)
+                log_debug("Step 7: Key encrypted")
             except Exception as e:
-                log(f"Encrypt failed: {e}")
+                log_debug(f"FAIL: Encrypt Error: {e}")
                 return JSONResponse(status_code=200, content={"success": False, "message": f"Encrypt Error: {e}"})
             
-            # 8. Запись
+            # 8. Запись в БД
             json_str = json.dumps(final_lots)
-            log("Executing SQL...")
+            log_debug("Step 8: Executing SQL INSERT...")
             
-            await conn.execute("""
-                INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
-                VALUES ($1, $2, $3, $4::jsonb, NOW(), 'Обновлено')
-                ON CONFLICT (user_uid) DO UPDATE SET
-                encrypted_golden_key = EXCLUDED.encrypted_golden_key,
-                is_active = EXCLUDED.is_active,
-                lots_config = EXCLUDED.lots_config,
-                status_message = 'Настройки сохранены'
-            """, user_uid_obj, enc, active, json_str)
+            try:
+                await conn.execute("""
+                    INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
+                    VALUES ($1, $2, $3, $4::jsonb, NOW(), 'Обновлено')
+                    ON CONFLICT (user_uid) DO UPDATE SET
+                    encrypted_golden_key = EXCLUDED.encrypted_golden_key,
+                    is_active = EXCLUDED.is_active,
+                    lots_config = EXCLUDED.lots_config,
+                    status_message = 'Настройки сохранены'
+                """, user_uid_obj, enc, active, json_str)
+                log_debug("Step 8: SQL Success")
+            except Exception as e_sql:
+                log_debug(f"FAIL: SQL Execution Error: {e_sql}")
+                return JSONResponse(status_code=200, content={"success": False, "message": f"SQL Error: {str(e_sql)}"})
             
-            log("SQL Success")
-            
+        log_debug("=== SUCCESS ===")
         return {"success": True, "message": "Настройки успешно сохранены"}
 
     except Exception as e:
-        err_msg = f"INTERNAL ERROR: {type(e).__name__}: {str(e)}"
-        log(f"!!! CAUGHT EXCEPTION: {err_msg}")
-        traceback.print_exc()
-        # ВАЖНО: Возвращаем 200, чтобы клиент показал текст
-        return JSONResponse(status_code=200, content={"success": False, "message": err_msg})
+        full_err = traceback.format_exc()
+        log_debug(f"!!! CRITICAL EXCEPTION !!!\n{full_err}")
+        return JSONResponse(status_code=200, content={"success": False, "message": f"Sys Error: {str(e)}"})
 
 @router.get("/status")
 async def get_status(req: Request, u=Depends(get_current_user_raw)):
@@ -331,7 +350,7 @@ async def worker(app):
                                 log_msg.append(f"⚠️ {offer_id}: нет доступа")
                                 continue
                             
-                            if not is_auto: continue # Пропускаем, если автовыдача выключена
+                            if not is_auto: continue 
                             
                             cur_qty = count_lines(cur_text)
                             
@@ -373,7 +392,7 @@ async def worker(app):
                         await update_status(app.state.pool, uid_val, status)
                         
                     except Exception as e:
-                        log(f"Worker Err: {e}")
+                        log_debug(f"Worker Err: {e}")
                         await update_status(app.state.pool, uid_val, "Ошибка")
             await asyncio.sleep(5)
         except: await asyncio.sleep(5)
