@@ -11,11 +11,13 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-# ВАЖНО: Импорты перенесены внутрь функций, чтобы не было ошибки 502 при старте сервера
+# --- ВАЖНО ---
+# Никаких импортов из 'auth' или 'utils_crypto' в начале файла!
+# Это предотвращает циклический импорт и ошибку 502 Bad Gateway при старте.
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# Глобальный флаг работы воркера
+# Глобальный флаг, чтобы не запускать воркер дважды
 WORKER_STARTED = False
 
 # --- ЛОГГЕР ---
@@ -23,14 +25,17 @@ def log(msg):
     t = datetime.now().strftime("%H:%M:%S")
     print(f"[{t}] [AutoRestock] {msg}", flush=True)
 
-# --- HELPERS ---
+# --- ПАРСИНГ ---
 def count_lines(text: str):
     if not text: return 0
     return len([l for l in text.split('\n') if l.strip()])
 
 def parse_edit_page(page_html: str):
-    offer_id, secrets, csrf = None, "", None
-    is_active, is_auto = False, False
+    offer_id = None
+    secrets = ""
+    csrf = None
+    is_active = False
+    is_auto = False
     
     m_oid = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', page_html)
     if not m_oid: m_oid = re.search(r'value=["\'](\d+)["\'][^>]*name=["\']offer_id["\']', page_html)
@@ -48,6 +53,7 @@ def parse_edit_page(page_html: str):
 
     return offer_id, secrets, csrf, is_active, is_auto
 
+# --- БАЗА ДАННЫХ ---
 async def ensure_table_exists(pool):
     try:
         async with pool.acquire() as conn:
@@ -74,12 +80,13 @@ async def update_status(pool, uid_obj, msg):
             await conn.execute("UPDATE autorestock_tasks SET status_message=$1, last_check_at=NOW() WHERE user_uid=$2::uuid", str(msg)[:100], uid_obj)
     except: pass
 
-# --- ВОРКЕР ---
+# --- ВОРКЕР (Фоновая задача) ---
 async def background_worker(pool):
-    # Импорт внутри (защита от 502)
+    # ЛЕНИВЫЙ ИМПОРТ (ВНУТРИ ФУНКЦИИ)
+    # Это спасает сервер от падения при старте (502)
     from utils_crypto import decrypt_data
     
-    log("Воркер запущен")
+    log("Воркер успешно запущен")
     await ensure_table_exists(pool)
 
     HEADERS_GET = {
@@ -94,7 +101,7 @@ async def background_worker(pool):
             tasks = []
             try:
                 async with pool.acquire() as conn:
-                    # Ищем задачи (активные + (время вышло или никогда не проверялись))
+                    # Берем активные задачи, которые проверялись > 2 часов назад или никогда
                     tasks = await conn.fetch("""
                         SELECT * FROM autorestock_tasks 
                         WHERE is_active = TRUE 
@@ -110,6 +117,7 @@ async def background_worker(pool):
                 for t in tasks:
                     try:
                         uid_val = t['user_uid']
+                        # Дешифровка
                         key = decrypt_data(t['encrypted_golden_key'])
                         cookies = {"golden_key": key}
                         
@@ -129,40 +137,41 @@ async def background_worker(pool):
                             try: min_q = int(lot.get('min_qty', 5))
                             except: min_q = 5
 
-                            # 1. Загрузка
+                            # 1. ЗАГРУЗКА СТРАНИЦЫ
                             edit_url = f"https://funpay.com/lots/offerEdit?offer={offer_id}"
                             async with session.get(edit_url, headers=HEADERS_GET, cookies=cookies) as r:
                                 html_txt = await r.text()
 
-                            # 2. Парсинг
+                            # 2. ПАРСИНГ
                             real_oid, secrets_text, csrf, is_active, is_auto = parse_edit_page(html_txt)
 
                             if not csrf:
                                 logs.append(f"⚠️ {offer_id} Err")
                                 continue
                             
-                            # 3. Проверка галочки
+                            # 3. ПРОВЕРКА ГАЛОЧКИ АВТОВЫДАЧИ
                             if not is_auto:
-                                continue 
+                                # Галочка выключена -> ничего не делаем
+                                continue
 
-                            # 4. Проверка кол-ва
+                            # 4. ПРОВЕРКА КОЛИЧЕСТВА
                             cur_qty = count_lines(secrets_text)
                             
                             if cur_qty < min_q:
-                                # 5. Доливаем
+                                # 5. ДОЛИВАЕМ
                                 to_add = pool_keys[:50]
                                 remaining_pool = pool_keys[50:]
                                 
                                 new_text = secrets_text.strip() + "\n" + "\n".join(to_add)
                                 new_text = new_text.strip()
                                 
-                                # 6. Сохраняем
+                                # 6. СОХРАНЯЕМ
                                 payload = {
                                     "csrf_token": csrf,
                                     "offer_id": real_oid,
                                     "node_id": node_id,
                                     "secrets": new_text,
-                                    "auto_delivery": "on",
+                                    "auto_delivery": "on", # Подтверждаем галочку
                                     "active": "on" if is_active else "",
                                     "save": "Сохранить"
                                 }
@@ -181,6 +190,7 @@ async def background_worker(pool):
                             
                             await asyncio.sleep(2)
 
+                        # Если заливали ключи, обновляем остаток в БД
                         if is_changed:
                             async with app.state.pool.acquire() as c:
                                 await c.execute("UPDATE autorestock_tasks SET lots_config=$1::jsonb WHERE user_uid=$2::uuid", json.dumps(lots), uid_val)
@@ -189,7 +199,7 @@ async def background_worker(pool):
                         await update_status(pool, uid_val, msg)
 
                     except Exception as e:
-                        log(f"Worker Err: {e}")
+                        log(f"Worker Task Error: {e}")
                         await update_status(pool, uid_val, "Ошибка")
             
             await asyncio.sleep(5)
@@ -244,8 +254,13 @@ async def fetch_offers(req: Request):
 
 @router.post("/set")
 async def save_settings(req: Request):
+    """
+    Сохранение настроек и ручной старт воркера.
+    Импорты внутри функции, чтобы избежать 502 ошибки!
+    """
     global WORKER_STARTED
-    # Импорт внутри функции (защита от 502)
+    
+    # ЛЕНИВЫЙ ИМПОРТ (ВНУТРИ ФУНКЦИИ)
     from auth.guards import get_current_user
     from utils_crypto import encrypt_data
 
@@ -253,7 +268,7 @@ async def save_settings(req: Request):
         pool = getattr(req.app.state, 'pool', None)
         if not pool: return JSONResponse(status_code=200, content={"success": False, "message": "DB Error"})
 
-        # 1. Auth
+        # 1. Авторизация
         try:
             u = await get_current_user(req.app, req)
             uid_obj = uuid.UUID(str(u['uid']))
@@ -272,7 +287,7 @@ async def save_settings(req: Request):
         await ensure_table_exists(pool)
 
         async with pool.acquire() as conn:
-            # 3. Read old
+            # 3. Чтение старого конфига
             existing_pools = {}
             try:
                 row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1::uuid", uid_obj)
@@ -284,7 +299,7 @@ async def save_settings(req: Request):
                             existing_pools[str(l.get('offer_id'))] = l.get('secrets_pool', [])
             except: pass
 
-            # 4. New Config
+            # 4. Сборка нового конфига
             final_lots = []
             for lot in lots_data:
                 oid = str(lot.get('offer_id') or lot.get('OfferId', ''))
@@ -296,13 +311,14 @@ async def save_settings(req: Request):
                 new_keys = [str(k).strip() for k in (lot.get('add_secrets') or lot.get('AddSecrets') or []) if str(k).strip()]
                 
                 if not oid: continue
+                
                 pool_keys = existing_pools.get(oid, []) + new_keys
                 
                 final_lots.append({
                     "node_id": nid, "offer_id": oid, "name": nm, "min_qty": mq, "secrets_pool": pool_keys
                 })
 
-            # 5. Save
+            # 5. Сохранение
             enc = encrypt_data(golden_key)
             json_str = json.dumps(final_lots)
             
@@ -317,7 +333,7 @@ async def save_settings(req: Request):
                 last_check_at = NULL
             """, uid_obj, enc, active, json_str)
 
-        # 6. Start Worker
+        # 6. Старт воркера (если еще не запущен)
         if not WORKER_STARTED:
             asyncio.create_task(background_worker(pool))
             WORKER_STARTED = True
