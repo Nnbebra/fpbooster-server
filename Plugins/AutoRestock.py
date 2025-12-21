@@ -15,7 +15,6 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# --- ЛОГИРОВАНИЕ ---
 LOG_FILE = os.path.join(os.getcwd(), "restock_final_debug.log")
 
 def log_debug(msg):
@@ -26,42 +25,36 @@ def log_debug(msg):
         print(f"[AutoRestock] {msg}", flush=True)
     except: pass
 
-# --- ПАРСИНГ ---
-def parse_edit_page(html: str):
+# --- ПАРСИНГ ВСЕЙ ФОРМЫ ---
+def get_all_form_data(html: str):
     """
-    Парсит все необходимые поля для сохранения оффера, включая скрытое поле 'location'.
-    Без 'location' FunPay не сохраняет изменения!
+    Собирает ВСЕ данные из формы, чтобы FunPay принял запрос.
+    Возвращает словарь data и основные параметры.
     """
-    offer_id, secrets, csrf, node_id, location = None, "", None, None, "trade"
-    is_active, is_auto = False, False
+    data = {}
     
-    # ID
-    m_oid = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', html)
-    if not m_oid: m_oid = re.search(r'value=["\'](\d+)["\'][^>]*name=["\']offer_id["\']', html)
-    if m_oid: offer_id = m_oid.group(1)
+    # 1. Собираем все input (hidden, text, etc)
+    # Ищем теги <input ... name="..." value="...">
+    inputs = re.findall(r'<input[^>]*name=["\']([^"\']+)["\'][^>]*value=["\']([^"\']*)["\']', html)
+    for name, value in inputs:
+        data[name] = html_lib.unescape(value)
+
+    # 2. Собираем все textarea (описания, старые ключи)
+    textareas = re.findall(r'<textarea[^>]*name=["\']([^"\']+)["\'][^>]*>(.*?)</textarea>', html, re.DOTALL)
+    for name, content in textareas:
+        data[name] = html_lib.unescape(content)
+
+    # 3. Извлекаем текущие настройки галочек
+    is_active = bool(re.search(r'name=["\']active["\'][^>]*checked', html))
+    is_auto = bool(re.search(r'name=["\']auto_delivery["\'][^>]*checked', html))
+
+    # Извлекаем offer_id и node_id отдельно для удобства, хотя они есть в data
+    offer_id = data.get("offer_id")
     
-    # Node ID
-    m_node = re.search(r'name=["\']node_id["\'][^>]*value=["\'](\d+)["\']', html)
-    if m_node: node_id = m_node.group(1)
+    # Текущие товары (для подсчета)
+    current_secrets = data.get("secrets", "")
 
-    # Location (КРИТИЧНО ВАЖНО)
-    m_loc = re.search(r'name=["\']location["\'][^>]*value=["\']([^"\']*)["\']', html)
-    if m_loc: location = m_loc.group(1)
-
-    # Текущий текст
-    m_sec = re.search(r'<textarea[^>]*name=["\']secrets["\'][^>]*>(.*?)</textarea>', html, re.DOTALL)
-    if m_sec: secrets = html_lib.unescape(m_sec.group(1))
-
-    # CSRF
-    m_csrf = re.search(r'name=["\']csrf_token["\'][^>]*value=["\']([^"\']+)["\']', html)
-    if not m_csrf: m_csrf = re.search(r'value=["\']([^"\']+)["\']', html)
-    if m_csrf: csrf = m_csrf.group(1)
-
-    # Галочки
-    if re.search(r'name=["\']active["\'][^>]*checked', html): is_active = True
-    if re.search(r'name=["\']auto_delivery["\'][^>]*checked', html): is_auto = True
-
-    return offer_id, secrets, csrf, is_active, is_auto, node_id, location
+    return data, offer_id, current_secrets, is_active, is_auto
 
 # --- API ---
 
@@ -75,25 +68,20 @@ async def fetch_offers(req: Request):
 
     results = []
     HEADERS = {"User-Agent": "Mozilla/5.0"}
-    
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         for node in node_ids:
             node = str(node).strip()
             if not node.isdigit(): continue
             try:
-                # 1. Список
                 async with session.get(f"https://funpay.com/lots/{node}/trade", headers=HEADERS, cookies={"golden_key": golden_key}) as resp:
                     html = await resp.text()
-                
                 found_ids = set(re.findall(r'offerEdit\?[^"\']*offer=(\d+)', html))
                 if not found_ids:
-                    # Если один оффер
                     async with session.get(f"https://funpay.com/lots/offerEdit?node={node}", headers=HEADERS, cookies={"golden_key": golden_key}) as r2:
                         h2 = await r2.text()
                         m = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', h2)
                         if m: found_ids.add(m.group(1))
 
-                # 2. Имена
                 for oid in found_ids:
                     async with session.get(f"https://funpay.com/lots/offerEdit?offer={oid}", headers=HEADERS, cookies={"golden_key": golden_key}) as r_edit:
                         ht = await r_edit.text()
@@ -114,7 +102,7 @@ async def save_settings(req: Request):
         uid_obj = uuid.UUID(str(u['uid']))
         body = await req.json()
         
-        # Получаем старые данные
+        # Подгружаем старое, чтобы не потерять source_text если придет пустое
         existing_conf = {}
         pool_obj = getattr(req.app.state, 'pool', None)
         if pool_obj:
@@ -129,7 +117,6 @@ async def save_settings(req: Request):
         final_lots = []
         for lot in (body.get("lots") or []):
             oid = str(lot.get('offer_id', ''))
-            
             raw_secrets_list = lot.get('add_secrets', [])
             clean_secrets = [s.strip() for s in raw_secrets_list if s.strip()]
             final_source = clean_secrets if clean_secrets else existing_conf.get(oid, [])
@@ -183,7 +170,7 @@ async def get_status(req: Request):
 # --- ВОРКЕР ---
 async def worker(app):
     await asyncio.sleep(5)
-    log_debug("Worker started (Fixed Location Logic).")
+    log_debug("Worker started (FULL FORM PARSE MODE).")
     from utils_crypto import decrypt_data
     
     HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -214,7 +201,6 @@ async def worker(app):
                         log_msg = []
                         
                         for lot in lots_conf:
-                            # Товар для долива (бесконечный источник)
                             source_lines = lot.get('secrets_source', [])
                             if not source_lines: continue 
 
@@ -226,59 +212,64 @@ async def worker(app):
                             async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r:
                                 html = await r.text()
                             
-                            # Важно: парсим LOCATION
-                            oid, cur_text, csrf, active_lot, auto_dlv, real_node, loc = parse_edit_page(html)
-                            if not csrf: continue
+                            if "login" in str(r.url): continue
 
-                            # 2. Автовыдача
+                            # 2. ПАРСИМ ВСЕ ПОЛЯ
+                            form_data, oid, cur_text, active_lot, auto_dlv = get_all_form_data(html)
+                            
+                            if not form_data.get("csrf_token"): 
+                                log_debug(f"[{uid}] No CSRF/Form data for {offer_id}")
+                                continue
+
+                            # 3. Автовыдача
                             should_be_auto = lot.get('auto_enable', True)
                             final_auto = auto_dlv
                             if not auto_dlv and should_be_auto:
                                 final_auto = True 
 
-                            # 3. Анализ
+                            # 4. Анализ
                             cur_lines = [l for l in cur_text.split('\n') if l.strip()]
                             cur_count = len(cur_lines)
                             
-                            # 4. Пополнение
+                            # 5. Пополнение
                             if cur_count < min_q:
                                 needed = min_q - cur_count
                                 
-                                # Генерируем строки (циклично)
                                 to_add = []
                                 src_len = len(source_lines)
                                 for i in range(needed):
                                     to_add.append(source_lines[i % src_len])
 
-                                # Новый текст
                                 new_full_text = cur_text.strip() + "\n" + "\n".join(to_add)
                                 new_full_text = new_full_text.strip()
 
-                                # 5. Сохранение (С ПОЛЕМ LOCATION И REFERER)
-                                payload = {
-                                    "csrf_token": csrf,
-                                    "offer_id": oid,
-                                    "node_id": real_node or lot['node_id'],
-                                    "location": loc, # Без этого FunPay не сохраняет!
-                                    "secrets": new_full_text,
-                                    "save": "Сохранить"
-                                }
+                                # 6. ПОДГОТОВКА PAYLOAD (Копируем всё, что было в форме)
+                                payload = form_data.copy()
                                 
-                                # Checkboxes
-                                if final_auto: payload["auto_delivery"] = "on"
-                                if active_lot: payload["active"] = "on"
+                                # Обновляем то, что нам нужно
+                                payload["secrets"] = new_full_text
+                                payload["save"] = "Сохранить" # Кнопка сабмита
 
+                                # Галочки (они передаются только если выбраны)
+                                if final_auto: payload["auto_delivery"] = "on"
+                                elif "auto_delivery" in payload: del payload["auto_delivery"]
+
+                                if active_lot: payload["active"] = "on"
+                                elif "active" in payload: del payload["active"]
+
+                                # Заголовки (Важен Referer)
                                 post_headers = HEADERS.copy()
                                 post_headers["X-Requested-With"] = "XMLHttpRequest"
-                                post_headers["Referer"] = edit_url # Обязателен
+                                post_headers["Referer"] = edit_url
 
                                 async with session.post("https://funpay.com/lots/offerSave", data=payload, headers=post_headers, cookies=cookies) as pr:
-                                    if pr.status == 200:
+                                    resp_text = await pr.text()
+                                    if pr.status == 200 and "error" not in resp_text.lower():
                                         log_msg.append(f"✅{offer_id}: +{len(to_add)}")
-                                        log_debug(f"SAVED: {offer_id} added {len(to_add)}")
+                                        log_debug(f"SAVED {offer_id}: added {len(to_add)}")
                                     else:
-                                        log_msg.append(f"❌{offer_id}: {pr.status}")
-                                        log_debug(f"ERROR {offer_id}: {pr.status}")
+                                        log_msg.append(f"❌{offer_id}")
+                                        log_debug(f"ERR {offer_id}: {pr.status}")
                             
                             await asyncio.sleep(1.5)
 
@@ -289,5 +280,5 @@ async def worker(app):
                     except Exception as e:
                         log_debug(f"Task Err {uid}: {e}")
             
-            await asyncio.sleep(5)
-        except: await asyncio.sleep(10)
+            await asyncio.sleep(10)
+        except: await asyncio.sleep(30)
