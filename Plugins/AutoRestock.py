@@ -15,24 +15,20 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/plus/autorestock", tags=["AutoRestock Plugin"])
 
-# --- ЛОГИРОВАНИЕ ---
 LOG_FILE = os.path.join(os.getcwd(), "restock_final_debug.log")
 
 def log_debug(msg):
     try:
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        t = datetime.now().strftime("%H:%M:%S")
         with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"[{timestamp}] {msg}\n")
+            f.write(f"[{t}] {msg}\n")
         print(f"[AutoRestock] {msg}", flush=True)
     except: pass
 
-# --- ПАРСИНГ (КАК В C# ВЕРСИИ) ---
 def count_lines(text: str):
-    if not text: return 0
     return len([l for l in text.split('\n') if l.strip()])
 
 def parse_edit_page(html: str):
-    """Парсит страницу: ID, node_id, текущий текст, CSRF, галочки."""
     offer_id, secrets, csrf, node_id = None, "", None, None
     is_active, is_auto = False, False
     
@@ -76,7 +72,6 @@ async def fetch_offers(req: Request):
                     html = await resp.text()
                 found_ids = set(re.findall(r'offerEdit\?[^"\']*offer=(\d+)', html))
                 if not found_ids:
-                    # Fallback (если 1 лот)
                     async with session.get(f"https://funpay.com/lots/offerEdit?node={node}", headers=HEADERS, cookies={"golden_key": golden_key}) as r2:
                         h2 = await r2.text()
                         m = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', h2)
@@ -85,9 +80,8 @@ async def fetch_offers(req: Request):
                 for oid in found_ids:
                     async with session.get(f"https://funpay.com/lots/offerEdit?offer={oid}", headers=HEADERS, cookies={"golden_key": golden_key}) as r_edit:
                         ht = await r_edit.text()
-                        nm = "Товар"
                         m_nm = re.search(r'name=["\']fields\[summary\]\[ru\]["\'][^>]*value=["\']([^"\']+)["\']', ht)
-                        if m_nm: nm = html_lib.unescape(m_nm.group(1))
+                        nm = html_lib.unescape(m_nm.group(1)) if m_nm else "Товар"
                         results.append({"node_id": node, "offer_id": oid, "name": nm, "valid": True})
                     await asyncio.sleep(0.1)
             except: pass
@@ -102,21 +96,38 @@ async def save_settings(req: Request):
         uid_obj = uuid.UUID(str(u['uid']))
         body = await req.json()
         
+        # Получаем старые данные, чтобы сохранить ссылки, если пользователь прислал пустой список для оффера
+        existing_pools = {}
+        pool = getattr(req.app.state, 'pool', None)
+        if pool:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
+                if row and row['lots_config']:
+                    loaded = json.loads(row['lots_config']) if isinstance(row['lots_config'], str) else row['lots_config']
+                    if isinstance(loaded, list):
+                        for l in loaded: existing_pools[str(l.get('offer_id'))] = l.get('secrets_pool', [])
+
         final_lots = []
         for lot in (body.get("lots") or []):
+            oid = str(lot.get('offer_id', ''))
+            new_keys = [str(k).strip() for k in lot.get('add_secrets', []) if str(k).strip()]
+            
+            # ВАЖНО: Если новые ключи пришли - заменяем старые (перезапись).
+            # Если не пришли - оставляем старые (чтобы не стереть случайно).
+            final_pool = new_keys if new_keys else existing_pools.get(oid, [])
+
             final_lots.append({
                 "node_id": str(lot.get('node_id', '')),
-                "offer_id": str(lot.get('offer_id', '')),
+                "offer_id": oid,
                 "name": str(lot.get('name', 'Lot')),
                 "min_qty": int(lot.get('min_qty', 5)),
                 "auto_enable": bool(lot.get('auto_enable', True)),
-                "secrets_pool": [str(k).strip() for k in lot.get('add_secrets', []) if str(k).strip()]
+                "secrets_pool": final_pool
             })
 
         enc = encrypt_data(body.get("golden_key", ""))
         
         async with req.app.state.pool.acquire() as conn:
-            # last_check_at = NULL запускает воркер мгновенно
             await conn.execute("""
                 INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
                 VALUES ($1, $2, $3, $4::jsonb, NULL, 'Настройки сохранены')
@@ -150,7 +161,7 @@ async def get_status(req: Request):
         return {"active": r['is_active'], "message": r['status_message'], "lots": display}
     except: return {"active": False, "message": "Error", "lots": []}
 
-# --- ВОРКЕР (ЛОГИКА ИЗ ВАШЕГО КЛИЕНТА) ---
+# --- ВОРКЕР ---
 async def worker(app):
     await asyncio.sleep(10)
     log_debug("Worker started.")
@@ -192,42 +203,45 @@ async def worker(app):
                             offer_id = lot['offer_id']
                             min_q = int(lot['min_qty'])
                             
-                            # 1. GET offerEdit
+                            # 1. Загрузка страницы
                             async with session.get(f"https://funpay.com/lots/offerEdit?offer={offer_id}", headers=HEADERS, cookies=cookies) as r:
                                 html = await r.text()
                             
                             oid, cur_text, csrf, active_lot, auto_dlv, real_node = parse_edit_page(html)
                             if not csrf: continue
 
-                            # 2. Проверка автовыдачи
+                            # 2. Автовыдача
                             should_be_auto = lot.get('auto_enable', True)
                             final_auto = auto_dlv
                             if not auto_dlv and should_be_auto:
-                                final_auto = True # Включаем принудительно
+                                final_auto = True 
 
-                            # 3. Считаем строки
+                            # 3. Анализ текущего текста
                             cur_lines = [l for l in cur_text.split('\n') if l.strip()]
+                            
+                            # ЛОГИКА ЗАМЕНЫ: Если первая строка не совпадает с пулом - значит товар в оффере старый/неправильный.
+                            # Мы очищаем список текущих строк, чтобы перезаписать его полностью.
+                            if cur_lines and pool and cur_lines[0] != pool[0]:
+                                log_debug(f"[{uid}] Товар в оффере {offer_id} отличается от конфига. Перезапись.")
+                                cur_lines = []
+
                             cur_count = len(cur_lines)
 
-                            # 4. Если мало - добавляем
+                            # 4. Пополнение
                             if cur_count < min_q:
                                 needed = min_q - cur_count
                                 
-                                # Берем из пула (циклично, как для бесконечных ссылок)
+                                # Бесконечный цикл взятия из пула
                                 to_add = []
                                 while len(to_add) < needed:
-                                    # Сколько еще нужно
                                     rem = needed - len(to_add)
-                                    # Берем кусок пула
-                                    chunk = pool[:rem]
+                                    # Берем с начала пула, не удаляя из него
+                                    chunk = pool[:rem] 
                                     to_add.extend(chunk)
-                                    if not chunk: break # Пул пуст совсем
+                                    if not chunk: break 
 
-                                # Формируем новый текст: Старое + Новое
-                                new_text = cur_text.strip() + "\n" + "\n".join(to_add)
-                                new_text = new_text.strip()
+                                new_text = "\n".join(cur_lines + to_add)
 
-                                # 5. Сохраняем
                                 payload = {
                                     "csrf_token": csrf, "offer_id": oid, "node_id": real_node or lot['node_id'],
                                     "secrets": new_text,
@@ -239,7 +253,7 @@ async def worker(app):
 
                                 async with session.post("https://funpay.com/lots/offerSave", data=payload, headers=POST_H, cookies=cookies) as pr:
                                     if pr.status == 200:
-                                        log_msg.append(f"✅{offer_id}: +{len(to_add)}")
+                                        log_msg.append(f"✅{offer_id}: {cur_count}->{min_q}")
                                     else:
                                         log_msg.append(f"❌{offer_id}: {pr.status}")
                             
