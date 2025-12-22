@@ -7,7 +7,7 @@ import traceback
 import uuid
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 from fastapi import APIRouter, Request
@@ -38,37 +38,26 @@ async def fetch_offers(req: Request):
 
     results = []
     HEADERS = {"User-Agent": "Mozilla/5.0"}
-    
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         for node in node_ids:
             node = str(node).strip()
             if not node.isdigit(): continue
             try:
                 cat_name = f"Раздел {node}"
-                
-                # 1. Сначала берем красивое имя категории с публичной страницы
-                # (Там нет 'Ваши предложения', там реальное название)
                 try:
                     async with session.get(f"https://funpay.com/lots/{node}/", headers=HEADERS) as resp_pub:
                         if resp_pub.status == 200:
-                            html_pub = await resp_pub.text()
-                            m_h1 = re.search(r'<h1[^>]*>(.*?)</h1>', html_pub)
-                            if m_h1: 
-                                cat_name = html_lib.unescape(m_h1.group(1)).strip()
+                            m = re.search(r'<h1[^>]*>(.*?)</h1>', await resp_pub.text())
+                            if m: cat_name = html_lib.unescape(m.group(1)).strip()
                 except: pass
 
-                # 2. Теперь берем список офферов из редактора (/trade)
                 async with session.get(f"https://funpay.com/lots/{node}/trade", headers=HEADERS, cookies={"golden_key": golden_key}) as resp:
                     html = await resp.text()
                 
                 found_ids = set(re.findall(r'offerEdit\?[^"\']*offer=(\d+)', html))
-                
-                # Fallback для категорий с 1 лотом (редирект)
                 if not found_ids:
                     async with session.get(f"https://funpay.com/lots/offerEdit?node={node}", headers=HEADERS, cookies={"golden_key": golden_key}) as r2:
-                        h2 = await r2.text()
-                        m = re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', h2)
-                        if m: found_ids.add(m.group(1))
+                        if re.search(r'name=["\']offer_id["\'][^>]*value=["\'](\d+)["\']', await r2.text()): found_ids.add(re.search(r'value=["\'](\d+)["\'][^>]*name=["\']offer_id["\']', await r2.text()).group(1))
 
                 for oid in found_ids:
                     async with session.get(f"https://funpay.com/lots/offerEdit?offer={oid}", headers=HEADERS, cookies={"golden_key": golden_key}) as r_edit:
@@ -76,14 +65,7 @@ async def fetch_offers(req: Request):
                         nm = "Товар"
                         m_nm = re.search(r'name=["\']fields\[summary\]\[ru\]["\'][^>]*value=["\']([^"\']+)["\']', ht)
                         if m_nm: nm = html_lib.unescape(m_nm.group(1))
-                        
-                        results.append({
-                            "node_id": node,
-                            "node_name": cat_name, # Теперь здесь правильное имя
-                            "offer_id": oid,
-                            "name": nm,
-                            "valid": True
-                        })
+                        results.append({"node_id": node, "node_name": cat_name, "offer_id": oid, "name": nm, "valid": True})
                     await asyncio.sleep(0.1)
             except: pass
     return {"success": True, "data": results}
@@ -97,7 +79,6 @@ async def save_settings(req: Request):
         uid_obj = uuid.UUID(str(u['uid']))
         body = await req.json()
         
-        # Подгрузка старых данных
         existing_conf = {}
         pool_obj = getattr(req.app.state, 'pool', None)
         if pool_obj:
@@ -105,26 +86,18 @@ async def save_settings(req: Request):
                 row = await conn.fetchrow("SELECT lots_config FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
                 if row and row['lots_config']:
                     try:
-                        loaded = json.loads(row['lots_config']) if isinstance(row['lots_config'], str) else row['lots_config']
-                        for l in loaded: existing_conf[str(l.get('offer_id'))] = l.get('secrets_source', [])
+                        for l in (json.loads(row['lots_config']) if isinstance(row['lots_config'], str) else row['lots_config']):
+                            existing_conf[str(l.get('offer_id'))] = l.get('secrets_source', [])
                     except: pass
 
         final_lots = []
         for lot in (body.get("lots") or []):
             oid = str(lot.get('offer_id', ''))
-            
-            raw_secrets_list = lot.get('add_secrets', [])
-            clean_secrets = [s.strip() for s in raw_secrets_list if s.strip()]
-            
-            # Если юзер прислал пустоту, сохраняем старое. Если прислал новое - перезаписываем.
+            clean_secrets = [s.strip() for s in lot.get('add_secrets', []) if s.strip()]
             final_source = clean_secrets if clean_secrets else existing_conf.get(oid, [])
-
-            # Также сохраняем имя ноды, если оно пришло, чтобы не потерять
-            n_name = str(lot.get('node_name', ''))
-
             final_lots.append({
                 "node_id": str(lot.get('node_id', '')),
-                "node_name": n_name,
+                "node_name": str(lot.get('node_name', '')),
                 "offer_id": oid,
                 "name": str(lot.get('name', 'Lot')),
                 "min_qty": int(lot.get('min_qty', 5)),
@@ -133,8 +106,8 @@ async def save_settings(req: Request):
             })
 
         enc = encrypt_data(body.get("golden_key", ""))
-        
         async with req.app.state.pool.acquire() as conn:
+            # При сохранении сбрасываем таймер (last_check_at=NULL), чтобы проверка пошла сразу
             await conn.execute("""
                 INSERT INTO autorestock_tasks (user_uid, encrypted_golden_key, is_active, lots_config, last_check_at, status_message)
                 VALUES ($1, $2, $3, $4::jsonb, NULL, 'Настройки сохранены')
@@ -142,7 +115,6 @@ async def save_settings(req: Request):
                 encrypted_golden_key=EXCLUDED.encrypted_golden_key, is_active=EXCLUDED.is_active,
                 lots_config=EXCLUDED.lots_config, status_message='Настройки обновлены', last_check_at=NULL
             """, uid_obj, enc, body.get("active", False), json.dumps(final_lots))
-            
         return {"success": True, "message": "Сохранено"}
     except Exception as e: return JSONResponse(status_code=200, content={"success": False, "message": str(e)})
 
@@ -153,119 +125,90 @@ async def get_status(req: Request):
         u = await get_current_user(req.app, req)
         uid_obj = uuid.UUID(str(u['uid']))
         async with req.app.state.pool.acquire() as conn:
-            r = await conn.fetchrow("SELECT is_active, status_message, lots_config FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
-        if not r: return {"active": False, "message": "Не настроено", "lots": []}
+            # ДОБАВЛЕНО: last_check_at в выборку
+            r = await conn.fetchrow("SELECT is_active, status_message, lots_config, last_check_at FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
+        if not r: return {"active": False, "message": "Не настроено", "lots": [], "next_check": None}
         
+        # Рассчитываем время следующей проверки
+        next_check_time = None
+        if r['last_check_at']:
+            # Интервал проверки 2 часа
+            next_check_time = r['last_check_at'] + timedelta(hours=2)
+
         lots = json.loads(r['lots_config']) if isinstance(r['lots_config'], str) else r['lots_config']
         display = []
         for l in lots:
-            src = l.get('secrets_source', [])
             display.append({
-                "node_id": l.get('node_id'),
-                "node_name": l.get('node_name', f"Category {l.get('node_id')}"),
-                "offer_id": l.get('offer_id'),
-                "name": l.get('name'), 
-                "min_qty": l.get('min_qty'),
-                "auto_enable": l.get('auto_enable', True),
-                "keys_in_db": len(src),
-                "source_text": src # ВОЗВРАЩАЕМ ИСХОДНИК ТЕКСТА ОБРАТНО В СОФТ
+                "node_id": l.get('node_id'), "node_name": l.get('node_name'),
+                "offer_id": l.get('offer_id'), "name": l.get('name'), 
+                "min_qty": l.get('min_qty'), "auto_enable": l.get('auto_enable', True),
+                "keys_in_db": len(l.get('secrets_source', [])),
+                "source_text": l.get('secrets_source', [])
             })
-        return {"active": r['is_active'], "message": r['status_message'], "lots": display}
+        
+        return {
+            "active": r['is_active'], 
+            "message": r['status_message'], 
+            "lots": display,
+            "next_check": next_check_time.isoformat() if next_check_time else None
+        }
     except: return {"active": False, "message": "Error", "lots": []}
 
 # --- ВОРКЕР ---
 async def worker(app):
-    await asyncio.sleep(10)
+    await asyncio.sleep(5)
     from utils_crypto import decrypt_data
     HEADERS = {"User-Agent": "Mozilla/5.0"}
-    
     while True:
         try:
             if not hasattr(app.state, 'pool'): await asyncio.sleep(5); continue
-            
             async with app.state.pool.acquire() as conn:
-                tasks = await conn.fetch("""
-                    SELECT * FROM autorestock_tasks 
-                    WHERE is_active = TRUE 
-                    AND (last_check_at IS NULL OR last_check_at <= NOW() - INTERVAL '2 hours')
-                """)
-
+                tasks = await conn.fetch("SELECT * FROM autorestock_tasks WHERE is_active = TRUE AND (last_check_at IS NULL OR last_check_at <= NOW() - INTERVAL '2 hours')") # Интервал 2 часа
             if not tasks:
-                await asyncio.sleep(20)
-                continue
+                await asyncio.sleep(20); continue
 
             async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
                 for t in tasks:
-                    uid = t['user_uid']
                     try:
-                        key = decrypt_data(t['encrypted_golden_key'])
-                        cookies = {"golden_key": key}
+                        cookies = {"golden_key": decrypt_data(t['encrypted_golden_key'])}
                         lots_conf = json.loads(t['lots_config']) if isinstance(t['lots_config'], str) else t['lots_config']
-                        
                         log_msg = []
-                        
                         for lot in lots_conf:
-                            source_lines = lot.get('secrets_source', [])
-                            if not source_lines: continue 
-
-                            offer_id = lot['offer_id']
-                            min_q = int(lot['min_qty'])
+                            src = lot.get('secrets_source', [])
+                            if not src: continue 
                             
-                            # Загрузка
-                            edit_url = f"https://funpay.com/lots/offerEdit?offer={offer_id}"
-                            async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r:
-                                html = await r.text()
-                            
+                            edit_url = f"https://funpay.com/lots/offerEdit?offer={lot['offer_id']}"
+                            async with session.get(edit_url, headers=HEADERS, cookies=cookies) as r: html = await r.text()
                             if "login" in str(r.url): break
-
-                            # Полный парсинг
-                            form_data, oid, cur_text, active_lot, auto_dlv = get_all_form_data(html)
-                            if not form_data.get("csrf_token"): continue
-
-                            should_be_auto = lot.get('auto_enable', True)
-                            final_auto = auto_dlv
-                            if not auto_dlv and should_be_auto: final_auto = True 
-
-                            cur_lines = [l for l in cur_text.split('\n') if l.strip()]
-                            cur_count = len(cur_lines)
                             
-                            if cur_count < min_q:
-                                needed = min_q - cur_count
+                            data, oid, cur, act, auto = get_all_form_data(html)
+                            if not data.get("csrf_token"): continue
+                            
+                            should_auto = lot.get('auto_enable', True)
+                            if not auto and should_auto: auto = True 
+                            
+                            cur_lines = [l for l in cur.split('\n') if l.strip()]
+                            needed = int(lot['min_qty']) - len(cur_lines)
+                            
+                            if needed > 0:
                                 to_add = []
-                                src_len = len(source_lines)
-                                for i in range(needed):
-                                    to_add.append(source_lines[i % src_len])
-
-                                new_full_text = cur_text.strip() + "\n" + "\n".join(to_add)
-                                new_full_text = new_full_text.strip()
-
-                                payload = form_data.copy()
-                                payload["secrets"] = new_full_text
+                                for i in range(needed): to_add.append(src[i % len(src)])
+                                payload = data.copy()
+                                payload["secrets"] = cur.strip() + "\n" + "\n".join(to_add)
                                 payload["save"] = "Сохранить"
-                                
-                                if final_auto: payload["auto_delivery"] = "on"
+                                if auto: payload["auto_delivery"] = "on"; 
                                 elif "auto_delivery" in payload: del payload["auto_delivery"]
-                                if active_lot: payload["active"] = "on"
+                                if act: payload["active"] = "on"; 
                                 elif "active" in payload: del payload["active"]
-
-                                post_headers = HEADERS.copy()
-                                post_headers["X-Requested-With"] = "XMLHttpRequest"
-                                post_headers["Referer"] = edit_url
-
-                                async with session.post("https://funpay.com/lots/offerSave", data=payload, headers=post_headers, cookies=cookies) as pr:
-                                    resp_text = await pr.text()
-                                    if pr.status == 200 and "error" not in resp_text.lower():
-                                        log_msg.append(f"✅{offer_id}: +{len(to_add)}")
-                                    else:
-                                        log_msg.append(f"❌{offer_id}")
-                            
+                                
+                                ph = HEADERS.copy(); ph["X-Requested-With"] = "XMLHttpRequest"; ph["Referer"] = edit_url
+                                async with session.post("https://funpay.com/lots/offerSave", data=payload, headers=ph, cookies=cookies) as pr:
+                                    if pr.status == 200: log_msg.append(f"✅{lot['offer_id']}: +{needed}")
+                                    else: log_msg.append(f"❌{lot['offer_id']}")
                             await asyncio.sleep(2)
-
-                        status = ", ".join(log_msg) if log_msg else "✅ Проверено"
+                        
                         async with app.state.pool.acquire() as c:
-                            await c.execute("UPDATE autorestock_tasks SET status_message=$1, last_check_at=NOW() WHERE user_uid=$2", status[:100], uid)
-
+                            await c.execute("UPDATE autorestock_tasks SET status_message=$1, last_check_at=NOW() WHERE user_uid=$2", ", ".join(log_msg) or "✅ Проверено", t['user_uid'])
                     except: pass
-            
             await asyncio.sleep(10)
         except: await asyncio.sleep(30)
