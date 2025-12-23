@@ -1,26 +1,24 @@
 import os
 import secrets
 import pathlib
-import asyncio  # <--- Добавлено для запуска воркеров
+import asyncio
 import json
 from typing import Optional, Literal
 from datetime import date, datetime, timedelta
 
 import asyncpg
-from fastapi import FastAPI, HTTPException, Request, Depends, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse, JSONResponse, FileRespons
+from fastapi import FastAPI, HTTPException, Request, Depends, Form, Header
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
 
 # --- ИМПОРТЫ ПРОЕКТА ---
-from guards import admin_guard_ui
-from auth.guards import get_current_user as get_current_user_raw
-from auth.jwt_utils import verify_password, make_jwt 
-from auth.guards import get_current_user # <-- Это защита!
-from auth.jwt_utils import decode_jwt # Для проверки токена
+from guards import admin_guard_ui           # Админка
+from auth.jwt_utils import verify_password, make_jwt
+from auth.guards import get_current_user    # Наша новая универсальная защита
 
 # --- ИМПОРТ ПЛАГИНОВ ---
-# Здесь мы подключаем наш новый модульный функционал
 from Plugins import AutoBump, AutoRestock
 
 
@@ -394,142 +392,117 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
     return RedirectResponse(url="/cabinet", status_code=302)
 
 
-# --- ИСПРАВЛЕННЫЙ БЛОК (УНИВЕРСАЛЬНЫЙ) ---
+# ==========================================
+#      FPBOOSTER PROTECTED API (FINAL)
+# ==========================================
+
+# 1. СПИСОК ТОВАРОВ (Лаунчер запрашивает это)
 @app.get("/api/products")
 async def get_api_products():
-    """
-    Отдает список товаров, автоматически находя пул подключения.
-    """
-    # Пытаемся найти пул в разных местах, где он может быть в твоем коде
-    pool = getattr(app.state, 'pool', None) or getattr(app.state, 'db_pool', None)
-    
-    if not pool:
-        # Если пул не найден в state, пробуем создать временное подключение
-        # (Замени параметры, если они отличаются от стандартных в твоем server.py)
-        import asyncpg
-        try:
-            conn = await asyncpg.connect(user='postgres', database='fpbooster_db', host='127.0.0.1')
-        except Exception as e:
-            return {"error": f"Database pool not found and direct connect failed: {str(e)}"}, 500
-    else:
-        conn = await pool.acquire()
-
+    pool = app.state.pool
     try:
-        rows = await conn.fetch("SELECT id, name, description, image_url, is_available, download_url FROM products")
-        products = []
-        for row in rows:
-            products.append({
-                "id": str(row['id']),
-                "name": row['name'],
-                "description": row['description'],
-                "image_url": row['image_url'],
-                "is_available": row['is_available'],
-                "download_url": row['download_url']
-            })
-        return products
-    except Exception as e:
-        return {"error": str(e)}, 500
-    finally:
-        if pool:
-            await pool.release(conn)
-        else:
-            await conn.close()
-
-
-
-# --- ЗАЩИЩЕННЫЙ БЛОК API (Вставить в конец файла перед if __name__) ---
-
-# 1. СПИСОК ТОВАРОВ (Выдает ссылки-обманки)
-@app.get("/api/products")
-async def get_api_products():
-    # Ищем подключение к базе
-    pool = getattr(app.state, 'pool', None) or getattr(app.state, 'db_pool', None)
-    if not pool:
-        import asyncpg
-        conn = await asyncpg.connect(user='postgres', database='fpbooster_db', host='127.0.0.1')
-        must_close = True
-    else:
-        conn = await pool.acquire()
-        must_close = False
-
-    try:
-        # Берем реальные пути из базы
-        rows = await conn.fetch("SELECT id, name, description, image_url, is_available, download_url FROM products")
-        products = []
-        for row in rows:
-            # ПОДМЕНА ССЫЛКИ: Вместо реального пути отдаем ссылку на API
-            secure_url = f"/api/download/{row['id']}"
+        async with pool.acquire() as conn:
+            # Берем реальные пути и данные из базы
+            rows = await conn.fetch("SELECT id, name, description, image_url, is_available FROM products")
             
-            products.append({
-                "id": str(row['id']),
-                "name": row['name'],
-                "description": row['description'],
-                "image_url": row['image_url'],
-                "is_available": row['is_available'],
-                "download_url": secure_url # Лаунчер получит это
-            })
-        return products
+            products = []
+            for row in rows:
+                # ПОДМЕНА ССЫЛКИ: Лаунчер получает ссылку на API
+                secure_url = f"/api/download/{row['id']}"
+                
+                products.append({
+                    "id": str(row['id']),
+                    "name": row['name'],
+                    "description": row['description'],
+                    "image_url": row['image_url'],
+                    "is_available": row['is_available'],
+                    "download_url": secure_url 
+                })
+            return products
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-    finally:
-        if must_close: await conn.close()
-        else: await pool.release(conn)
+        print(f"API Error: {e}")
+        return JSONResponse({"error": "Internal Server Error"}, status_code=500)
 
 
-# 2. ЗАЩИЩЕННОЕ СКАЧИВАНИЕ (Требует токен!)
+# 2. ЗАЩИЩЕННОЕ СКАЧИВАНИЕ (Только для Лаунчера)
 @app.get("/api/download/{product_id}")
 async def download_product(
     product_id: int, 
-    user: dict = Depends(get_current_user_api) # <--- ГЛАВНАЯ ЗАЩИТА
+    x_hwid: Optional[str] = Header(None, alias="X-HWID"), # Читаем заголовок X-HWID
+    user_row = Depends(get_current_user) # <-- ТУТ РАБОТАЕТ НАШ НОВЫЙ GUARDS.PY
 ):
-    """
-    Скачивает файл только если есть валидный токен.
-    """
-    pool = getattr(app.state, 'pool', None) or getattr(app.state, 'db_pool', None)
-    if not pool:
-        import asyncpg
-        conn = await asyncpg.connect(user='postgres', database='fpbooster_db', host='127.0.0.1')
-        must_close = True
-    else:
-        conn = await pool.acquire()
-        must_close = False
-
+    pool = app.state.pool
+    
     try:
-        # 1. Ищем информацию о файле в базе
-        row = await conn.fetchrow("SELECT exe_name, download_url, secret_key FROM products WHERE id = $1", product_id)
-        
-        if not row:
-            return JSONResponse({"error": "Product not found"}, status_code=404)
+        user_uid = user_row['uid'] # Достаем UID из пользователя (auth.guards уже нашел его в базе)
+        user_id = user_row['id']
 
-        # 2. Превращаем путь из базы (/static/file.dll) в путь на диске (/opt/fpbooster/static/file.dll)
-        # Путь в базе мы настроили в Шаге 1
-        db_path = row['download_url'] 
-        filename = row['exe_name'] or "Program.exe"
-        secret_key = row['secret_key']
+        async with pool.acquire() as conn:
+            # 1. Ищем информацию о файле
+            prod_row = await conn.fetchrow(
+                "SELECT exe_name, download_url, secret_key, name FROM products WHERE id = $1", 
+                product_id
+            )
+            
+            if not prod_row:
+                return JSONResponse({"error": "Product not found"}, status_code=404)
 
-        # Очищаем путь от лишнего, чтобы получить чистое имя файла
-        real_filename = db_path.replace("/static/", "").replace("/", "")
-        
-        # !!! ПУТЬ К ПАПКЕ STATIC НА СЕРВЕРЕ !!!
-        # Если у тебя папка в другом месте, поправь эту строку
-        file_disk_path = f"/opt/fpbooster/static/{real_filename}"
+            # === ANTI-CRACK & LICENSE CHECK ===
+            # Проверяем лицензию, только если это платная версия (ID=1 или "Plus" в названии)
+            if product_id == 1 or "Plus" in prod_row['name']:
+                
+                # Ищем АКТИВНУЮ лицензию пользователя
+                license_row = await conn.fetchrow("""
+                    SELECT * FROM licenses 
+                    WHERE user_uid = $1 AND status = 'active' AND expires >= CURRENT_DATE
+                """, user_uid)
 
-        if not os.path.exists(file_disk_path):
-             return JSONResponse({"error": f"File missing on server disk: {file_disk_path}"}, status_code=404)
+                if not license_row:
+                     return JSONResponse({"error": "NO_LICENSE: Active license required."}, status_code=403)
 
-        # 3. Отправляем файл + Ключ
-        headers = {
-            "X-Encryption-Key": secret_key if secret_key else "",
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
-        
-        return FileResponse(path=file_disk_path, headers=headers, media_type='application/octet-stream')
+                # Проверка HWID
+                db_hwid = license_row['hwid']
+                
+                if not db_hwid:
+                    # Если HWID пустой (первый запуск) -> Привязываем текущий
+                    if x_hwid:
+                        await conn.execute(
+                            "UPDATE licenses SET hwid = $1 WHERE license_key = $2", 
+                            x_hwid, license_row['license_key']
+                        )
+                        print(f"HWID Linked for User {user_id}: {x_hwid}")
+                
+                elif x_hwid and db_hwid != x_hwid:
+                    # HWID не совпал -> БАН
+                    print(f"HWID Mismatch! User: {user_id}, Stored: {db_hwid}, Got: {x_hwid}")
+                    return JSONResponse({"error": "HWID_MISMATCH: License bound to another PC."}, status_code=403)
+            # ==================================
+
+            # 2. Формируем путь к файлу
+            db_path = prod_row['download_url'] # Например: /static/FPBoosterPlus.dll
+            filename = prod_row['exe_name'] or "Program.exe"
+            secret_key = prod_row['secret_key']
+
+            # Очищаем путь от /static/ и лишних слешей
+            real_filename = db_path.replace("/static/", "").replace("/", "")
+            
+            # Полный путь на диске сервера
+            file_disk_path = f"/opt/fpbooster/static/{real_filename}"
+
+            if not os.path.exists(file_disk_path):
+                 return JSONResponse({"error": f"File missing on server: {real_filename}"}, status_code=404)
+
+            # 3. Отдаем файл + Ключ
+            headers = {
+                "X-Encryption-Key": secret_key if secret_key else "",
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+            
+            return FileResponse(path=file_disk_path, headers=headers, media_type='application/octet-stream')
 
     except Exception as e:
+        print(f"Download Error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
-    finally:
-        if must_close: await conn.close()
-        else: await pool.release(conn)
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
 async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
@@ -762,6 +735,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
