@@ -368,6 +368,35 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
         raise HTTPException(500, f"SQL Error: {str(e)}")
     return RedirectResponse(url="/cabinet", status_code=302)
 
+
+# --- ДОБАВЛЕНО ДЛЯ ЛАУНЧЕРА ---
+@app.get("/api/products")
+async def get_api_products(request: Request):
+    """
+    Отдает список товаров для лаунчера из базы данных.
+    """
+    conn = await get_db_connection()
+    try:
+        # Запрашиваем товары, которые помечены как доступные
+        rows = await conn.fetch("SELECT id, name, description, image_url, is_available, download_url FROM products")
+        
+        products = []
+        for row in rows:
+            products.append({
+                "id": str(row['id']),
+                "name": row['name'],
+                "description": row['description'],
+                "image_url": row['image_url'],
+                "is_available": row['is_available'],
+                "download_url": row['download_url']
+            })
+        return products
+    except Exception as e:
+        print(f"Ошибка при получении списка товаров: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    finally:
+        await conn.close()
+
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
 async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
@@ -600,4 +629,5 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
