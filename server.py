@@ -2,6 +2,7 @@ import os
 import secrets
 import pathlib
 import asyncio  # <--- Добавлено для запуска воркеров
+import json
 from typing import Optional, Literal
 from datetime import date, datetime, timedelta
 
@@ -370,32 +371,40 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
 
 
 # --- ДОБАВЛЕНО ДЛЯ ЛАУНЧЕРА ---
+# --- ИСПРАВЛЕННЫЙ БЛОК ДЛЯ ЛАУНЧЕРА ---
 @app.get("/api/products")
-async def get_api_products(request: Request):
+async def get_api_products():
     """
-    Отдает список товаров для лаунчера из базы данных.
+    Отдает список товаров для лаунчера, используя существующий пул базы данных.
     """
-    conn = await get_db_connection()
     try:
-        # Запрашиваем товары, которые помечены как доступные
-        rows = await conn.fetch("SELECT id, name, description, image_url, is_available, download_url FROM products")
-        
-        products = []
-        for row in rows:
-            products.append({
-                "id": str(row['id']),
-                "name": row['name'],
-                "description": row['description'],
-                "image_url": row['image_url'],
-                "is_available": row['is_available'],
-                "download_url": row['download_url']
-            })
-        return products
+        # В твоем коде используется asyncpg пул, берем соединение из него
+        async with app.state.db_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT id, name, description, image_url, is_available, download_url FROM products")
+            
+            products = []
+            for row in rows:
+                products.append({
+                    "id": str(row['id']),
+                    "name": row['name'],
+                    "description": row['description'],
+                    "image_url": row['image_url'],
+                    "is_available": row['is_available'],
+                    "download_url": row['download_url']
+                })
+            return products
     except Exception as e:
-        print(f"Ошибка при получении списка товаров: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-    finally:
-        await conn.close()
+        print(f"Критическая ошибка /api/products: {e}")
+        # Это поможет увидеть ошибку в консоли сервера (journalctl)
+        return {"error": str(e)}, 500
+
+# Маршрут для отдачи файлов из папки /static/ (если его еще нет)
+from fastapi.staticfiles import StaticFiles
+import os
+
+static_dir = "/opt/fpbooster/static"
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
@@ -629,5 +638,6 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
