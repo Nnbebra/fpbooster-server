@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 
 import asyncpg
 from fastapi import FastAPI, HTTPException, Request, Depends, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, PlainTextResponse, JSONResponse, FileRespons
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, validator
 
@@ -16,6 +16,8 @@ from pydantic import BaseModel, validator
 from guards import admin_guard_ui
 from auth.guards import get_current_user as get_current_user_raw
 from auth.jwt_utils import verify_password, make_jwt 
+from auth.guards import get_current_user # <-- Это защита!
+from auth.jwt_utils import decode_jwt # Для проверки токена
 
 # --- ИМПОРТ ПЛАГИНОВ ---
 # Здесь мы подключаем наш новый модульный функционал
@@ -143,6 +145,28 @@ async def health():
 # ==========================================================
 #             ЭНДПОИНТЫ ДЛЯ ЛАУНЧЕРА
 # ==========================================================
+
+
+# --- ФУНКЦИЯ ЗАЩИТЫ API (Добавить после импортов) ---
+async def get_current_user_api(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing Authorization Header")
+    try:
+        scheme, token = auth_header.split()
+        if scheme.lower() != 'bearer':
+            raise HTTPException(status_code=401, detail="Invalid Auth Scheme")
+        
+        # Расшифровываем токен
+        payload = decode_jwt(token)
+        if not payload:
+             raise HTTPException(status_code=401, detail="Invalid Token")
+        return payload
+    except Exception:
+        raise HTTPException(status_code=401, detail="Auth Failed")
+
+
+
 
 @app.post("/api/launcher/login")
 async def launcher_login(data: LauncherLogin, request: Request):
@@ -411,6 +435,101 @@ async def get_api_products():
         else:
             await conn.close()
 
+
+
+# --- ЗАЩИЩЕННЫЙ БЛОК API (Вставить в конец файла перед if __name__) ---
+
+# 1. СПИСОК ТОВАРОВ (Выдает ссылки-обманки)
+@app.get("/api/products")
+async def get_api_products():
+    # Ищем подключение к базе
+    pool = getattr(app.state, 'pool', None) or getattr(app.state, 'db_pool', None)
+    if not pool:
+        import asyncpg
+        conn = await asyncpg.connect(user='postgres', database='fpbooster_db', host='127.0.0.1')
+        must_close = True
+    else:
+        conn = await pool.acquire()
+        must_close = False
+
+    try:
+        # Берем реальные пути из базы
+        rows = await conn.fetch("SELECT id, name, description, image_url, is_available, download_url FROM products")
+        products = []
+        for row in rows:
+            # ПОДМЕНА ССЫЛКИ: Вместо реального пути отдаем ссылку на API
+            secure_url = f"/api/download/{row['id']}"
+            
+            products.append({
+                "id": str(row['id']),
+                "name": row['name'],
+                "description": row['description'],
+                "image_url": row['image_url'],
+                "is_available": row['is_available'],
+                "download_url": secure_url # Лаунчер получит это
+            })
+        return products
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    finally:
+        if must_close: await conn.close()
+        else: await pool.release(conn)
+
+
+# 2. ЗАЩИЩЕННОЕ СКАЧИВАНИЕ (Требует токен!)
+@app.get("/api/download/{product_id}")
+async def download_product(
+    product_id: int, 
+    user: dict = Depends(get_current_user_api) # <--- ГЛАВНАЯ ЗАЩИТА
+):
+    """
+    Скачивает файл только если есть валидный токен.
+    """
+    pool = getattr(app.state, 'pool', None) or getattr(app.state, 'db_pool', None)
+    if not pool:
+        import asyncpg
+        conn = await asyncpg.connect(user='postgres', database='fpbooster_db', host='127.0.0.1')
+        must_close = True
+    else:
+        conn = await pool.acquire()
+        must_close = False
+
+    try:
+        # 1. Ищем информацию о файле в базе
+        row = await conn.fetchrow("SELECT exe_name, download_url, secret_key FROM products WHERE id = $1", product_id)
+        
+        if not row:
+            return JSONResponse({"error": "Product not found"}, status_code=404)
+
+        # 2. Превращаем путь из базы (/static/file.dll) в путь на диске (/opt/fpbooster/static/file.dll)
+        # Путь в базе мы настроили в Шаге 1
+        db_path = row['download_url'] 
+        filename = row['exe_name'] or "Program.exe"
+        secret_key = row['secret_key']
+
+        # Очищаем путь от лишнего, чтобы получить чистое имя файла
+        real_filename = db_path.replace("/static/", "").replace("/", "")
+        
+        # !!! ПУТЬ К ПАПКЕ STATIC НА СЕРВЕРЕ !!!
+        # Если у тебя папка в другом месте, поправь эту строку
+        file_disk_path = f"/opt/fpbooster/static/{real_filename}"
+
+        if not os.path.exists(file_disk_path):
+             return JSONResponse({"error": f"File missing on server disk: {file_disk_path}"}, status_code=404)
+
+        # 3. Отправляем файл + Ключ
+        headers = {
+            "X-Encryption-Key": secret_key if secret_key else "",
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+        
+        return FileResponse(path=file_disk_path, headers=headers, media_type='application/octet-stream')
+
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    finally:
+        if must_close: await conn.close()
+        else: await pool.release(conn)
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
 async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
@@ -643,6 +762,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
