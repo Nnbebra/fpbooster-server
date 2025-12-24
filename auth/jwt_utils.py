@@ -1,11 +1,12 @@
-import os
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-change-me")
+# ВАЖНО: Статичный ключ. Не меняй его, иначе все пользователи вылетят.
+JWT_SECRET = "b4c9a288-static-super-secret-key-for-fpbooster-fixed"
 JWT_ALG = "HS256"
-JWT_EXPIRES_SECONDS = 7 * 24 * 3600
+# Время жизни сессии (30 дней)
+JWT_EXPIRES_SECONDS = 30 * 24 * 3600
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -17,8 +18,9 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def make_jwt(user_id: int, email: str) -> str:
     now = int(datetime.utcnow().timestamp())
-    # Исправил логику времени для jose
-    payload = {"sub": str(user_id), "email": email, "iat": now, "exp": now + JWT_EXPIRES_SECONDS}
+    # Исправлена работа с датой
+    exp_time = datetime.utcnow() + timedelta(seconds=JWT_EXPIRES_SECONDS)
+    payload = {"sub": str(user_id), "email": email, "iat": now, "exp": exp_time}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 def decode_jwt(token: str):
