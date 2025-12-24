@@ -396,25 +396,25 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
 #      FPBOOSTER PROTECTED API (FINAL)
 # ==========================================
 
-# 1. СПИСОК ТОВАРОВ (Лаунчер запрашивает это)
+# 1. СПИСОК ТОВАРОВ
 @app.get("/api/products")
 async def get_api_products():
-    pool = app.state.pool
     try:
-        async with pool.acquire() as conn:
-            # Берем реальные пути и данные из базы
-            rows = await conn.fetch("SELECT id, name, description, image_url, is_available FROM products")
+        async with app.state.pool.acquire() as conn:
+            # Запрашиваем товары. 
+            # Для Plus версии (id=1) image_url уже должен быть '/static/FPBooster+.png' в базе.
+            rows = await conn.fetch("SELECT id, name, description, image_url, is_available FROM products ORDER BY id ASC")
             
             products = []
             for row in rows:
-                # ПОДМЕНА ССЫЛКИ: Лаунчер получает ссылку на API
+                # Генерируем ссылку на наш API скачивания
                 secure_url = f"/api/download/{row['id']}"
                 
                 products.append({
                     "id": str(row['id']),
                     "name": row['name'],
                     "description": row['description'],
-                    "image_url": row['image_url'],
+                    "image_url": row['image_url'], # Лаунчер покажет картинку из папки static
                     "is_available": row['is_available'],
                     "download_url": secure_url 
                 })
@@ -424,81 +424,62 @@ async def get_api_products():
         return JSONResponse({"error": "Internal Server Error"}, status_code=500)
 
 
-# 2. ЗАЩИЩЕННОЕ СКАЧИВАНИЕ (Только для Лаунчера)
+# 2. ЗАЩИЩЕННОЕ СКАЧИВАНИЕ (ЧИТАЕТ ИЗ PROTECTED_BUILDS)
 @app.get("/api/download/{product_id}")
 async def download_product(
     product_id: int, 
-    x_hwid: Optional[str] = Header(None, alias="X-HWID"), # Читаем заголовок X-HWID
-    user_row = Depends(get_current_user) # <-- ТУТ РАБОТАЕТ НАШ НОВЫЙ GUARDS.PY
+    x_hwid: Optional[str] = Header(None, alias="X-HWID"), 
+    user_row = Depends(get_current_user)
 ):
-    pool = app.state.pool
-    
     try:
-        user_uid = user_row['uid'] # Достаем UID из пользователя (auth.guards уже нашел его в базе)
-        user_id = user_row['id']
-
-        async with pool.acquire() as conn:
-            # 1. Ищем информацию о файле
-            prod_row = await conn.fetchrow(
-                "SELECT exe_name, download_url, secret_key, name FROM products WHERE id = $1", 
-                product_id
-            )
+        user_uid = user_row['uid'] 
+        
+        async with app.state.pool.acquire() as conn:
+            # Получаем инфо о файле
+            prod = await conn.fetchrow("SELECT exe_name, download_url, secret_key, name, is_available FROM products WHERE id = $1", product_id)
             
-            if not prod_row:
+            if not prod:
                 return JSONResponse({"error": "Product not found"}, status_code=404)
 
-            # === ANTI-CRACK & LICENSE CHECK ===
-            # Проверяем лицензию, только если это платная версия (ID=1 или "Plus" в названии)
-            if product_id == 1 or "Plus" in prod_row['name']:
+            # Если товар выключен (как сейчас Default версия) - не даем скачивать
+            if not prod['is_available']:
+                 return JSONResponse({"error": "Product is temporarily unavailable"}, status_code=403)
+
+            # === ПРОВЕРКА ЛИЦЕНЗИИ (Для Plus) ===
+            if product_id == 1 or "Plus" in prod['name']:
+                license = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1 AND status='active' AND expires >= CURRENT_DATE", user_uid)
                 
-                # Ищем АКТИВНУЮ лицензию пользователя
-                license_row = await conn.fetchrow("""
-                    SELECT * FROM licenses 
-                    WHERE user_uid = $1 AND status = 'active' AND expires >= CURRENT_DATE
-                """, user_uid)
+                if not license:
+                     return JSONResponse({"error": "NO_LICENSE"}, status_code=403)
 
-                if not license_row:
-                     return JSONResponse({"error": "NO_LICENSE: Active license required."}, status_code=403)
+                if not license['hwid']:
+                    if x_hwid: await conn.execute("UPDATE licenses SET hwid=$1 WHERE license_key=$2", x_hwid, license['license_key'])
+                elif x_hwid and license['hwid'] != x_hwid:
+                    return JSONResponse({"error": "HWID_MISMATCH"}, status_code=403)
+            # =======================================
 
-                # Проверка HWID
-                db_hwid = license_row['hwid']
-                
-                if not db_hwid:
-                    # Если HWID пустой (первый запуск) -> Привязываем текущий
-                    if x_hwid:
-                        await conn.execute(
-                            "UPDATE licenses SET hwid = $1 WHERE license_key = $2", 
-                            x_hwid, license_row['license_key']
-                        )
-                        print(f"HWID Linked for User {user_id}: {x_hwid}")
-                
-                elif x_hwid and db_hwid != x_hwid:
-                    # HWID не совпал -> БАН
-                    print(f"HWID Mismatch! User: {user_id}, Stored: {db_hwid}, Got: {x_hwid}")
-                    return JSONResponse({"error": "HWID_MISMATCH: License bound to another PC."}, status_code=403)
-            # ==================================
-
-            # 2. Формируем путь к файлу
-            db_path = prod_row['download_url'] # Например: /static/FPBoosterPlus.dll
-            filename = prod_row['exe_name'] or "Program.exe"
-            secret_key = prod_row['secret_key']
-
-            # Очищаем путь от /static/ и лишних слешей
-            real_filename = db_path.replace("/static/", "").replace("/", "")
+            # === ЛОГИКА ПУТЕЙ (PROTECTED_BUILDS) ===
+            # Имя файла берем из базы (FPBoosterPlus.dll)
+            # Очищаем от мусора на всякий случай
+            filename = prod['download_url'].replace("/static/", "").replace("/", "") 
             
-            # Полный путь на диске сервера
-            file_disk_path = f"/opt/fpbooster/static/{real_filename}"
+            # Читаем из защищенной папки, которая НЕ стирается git-ом
+            protected_folder = "/opt/fpbooster/protected_builds"
+            file_path = os.path.join(protected_folder, filename)
+            
+            if not os.path.exists(file_path):
+                print(f"CRITICAL: File missing at {file_path}") 
+                return JSONResponse({"error": "Build file missing on server"}, status_code=404)
 
-            if not os.path.exists(file_disk_path):
-                 return JSONResponse({"error": f"File missing on server: {real_filename}"}, status_code=404)
+            # Формируем ключ. Если в базе '', отправляем пустую строку.
+            # Python воспринимает None и '' как False, так что проверка простая.
+            key_to_send = prod['secret_key'] if prod['secret_key'] else ""
 
-            # 3. Отдаем файл + Ключ
             headers = {
-                "X-Encryption-Key": secret_key if secret_key else "",
-                "Content-Disposition": f'attachment; filename="{filename}"'
+                "X-Encryption-Key": key_to_send,
+                "Content-Disposition": f'attachment; filename="{prod["exe_name"]}"'
             }
-            
-            return FileResponse(path=file_disk_path, headers=headers, media_type='application/octet-stream')
+            return FileResponse(file_path, headers=headers, media_type='application/octet-stream')
 
     except Exception as e:
         print(f"Download Error: {e}")
@@ -735,6 +716,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
