@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta # Исправил импорт для корректной работы timedelta
+from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
@@ -17,9 +17,8 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def make_jwt(user_id: int, email: str) -> str:
     now = int(datetime.utcnow().timestamp())
-    # Исправление: используем timedelta для корректного времени
-    exp = datetime.utcnow() + timedelta(seconds=JWT_EXPIRES_SECONDS)
-    payload = {"sub": str(user_id), "email": email, "iat": now, "exp": exp}
+    # Исправил логику времени для jose
+    payload = {"sub": str(user_id), "email": email, "iat": now, "exp": now + JWT_EXPIRES_SECONDS}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 def decode_jwt(token: str):
