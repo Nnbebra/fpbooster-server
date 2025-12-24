@@ -15,6 +15,45 @@ def generate_license_key():
     # 8-символьный, уникальный, верхний регистр + цифры
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
+# --- НОВЫЙ МЕТОД СПЕЦИАЛЬНО ДЛЯ ЛАУНЧЕРА (НЕ ТРОГАЕТ САЙТ) ---
+@router.post("/api/login")
+async def api_login_launcher(request: Request, data: dict = Body(...)):
+    # Лаунчер шлет JSON {"username": "...", "password": "..."}
+    email = data.get("username", "").strip().lower()
+    password = data.get("password", "")
+
+    async with request.app.state.pool.acquire() as conn:
+        user = await conn.fetchrow("SELECT id, email, password_hash, username FROM users WHERE email=$1", email)
+        if not user or not verify_password(password, user["password_hash"]):
+            return JSONResponse({"status": "error", "message": "Неверный логин или пароль"}, status_code=401)
+        
+        await conn.execute("UPDATE users SET last_login=NOW() WHERE id=$1", user["id"])
+        token = make_jwt(user["id"], user["email"])
+        
+        return {
+            "status": "success",
+            "access_token": token,
+            "username": user["username"]
+        }
+
+# --- НОВЫЙ МЕТОД ПРОФИЛЯ ДЛЯ ЛАУНЧЕРА ---
+@router.get("/api/me")
+async def get_api_profile(request: Request):
+    try:
+        user = await get_current_user(request.app, request)
+        return {
+            "uid": user["uid"],
+            "username": user["username"],
+            "email": user["email"],
+            "group": user.get("group", "User"),
+            "expires": str(user.get("expires", "Unlimited")),
+            "avatar_url": user.get("avatar_url", "")
+        }
+    except:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+# === ОРИГИНАЛЬНАЯ ЛОГИКА САЙТА (БЕЗ ИЗМЕНЕНИЙ) ===
+
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     try:
@@ -88,69 +127,19 @@ async def user_login_page(request: Request):
     except:
         return templates.TemplateResponse("user_login.html", {"request": request, "error": None})
 
-# ОБНОВЛЕННЫЙ МЕТОД LOGIN (JSON + FORM)
 @router.post("/login")
-async def user_login(
-    request: Request, 
-    email: Optional[str] = Form(None), 
-    password: Optional[str] = Form(None),
-    data: dict = Body(None) # Позволяет принимать JSON от лаунчера
-):
-    # Пытаемся взять данные из JSON (лаунчер) или из Form (сайт)
-    in_email = email
-    in_password = password
-
-    if data:
-        # Лаунчер присылает username и password в JSON
-        in_email = data.get("username") or data.get("email")
-        in_password = data.get("password")
-
-    if not in_email or not in_password:
-        if data: return JSONResponse({"status": "error", "message": "Missing credentials"}, status_code=400)
-        return templates.TemplateResponse("user_login.html", {"request": request, "error": "Введите логин и пароль"}, status_code=400)
-
-    in_email = in_email.strip().lower()
-    
+async def user_login(request: Request, email: str = Form(...), password: str = Form(...)):
+    email = email.strip().lower()
     async with request.app.state.pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT id, email, password_hash, username FROM users WHERE email=$1", in_email)
-        
-        if not user or not verify_password(in_password, user["password_hash"]):
-            if data: return JSONResponse({"status": "error", "message": "Неверный email или пароль"}, status_code=401)
+        user = await conn.fetchrow("SELECT id, email, password_hash FROM users WHERE email=$1", email)
+        if not user or not verify_password(password, user["password_hash"]):
             return templates.TemplateResponse("user_login.html", {"request": request, "error": "Неверный email или пароль"}, status_code=401)
-            
         await conn.execute("UPDATE users SET last_login=NOW() WHERE id=$1", user["id"])
 
     token = make_jwt(user["id"], user["email"])
-
-    # Ответ для ЛАУНЧЕРА
-    if data:
-        return {
-            "status": "success",
-            "access_token": token,
-            "username": user["username"],
-            "message": "Успешный вход"
-        }
-
-    # Ответ для САЙТА
     resp = RedirectResponse(url="/cabinet", status_code=302)
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
-
-# НОВЫЙ ЭНДПОИНТ ДЛЯ ЛАУНЧЕРА (JSON PROFILE)
-@router.get("/me")
-async def get_me_api(request: Request):
-    try:
-        user = await get_current_user(request.app, request)
-        return {
-            "uid": user["uid"],
-            "username": user["username"],
-            "email": user["email"],
-            "group": user.get("group", "User"),
-            "expires": str(user.get("expires", "Unlimited")),
-            "avatar_url": user.get("avatar_url", "")
-        }
-    except Exception as e:
-        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
 
 @router.get("/cabinet", response_class=HTMLResponse)
 async def account_page(request: Request):
@@ -193,8 +182,8 @@ async def account_page(request: Request):
             "request": request, 
             "user": user, 
             "licenses": licenses, 
-            "active_license": display_license,
-            "is_license_active": is_license_active,
+            "active_license": display_license, 
+            "is_license_active": is_license_active, 
             "download_url": download_url,
             "total_spent": total_spent
         }
@@ -226,6 +215,7 @@ async def resend_confirmation(request: Request):
         await create_and_send_confirmation(request.app, user["id"], user["email"])
         return JSONResponse({"message": "Письмо успешно отправлено!"})
     except Exception as e:
+        print(f"Email Error: {e}")
         return JSONResponse({"error": "Ошибка при отправке письма"}, status_code=500)
 
 @router.get("/logout")
