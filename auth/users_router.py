@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from .jwt_utils import hash_password, verify_password, make_jwt
@@ -6,6 +6,7 @@ from .guards import get_current_user
 from .email_service import create_and_send_confirmation
 import secrets, string
 from datetime import date, datetime
+from typing import Optional
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -47,7 +48,6 @@ async def register_submit(
     pw_hash = hash_password(password)
 
     async with request.app.state.pool.acquire() as conn:
-        # Проверяем, не занят ли email
         exist = await conn.fetchval("SELECT 1 FROM users WHERE email=$1", email)
         if exist:
              return templates.TemplateResponse("register.html", {"request": request, "error": "Email уже зарегистрирован"}, status_code=400)
@@ -61,7 +61,6 @@ async def register_submit(
             email, pw_hash, username.strip()
         )
         
-        # Создаем пустую/истекшую лицензию для старта
         license_key = generate_license_key()
         await conn.execute(
             """
@@ -89,19 +88,69 @@ async def user_login_page(request: Request):
     except:
         return templates.TemplateResponse("user_login.html", {"request": request, "error": None})
 
+# ОБНОВЛЕННЫЙ МЕТОД LOGIN (JSON + FORM)
 @router.post("/login")
-async def user_login(request: Request, email: str = Form(...), password: str = Form(...)):
-    email = email.strip().lower()
+async def user_login(
+    request: Request, 
+    email: Optional[str] = Form(None), 
+    password: Optional[str] = Form(None),
+    data: dict = Body(None) # Позволяет принимать JSON от лаунчера
+):
+    # Пытаемся взять данные из JSON (лаунчер) или из Form (сайт)
+    in_email = email
+    in_password = password
+
+    if data:
+        # Лаунчер присылает username и password в JSON
+        in_email = data.get("username") or data.get("email")
+        in_password = data.get("password")
+
+    if not in_email or not in_password:
+        if data: return JSONResponse({"status": "error", "message": "Missing credentials"}, status_code=400)
+        return templates.TemplateResponse("user_login.html", {"request": request, "error": "Введите логин и пароль"}, status_code=400)
+
+    in_email = in_email.strip().lower()
+    
     async with request.app.state.pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT id, email, password_hash FROM users WHERE email=$1", email)
-        if not user or not verify_password(password, user["password_hash"]):
+        user = await conn.fetchrow("SELECT id, email, password_hash, username FROM users WHERE email=$1", in_email)
+        
+        if not user or not verify_password(in_password, user["password_hash"]):
+            if data: return JSONResponse({"status": "error", "message": "Неверный email или пароль"}, status_code=401)
             return templates.TemplateResponse("user_login.html", {"request": request, "error": "Неверный email или пароль"}, status_code=401)
+            
         await conn.execute("UPDATE users SET last_login=NOW() WHERE id=$1", user["id"])
 
     token = make_jwt(user["id"], user["email"])
+
+    # Ответ для ЛАУНЧЕРА
+    if data:
+        return {
+            "status": "success",
+            "access_token": token,
+            "username": user["username"],
+            "message": "Успешный вход"
+        }
+
+    # Ответ для САЙТА
     resp = RedirectResponse(url="/cabinet", status_code=302)
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
+
+# НОВЫЙ ЭНДПОИНТ ДЛЯ ЛАУНЧЕРА (JSON PROFILE)
+@router.get("/me")
+async def get_me_api(request: Request):
+    try:
+        user = await get_current_user(request.app, request)
+        return {
+            "uid": user["uid"],
+            "username": user["username"],
+            "email": user["email"],
+            "group": user.get("group", "User"),
+            "expires": str(user.get("expires", "Unlimited")),
+            "avatar_url": user.get("avatar_url", "")
+        }
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
 
 @router.get("/cabinet", response_class=HTMLResponse)
 async def account_page(request: Request):
@@ -111,7 +160,6 @@ async def account_page(request: Request):
         return RedirectResponse(url="/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
-        # Получаем лицензии
         licenses = await conn.fetch(
             """
             SELECT license_key, status, expires, hwid
@@ -122,13 +170,11 @@ async def account_page(request: Request):
             user["uid"],
         )
         
-        # Получаем общую сумму трат
         total_spent = await conn.fetchval(
             "SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1",
             user["uid"]
         )
 
-        # Логика поиска РЕАЛЬНО активной лицензии
         found_active = None
         for lic in licenses:
             if lic['status'] == 'active':
@@ -136,11 +182,7 @@ async def account_page(request: Request):
                     found_active = lic
                     break
         
-        # Флаг для шаблона: True, если есть активная подписка (для кнопки скачивания в хедере)
         is_license_active = (found_active is not None)
-
-        # Для отображения в самом кабинете (чтобы показать UID, HWID и т.д.)
-        # Если активной нет, берем первую попавшуюся (например, истекшую), просто для инфы
         display_license = found_active if found_active else (licenses[0] if licenses else None)
 
     download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
@@ -151,14 +193,13 @@ async def account_page(request: Request):
             "request": request, 
             "user": user, 
             "licenses": licenses, 
-            "active_license": display_license, # Объект лицензии для вывода данных в центре
-            "is_license_active": is_license_active, # Булево значение для кнопки в шапке
+            "active_license": display_license,
+            "is_license_active": is_license_active,
             "download_url": download_url,
             "total_spent": total_spent
         }
     )
 
-# Новый эндпоинт для повторной отправки письма с кулдауном 24 часа
 @router.post("/api/resend-confirmation")
 async def resend_confirmation(request: Request):
     try:
@@ -170,26 +211,21 @@ async def resend_confirmation(request: Request):
          return JSONResponse({"message": "Email уже подтвержден"})
 
     async with request.app.state.pool.acquire() as conn:
-        # Проверяем дату последнего токена
         last_request = await conn.fetchval(
             "SELECT created_at FROM email_confirmations WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1",
             user["id"]
         )
         
         if last_request:
-            # Считаем разницу во времени
             diff = datetime.utcnow() - last_request
             if diff.total_seconds() < 24 * 3600:
-                 # Если прошло меньше 24 часов
                  hours_left = int((24 * 3600 - diff.total_seconds()) / 3600)
                  return JSONResponse({"error": f"Слишком часто. Повторная отправка возможна через {hours_left} ч."}, status_code=429)
 
-    # Если всё ок — отправляем
     try:
         await create_and_send_confirmation(request.app, user["id"], user["email"])
         return JSONResponse({"message": "Письмо успешно отправлено!"})
     except Exception as e:
-        print(f"Email Error: {e}")
         return JSONResponse({"error": "Ошибка при отправке письма"}, status_code=500)
 
 @router.get("/logout")
