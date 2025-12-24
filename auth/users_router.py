@@ -15,7 +15,7 @@ def generate_license_key():
     return ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
 # ==========================================
-# 1. ЛОГИКА ДЛЯ САЙТА (HTML FORMS)
+# 1. ЛОГИКА ДЛЯ САЙТА (ИСПРАВЛЕНА ПРОБЛЕМА С КУКАМИ)
 # ==========================================
 
 @router.get("/login", response_class=HTMLResponse)
@@ -49,22 +49,23 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
     # 5. Генерация токена
     token = make_jwt(user["id"], user["email"])
     
-    # 6. РЕДИРЕКТ И УСТАНОВКА КУКИ (ИСПРАВЛЕНО)
+    # 6. РЕДИРЕКТ И УСТАНОВКА КУКИ (ФИКС ДЛЯ БРАУЗЕРА)
     resp = RedirectResponse(url="/cabinet", status_code=302)
     
-    # ВАЖНО: secure=False позволяет работать без HTTPS.
-    # Если сайт будет на https://, браузер все равно примет куку.
+    # ВАЖНО: secure=False позволяет работать локально и без HTTPS.
+    # Если на сервере будет HTTPS, браузер всё равно примет эту куку.
     resp.set_cookie(
         "user_auth", 
         token, 
         httponly=True, 
         samesite="lax", 
-        secure=False,  # <--- БЫЛО True, СТАЛО False. Это починит вход.
+        secure=False,  # <--- БЫЛО True, СТАЛО False. ЭТО РЕШАЕТ ПРОБЛЕМУ ВХОДА.
         max_age=7*24*3600
     )
     return resp
 
-# ... (Остальные методы: register, cabinet, logout и т.д. оставляем как есть) ...
+# ... (Остальные стандартные методы: register, cabinet, logout и т.д.) ...
+# Скопируйте их из вашего текущего файла, они рабочие, если не трогать secure=True
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
@@ -114,7 +115,7 @@ async def register_submit(
     token = make_jwt(row["id"], row["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
     
-    # Здесь тоже ставим secure=False для регистрации
+    # Здесь тоже ставим secure=False
     resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=False, max_age=7*24*3600)
     return resp
 
@@ -154,12 +155,11 @@ async def user_logout():
     return resp
 
 # ==========================================
-# 2. ЛОГИКА ДЛЯ ЛАУНЧЕРА (API JSON)
+# 2. ЛОГИКА ДЛЯ ЛАУНЧЕРА (ЧТОБЫ ОН НЕ МЕШАЛ САЙТУ)
 # ==========================================
 
 @router.post("/api/login_launcher")
 async def api_login_launcher(request: Request, data: dict = Body(...)):
-    # Принимаем JSON
     email = data.get("username", "").strip().lower()
     password = data.get("password", "")
 
