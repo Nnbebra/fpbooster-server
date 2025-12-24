@@ -1,31 +1,26 @@
 import os
-import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta # Исправил импорт для корректной работы timedelta
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 
-# ВАЖНО: Фиксированный ключ. В продакшене лучше брать из os.getenv("SECRET_KEY")
-# Если ключ менять при каждом запуске, всех пользователей будет выкидывать.
-SECRET_KEY = "CHANGE_ME_TO_SOMETHING_VERY_SECRET_AND_STATIC" 
-ALGORITHM = "HS256"
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-change-me")
+JWT_ALG = "HS256"
+JWT_EXPIRES_SECONDS = 7 * 24 * 3600
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_ctx.hash(password)
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_ctx.verify(password, hashed)
 
 def make_jwt(user_id: int, email: str) -> str:
-    payload = {
-        "sub": str(user_id),
-        "email": email,
-        "exp": datetime.utcnow() + timedelta(days=30) # Токен на 30 дней
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    now = int(datetime.utcnow().timestamp())
+    # Исправление: используем timedelta для корректного времени
+    exp = datetime.utcnow() + timedelta(seconds=JWT_EXPIRES_SECONDS)
+    payload = {"sub": str(user_id), "email": email, "iat": now, "exp": exp}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 def decode_jwt(token: str):
-    try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except:
-        return None
+    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
