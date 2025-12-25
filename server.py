@@ -22,8 +22,7 @@ from auth.guards import get_current_user
 # --- Вспомогательная функция (ВСТАВИТЬ ПЕРЕД ОБЪЯВЛЕНИЕМ РОУТОВ) ---
 async def get_user_safe(request: Request):
     try:
-        # Пытаемся получить юзера, но не кидаем ошибку 401, если он гость
-        return await get_current_user(request.app, request)
+        return await get_current_user(request)
     except:
         return None
 
@@ -749,7 +748,6 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
-
 
 
 
