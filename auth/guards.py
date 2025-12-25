@@ -2,26 +2,51 @@ from fastapi import Request, HTTPException
 from .jwt_utils import decode_jwt
 
 async def get_current_user(request: Request):
+    """
+    Универсальная проверка авторизации:
+    1. Ищет токен в куках (сайт)
+    2. Ищет токен в заголовке Authorization (лаунчер и софт)
+    """
+    token = None
+
+    # 1. Пробуем взять из Кук ( приоритет для сайта )
     token = request.cookies.get("user_auth")
-    
+
+    # 2. Если в куках пусто, проверяем заголовок Authorization
     if not token:
         auth_header = request.headers.get("Authorization")
         if auth_header:
-            # Поддержка 'Bearer <token>'
             if auth_header.startswith("Bearer "):
-                token = auth_header.split(" ")[1]
-            # Поддержка просто '<token>' (для старого софта)
+                parts = auth_header.split(" ")
+                if len(parts) > 1:
+                    token = parts[1]
             else:
-                token = auth_header
+                # Поддержка старого софта, который шлет токен напрямую БЕЗ "Bearer "
+                # Проверяем, что это похоже на JWT (состоит из 3 частей через точку)
+                if auth_header.count(".") == 2:
+                    token = auth_header
 
-    if not token:
+    # Если токена нет совсем или он пустой
+    if not token or token == "null" or token == "undefined":
         raise HTTPException(status_code=401, detail="Missing Token")
 
-    # Достаем пул соединений напрямую из state приложения
+    try:
+        # Декодируем JWT
+        data = decode_jwt(token)
+        # Убеждаемся, что sub существует
+        sub = data.get("sub")
+        if not sub:
+            raise ValueError("No sub in token")
+        user_id = int(sub)
+    except Exception as e:
+        # Если токен невалидный
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+    # Получаем доступ к БД через state приложения
     pool = request.app.state.pool
     
     async with pool.acquire() as conn:
-        # Выбираем все нужные поля, включая uid и группу
+        # ВАЖНО: обязательно оставляем алиас user_group as "group"
         user = await conn.fetchrow(
             """
             SELECT id, email, username, email_confirmed, created_at, last_login, 
@@ -36,4 +61,3 @@ async def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="User not found")
     
     return user
-
