@@ -1,11 +1,11 @@
 from fastapi import Request, HTTPException
 from .jwt_utils import decode_jwt
 
-async def get_current_user(app, request: Request):
-    # 1. Проверяем Куки (Сайт)
+async def get_current_user(request: Request):
+    # 1. Проверяем Куки (для сайта)
     token = request.cookies.get("user_auth")
     
-    # 2. Проверяем Заголовок (Лаунчер)
+    # 2. Проверяем Заголовок (для Лаунчера)
     if not token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
@@ -20,12 +20,12 @@ async def get_current_user(app, request: Request):
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    async with app.state.pool.acquire() as conn:
-        # ВАЖНО: Тут выбираем uid и user_group, которые есть в твоей БД
+    # Получаем пул из состояния приложения (app.state.pool)
+    pool = request.app.state.pool
+    async with pool.acquire() as conn:
         user = await conn.fetchrow(
             """
-            SELECT id, email, username, email_confirmed, created_at, last_login, 
-                   uid, user_group as "group"
+            SELECT id, email, username, uid, user_group as "group"
             FROM users 
             WHERE id=$1
             """,
