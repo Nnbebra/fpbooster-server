@@ -30,6 +30,12 @@ async def get_user_safe(request: Request):
 # --- ИМПОРТ ПЛАГИНОВ ---
 from Plugins import AutoBump, AutoRestock
 
+async def get_current_user_raw(app, request: Request):
+    try:
+        return await get_current_user(app, request)
+    except:
+        return None
+
 
 async def current_user(request: Request):
     return await get_current_user_raw(request.app, request)
@@ -734,6 +740,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
