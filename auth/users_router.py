@@ -24,7 +24,7 @@ async def register_submit(
 ):
     if not accept_terms:
         return templates.TemplateResponse("register.html", {"request": request, "error": "Необходимо принять соглашение"}, status_code=400)
-
+    
     email = email.strip().lower()
     if len(password) < 6:
         return templates.TemplateResponse("register.html", {"request": request, "error": "Пароль должен быть ≥ 6 символов"}, status_code=400)
@@ -35,10 +35,18 @@ async def register_submit(
             return templates.TemplateResponse("register.html", {"request": request, "error": "Такой email уже зарегистрирован"}, status_code=400)
         
         pw_hash = hash_password(password)
-        # Создаем юзера и возвращаем UID
+        # Создаем пользователя
         row = await conn.fetchrow(
-            "INSERT INTO users (email, password_hash, username) VALUES ($1, $2, $3) RETURNING id, email, uid",
+            "INSERT INTO users (email, password_hash, username) VALUES ($1, $2, $3) RETURNING id, email, uid, username",
             email, pw_hash, (username or "").strip() or None
+        )
+        # Сразу создаем ему "пустую" запись лицензии (важно для дальнейшей активации)
+        # Генерируем случайный license_key для внутренней идентификации
+        import secrets, string
+        lic_key = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+        await conn.execute(
+            "INSERT INTO licenses (license_key, status, user_name, user_uid) VALUES ($1, 'expired', $2, $3)",
+            lic_key, row['username'], row['uid']
         )
 
     try:
@@ -47,7 +55,8 @@ async def register_submit(
 
     token = make_jwt(row["id"], row["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
-    resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
+    # path="/" нужен, чтобы кука была видна на всем сайте
+    resp.set_cookie("user_auth", token, path="/", httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
     return resp
 
 # === ВХОД ===
@@ -66,7 +75,8 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
 
     token = make_jwt(user["id"], user["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
-    resp.set_cookie("user_auth", token, httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
+    # path="/" критически важен для работы на главной странице
+    resp.set_cookie("user_auth", token, path="/", httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
     return resp
 
 # === ЛИЧНЫЙ КАБИНЕТ (ОТОБРАЖЕНИЕ) ===
@@ -79,18 +89,15 @@ async def account_page(request: Request):
 
     async with request.app.state.pool.acquire() as conn:
         licenses = await conn.fetch(
-            """
-            SELECT license_key, status, expires, hwid 
-            FROM licenses 
-            WHERE user_uid = $1 
-            ORDER BY created_at DESC
-            """,
+            """SELECT license_key, status, expires, hwid 
+               FROM licenses WHERE user_uid = $1 ORDER BY created_at DESC""",
             user["uid"],
         )
         total_spent = await conn.fetchval(
             "SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1", user["uid"]
         )
 
+    # Логика поиска активной лицензии
     found_active = None
     if licenses:
         for lic in licenses:
@@ -111,8 +118,7 @@ async def account_page(request: Request):
         "total_spent": total_spent
     })
 
-# === ЛИЧНЫЙ КАБИНЕТ (АКТИВАЦИЯ КЛЮЧА) ===
-# ВОТ ЭТОГО НЕ БЫЛО, ПОЭТОМУ АКТИВАЦИЯ НЕ РАБОТАЛА
+# === ЛИЧНЫЙ КАБИНЕТ (АКТИВАЦИЯ КЛЮЧА ИЗ activation_tokens) ===
 @router.post("/cabinet", response_class=HTMLResponse)
 async def activate_license(request: Request, license_key: str = Form(...)):
     try:
@@ -120,36 +126,73 @@ async def activate_license(request: Request, license_key: str = Form(...)):
     except:
         return RedirectResponse("/login", status_code=302)
 
-    key = license_key.strip()
+    input_token = license_key.strip()
     error_msg = None
 
     async with request.app.state.pool.acquire() as conn:
-        # 1. Ищем ключ
-        lic = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", key)
+        # 1. Ищем ключ в таблице activation_tokens
+        token_row = await conn.fetchrow(
+            "SELECT * FROM activation_tokens WHERE token=$1 AND status='unused'", 
+            input_token
+        )
         
-        if not lic:
-            error_msg = "Ключ не найден"
-        elif lic['user_uid'] is not None:
-            # Если ключ уже привязан к КОМУ-ТО
-            error_msg = "Ключ уже активирован"
+        if not token_row:
+            error_msg = "Ключ не найден или уже использован"
         else:
-            # 2. Активируем
-            days = lic['duration_days'] if lic['duration_days'] else 30
-            new_expires = date.today() + timedelta(days=days)
-            
-            await conn.execute(
-                """
-                UPDATE licenses 
-                SET user_uid=$1, status='active', activated_at=NOW(), expires=$2 
-                WHERE license_key=$3
-                """,
-                user['uid'], new_expires, key
+            # 2. Нашли ключ. Теперь ищем лицензию пользователя, которую надо продлить.
+            # Берем самую свежую лицензию пользователя
+            user_lic = await conn.fetchrow(
+                "SELECT * FROM licenses WHERE user_uid=$1 ORDER BY created_at DESC LIMIT 1",
+                user['uid']
             )
-            # Перезагружаем страницу, чтобы увидеть изменения
+
+            # Если вдруг лицензии нет (старая регистрация), создадим новую "на лету"
+            lic_key_target = None
+            current_expires = None
+            is_active_now = False
+
+            if user_lic:
+                lic_key_target = user_lic['license_key']
+                current_expires = user_lic['expires']
+                is_active_now = (user_lic['status'] == 'active')
+            else:
+                # Генерируем новую лицензию если не нашли
+                import secrets, string
+                lic_key_target = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+                await conn.execute(
+                    "INSERT INTO licenses (license_key, status, user_name, user_uid) VALUES ($1, 'expired', $2, $3)",
+                    lic_key_target, user['username'], user['uid']
+                )
+
+            # 3. Считаем новую дату окончания
+            days_to_add = token_row['duration_days']
+            today = date.today()
+
+            if is_active_now and current_expires and current_expires >= today:
+                # Если уже активна - прибавляем к дате окончания
+                new_expires = current_expires + timedelta(days=days_to_add)
+            else:
+                # Если истекла или не было - считаем от сегодня
+                new_expires = today + timedelta(days=days_to_add)
+
+            # 4. ТРАНЗАКЦИЯ: Гасим токен и обновляем лицензию
+            async with conn.transaction():
+                # Помечаем токен как использованный
+                await conn.execute(
+                    "UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2",
+                    user['uid'], token_row['id']
+                )
+                
+                # Обновляем лицензию
+                await conn.execute(
+                    "UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE license_key=$2",
+                    new_expires, lic_key_target
+                )
+            
+            # Успех - перезагружаем страницу
             return RedirectResponse("/cabinet", status_code=302)
 
-    # Если была ошибка - рисуем страницу заново с ошибкой
-    # (Дублируем логику получения данных, чтобы страница не сломалась)
+    # Если была ошибка - рендерим страницу с ошибкой
     async with request.app.state.pool.acquire() as conn:
         licenses = await conn.fetch("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid = $1 ORDER BY created_at DESC", user["uid"])
         total_spent = await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1", user["uid"])
@@ -169,13 +212,13 @@ async def activate_license(request: Request, license_key: str = Form(...)):
         "is_license_active": (found_active is not None),
         "download_url": getattr(request.app.state, "DOWNLOAD_URL", ""),
         "total_spent": total_spent,
-        "error": error_msg # Выводим ошибку активации
+        "error": error_msg 
     })
 
 @router.get("/logout")
 async def user_logout():
     resp = RedirectResponse(url="/")
-    resp.delete_cookie("user_auth")
+    resp.delete_cookie("user_auth", path="/") # Удаляем куку корректно
     return resp
 
 # === API ДЛЯ ЛАУНЧЕРА ===
