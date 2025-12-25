@@ -382,21 +382,21 @@
             </div>
         </div>
 
-        <!-- Активация ключа -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-key"></i> Активация ключа
             </span>
             <div class="cabinet-item-value">
-                <form method="post" action="/api/license/activate" class="input-group-custom">
-                    <input type="text" name="token" placeholder="Введите ключ..." required>
-                    <button type="submit">
-                        <i class="fa-solid fa-lock"></i>
+                <form method="post" action="/cabinet" style="display: flex; width: 100%; gap: 10px;">
+                    <input type="text" name="license_key" placeholder="Введите ключ..." required 
+                        style="flex: 1; padding: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff;">
+                    
+                    <button type="submit" style="background: linear-gradient(45deg, #4f46e5, #7c3aed); border: none; padding: 0 20px; border-radius: 6px; color: #fff; cursor: pointer; transition: 0.3s;">
+                        <i class="fa-solid fa-check"></i>
                     </button>
                 </form>
             </div>
         </div>
-
     </div>
 
     <!-- Кнопки действий -->
