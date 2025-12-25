@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Результат активации{% endblock %}
+
+{% block content %}
+<div class="result-container" style="max-width: 600px; margin: 100px auto; text-align: center; padding: 40px; background: rgba(30, 30, 30, 0.9); border-radius: 15px; border: 1px solid #444; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+    
+    {% if success %}
+        <div class="icon-box" style="font-size: 60px; margin-bottom: 20px;">✅</div>
+        <h1 style="color: #4CAF50; margin-bottom: 15px;">Успешно!</h1>
+        <p style="font-size: 18px; color: #ddd; margin-bottom: 10px;">
+            Лицензия продлена на <strong style="color: #fff;">{{ days }}</strong> дней.
+        </p>
+        <p style="font-size: 16px; color: #aaa; margin-bottom: 30px;">
+            Новая дата окончания: <span style="color: #4CAF50; font-family: monospace;">{{ new_expires }}</span>
+        </p>
+    {% else %}
+        <div class="icon-box" style="font-size: 60px; margin-bottom: 20px;">❌</div>
+        <h1 style="color: #ff4d4d; margin-bottom: 15px;">Ошибка</h1>
+        <p style="font-size: 18px; color: #ddd; margin-bottom: 30px;">
+            {{ error }}
+        </p>
+    {% endif %}
+
+    <a href="/cabinet" class="btn-back" style="display: inline-block; padding: 12px 30px; background: #2196F3; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; transition: 0.3s;">
+        Вернуться в кабинет
+    </a>
+</div>
+
+<style>
+    .btn-back:hover {
+        background: #1976D2 !important;
+        transform: scale(1.05);
+    }
+</style>
+{% endblock %}
