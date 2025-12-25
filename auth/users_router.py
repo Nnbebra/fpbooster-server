@@ -97,7 +97,7 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
 @router.get("/cabinet", response_class=HTMLResponse)
 async def account_page(request: Request):
     try:
-        user = await get_current_user(request.app, request)
+        user = await get_current_user(request)
     except:
         return RedirectResponse("/login", status_code=302)
 
@@ -127,7 +127,7 @@ async def account_page(request: Request):
 @router.post("/cabinet", response_class=HTMLResponse)
 async def activate_license(request: Request, license_key: str = Form(...)):
     try:
-        user = await get_current_user(request.app, request)
+        user = await get_current_user(request)
     except:
         return RedirectResponse("/login", status_code=302)
 
@@ -174,7 +174,7 @@ async def activate_license(request: Request, license_key: str = Form(...)):
 @router.get("/change-password", response_class=HTMLResponse)
 async def change_password_page(request: Request):
     try:
-        user = await get_current_user(request.app, request)
+        user = await get_current_user(request)
     except:
         return RedirectResponse("/login", status_code=302)
     return templates.TemplateResponse("change_password.html", {"request": request, "user": user})
@@ -182,7 +182,7 @@ async def change_password_page(request: Request):
 @router.post("/change-password", response_class=HTMLResponse)
 async def change_password_submit(request: Request, current_password: str = Form(...), new_password: str = Form(...), confirm_password: str = Form(...)):
     try:
-        user = await get_current_user(request.app, request)
+        user = await get_current_user(request)
     except:
         return RedirectResponse("/login", status_code=302)
     error, success = None, None
@@ -247,7 +247,7 @@ async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
 async def get_api_profile_launcher(request: Request):
     # Теперь эта функция корректно возьмет юзера через guards.py
     try:
-        user = await get_current_user(request.app, request)
+        user = await get_current_user(request)
         
         # Получаем статус лицензии
         async with request.app.state.pool.acquire() as conn:
@@ -275,3 +275,4 @@ async def get_api_profile_launcher(request: Request):
     except Exception as e:
         print(f"[API ME] Error: {e}")
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
