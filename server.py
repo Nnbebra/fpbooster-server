@@ -16,7 +16,16 @@ from pydantic import BaseModel, validator
 # --- ИМПОРТЫ ПРОЕКТА ---
 from guards import admin_guard_ui           # Админка
 from auth.jwt_utils import verify_password, make_jwt
-from auth.guards import get_current_user    # Наша новая универсальная защита
+# Добавляем этот импорт:
+from auth.guards import get_current_user 
+
+# --- Вспомогательная функция (ВСТАВИТЬ ПЕРЕД ОБЪЯВЛЕНИЕМ РОУТОВ) ---
+async def get_user_safe(request: Request):
+    try:
+        # Пытаемся получить юзера, но не кидаем ошибку 401, если он гость
+        return await get_current_user(request.app, request)
+    except:
+        return None
 
 # --- ИМПОРТ ПЛАГИНОВ ---
 from Plugins import AutoBump, AutoRestock
@@ -33,12 +42,21 @@ def ui_guard(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    user = None
-    try:
-        user = await get_current_user_raw(request.app, request)
-    except Exception:
-        user = None
-    return templates.TemplateResponse("index.html", {"request": request, "user": user})
+    # 1. Получаем пользователя (безопасно)
+    user = await get_user_safe(request)
+    
+    # 2. Логика статистики (оставляем твою или берем эту)
+    async with request.app.state.pool.acquire() as conn:
+        users_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+    
+    stats = {"users": users_count, "runs": users_count * 12} 
+
+    # 3. Передаем user в шаблон
+    return templates.TemplateResponse("index.html", {
+        "request": request, 
+        "user": user,       # <--- ВАЖНО: это чинит шапку
+        "stats": stats
+    })
 
 # --- РОУТЕРЫ АВТОРИЗАЦИИ ---
 from auth.users_router import router as users_router
@@ -716,7 +734,6 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
-
 
 
 
