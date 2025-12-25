@@ -41,12 +41,13 @@ async def register_submit(
         
         pw_hash = hash_password(password)
         
+        # Создаем пользователя
         row = await conn.fetchrow(
             "INSERT INTO users (email, password_hash, username) VALUES ($1, $2, $3) RETURNING id, email, uid, username",
             email, pw_hash, (username or "").strip() or None
         )
 
-        # Создаем заглушку лицензии
+        # Создаем заглушку лицензии (expired)
         lic_key_internal = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
         await conn.execute(
             "INSERT INTO licenses (license_key, status, user_name, user_uid) VALUES ($1, 'expired', $2, $3)",
@@ -64,7 +65,7 @@ async def register_submit(
 
 
 # ==========================================
-#  ВХОД
+#  ВХОД (LOGIN)
 # ==========================================
 @router.get("/login", response_class=HTMLResponse)
 async def user_login_page(request: Request):
@@ -126,7 +127,7 @@ async def account_page(request: Request):
 
 
 # ==========================================
-#  АКТИВАЦИЯ (ТЕПЕРЬ С ОТДЕЛЬНОЙ СТРАНИЦЕЙ)
+#  АКТИВАЦИЯ КЛЮЧА (ЛОГИКА)
 # ==========================================
 @router.post("/cabinet", response_class=HTMLResponse)
 async def activate_license(request: Request, license_key: str = Form(...)):
@@ -138,23 +139,21 @@ async def activate_license(request: Request, license_key: str = Form(...)):
     input_token = license_key.strip()
 
     async with request.app.state.pool.acquire() as conn:
-        # 1. Проверяем ключ
+        # 1. Проверяем наличие ключа в базе токенов
         token_row = await conn.fetchrow(
             "SELECT * FROM activation_tokens WHERE token=$1 AND status='unused'", 
             input_token
         )
         
-        # Если ключ плохой
+        # Если ключ не найден или использован
         if not token_row:
             return templates.TemplateResponse("activation_result.html", {
-                "request": request,
-                "user": user,
-                "success": False,
-                "error": "Ключ не найден, неверен или уже был использован."
+                "request": request, "user": user, "success": False, "error": "Ключ не найден, неверен или уже был использован."
             })
 
-        # 2. Если ключ хороший, ищем запись лицензии
+        # 2. Ключ валиден. Ищем лицензию пользователя
         try:
+            # Ищем последнюю созданную лицензию пользователя
             user_lic = await conn.fetchrow(
                 "SELECT * FROM licenses WHERE user_uid=$1 ORDER BY created_at DESC LIMIT 1",
                 user['uid']
@@ -164,52 +163,49 @@ async def activate_license(request: Request, license_key: str = Form(...)):
             today = date.today()
             new_expires = None
             
-            # Логика обновления или создания
+            # Логика: Продлить существующую или создать новую
             if user_lic:
-                # Если лицензия есть - продлеваем
+                # Если лицензия есть
                 current_expires = user_lic['expires']
                 is_active_now = (user_lic['status'] == 'active')
 
+                # Если активна и не истекла — прибавляем к дате окончания
                 if is_active_now and current_expires and current_expires >= today:
                     new_expires = current_expires + timedelta(days=days_to_add)
                 else:
+                    # Если истекла — считаем с сегодня
                     new_expires = today + timedelta(days=days_to_add)
                 
-                target_license_key = user_lic['license_key']
+                target_key = user_lic['license_key']
                 
+                # ТРАНЗАКЦИЯ: Гасим токен -> Обновляем лицензию
                 async with conn.transaction():
                     await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user['uid'], token_row['id'])
-                    await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE license_key=$2", new_expires, target_license_key)
+                    await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE license_key=$2", new_expires, target_key)
 
             else:
-                # Если лицензии НЕТ - создаем новую (FIX для 500 error)
+                # Если у пользователя ВООБЩЕ нет записи в licenses (редкий случай)
                 new_expires = today + timedelta(days=days_to_add)
+                # Генерируем внутренний ключ лицензии
                 new_lic_key = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
                 
                 async with conn.transaction():
                     await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user['uid'], token_row['id'])
                     await conn.execute(
-                        "INSERT INTO licenses (license_key, status, user_name, user_uid, expires, activated_at) VALUES ($1, 'active', $2, $3, $4, NOW())",
+                        "INSERT INTO licenses (license_key, status, user_name, user_uid, expires, activated_at) VALUES ($1, 'active', $2, $3, $4, NOW())", 
                         new_lic_key, user['username'], user['uid'], new_expires
                     )
 
-            # 3. Рендерим страницу УСПЕХА
+            # Рендерим страницу успеха
             return templates.TemplateResponse("activation_result.html", {
-                "request": request,
-                "user": user,
-                "success": True,
-                "days": days_to_add,
-                "new_expires": new_expires
+                "request": request, "user": user, "success": True, "days": days_to_add, "new_expires": new_expires
             })
 
         except Exception as e:
-            # Ловим внутренние ошибки, чтобы не было 500
-            print(f"[Activation Error]: {e}")
+            # Логгируем ошибку в консоль, а пользователю выдаем красивое сообщение
+            print(f"CRITICAL ACTIVATION ERROR: {e}")
             return templates.TemplateResponse("activation_result.html", {
-                "request": request,
-                "user": user,
-                "success": False,
-                "error": "Внутренняя ошибка сервера при обновлении лицензии. Обратитесь к администратору."
+                "request": request, "user": user, "success": False, "error": "Произошла внутренняя ошибка сервера при обновлении базы данных."
             })
 
 
@@ -245,17 +241,28 @@ async def change_password_submit(
         error = "Новый пароль слишком короткий"
     else:
         async with request.app.state.pool.acquire() as conn:
+            # Получаем актуальный хеш пароля из БД
             db_user = await conn.fetchrow("SELECT password_hash FROM users WHERE id=$1", user['id'])
+            
             if not verify_password(current_password, db_user['password_hash']):
                 error = "Текущий пароль введен неверно"
             else:
+                # Всё ок, меняем пароль
                 new_hash = hash_password(new_password)
                 await conn.execute("UPDATE users SET password_hash=$1 WHERE id=$2", new_hash, user['id'])
                 success = "Пароль успешно изменен!"
 
-    return templates.TemplateResponse("change_password.html", {"request": request, "user": user, "error": error, "success": success})
+    return templates.TemplateResponse("change_password.html", {
+        "request": request, 
+        "user": user, 
+        "error": error, 
+        "success": success
+    })
 
 
+# ==========================================
+#  ВЫХОД (LOGOUT)
+# ==========================================
 @router.get("/logout")
 async def user_logout():
     resp = RedirectResponse(url="/")
