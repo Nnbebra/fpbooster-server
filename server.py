@@ -459,44 +459,52 @@ async def download_product(
         user_uid = user_row['uid'] 
         
         async with app.state.pool.acquire() as conn:
-            # Получаем инфо о файле
-            prod = await conn.fetchrow("SELECT exe_name, download_url, secret_key, name, is_available FROM products WHERE id = $1", product_id)
+            # Запрашиваем данные о товаре
+            prod = await conn.fetchrow("SELECT exe_name, secret_key, name, is_available FROM products WHERE id = $1", product_id)
             
             if not prod:
                 return JSONResponse({"error": "Product not found"}, status_code=404)
 
-            # Если товар выключен (как сейчас Default версия) - не даем скачивать
             if not prod['is_available']:
                  return JSONResponse({"error": "Product is temporarily unavailable"}, status_code=403)
 
-            # === ПРОВЕРКА ЛИЦЕНЗИИ (Для Plus) ===
-            if product_id == 1 or "Plus" in prod['name']:
+            # === ЛОГИКА ОПРЕДЕЛЕНИЯ ФАЙЛА ===
+            # Жестко задаем имя файла для Plus версии, чтобы избежать ошибок базы данных
+            if product_id == 1: 
+                filename = "FPBoosterPlus.dll"
+            else:
+                # Для других товаров (на будущее) можно брать из exe_name или сделать switch
+                filename = "FPBoosterDefault.dll"
+
+            # === ПРОВЕРКА ЛИЦЕНЗИИ (Только для Plus/ID=1) ===
+            if product_id == 1:
                 license = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1 AND status='active' AND expires >= CURRENT_DATE", user_uid)
                 
                 if not license:
                      return JSONResponse({"error": "NO_LICENSE"}, status_code=403)
 
+                # Привязка HWID
                 if not license['hwid']:
                     if x_hwid: await conn.execute("UPDATE licenses SET hwid=$1 WHERE license_key=$2", x_hwid, license['license_key'])
                 elif x_hwid and license['hwid'] != x_hwid:
                     return JSONResponse({"error": "HWID_MISMATCH"}, status_code=403)
             # =======================================
 
-            # === ЛОГИКА ПУТЕЙ (PROTECTED_BUILDS) ===
-            # Имя файла берем из базы (FPBoosterPlus.dll)
-            # Очищаем от мусора на всякий случай
-            filename = prod['download_url'].replace("/static/", "").replace("/", "") 
-            
-            # Читаем из защищенной папки, которая НЕ стирается git-ом
+            # === ПУТЬ К ФАЙЛУ ===
+            # ВАЖНО: Убедись, что эта папка существует на сервере!
+            # Если ты запускаешь на Windows локально, путь будет другой (например, "C:\\FPBoosterBuilds")
             protected_folder = "/opt/fpbooster/protected_builds"
+            
+            # Если ты тестируешь на Windows, раскомментируй строку ниже:
+            # protected_folder = "protected_builds" 
+
             file_path = os.path.join(protected_folder, filename)
             
             if not os.path.exists(file_path):
                 print(f"CRITICAL: File missing at {file_path}") 
-                return JSONResponse({"error": "Build file missing on server"}, status_code=404)
+                return JSONResponse({"error": f"Build file missing on server: {filename}"}, status_code=404)
 
-            # Формируем ключ. Если в базе '', отправляем пустую строку.
-            # Python воспринимает None и '' как False, так что проверка простая.
+            # Формируем ключ шифрования
             key_to_send = prod['secret_key'] if prod['secret_key'] else ""
 
             headers = {
@@ -506,8 +514,9 @@ async def download_product(
             return FileResponse(file_path, headers=headers, media_type='application/octet-stream')
 
     except Exception as e:
-        print(f"Download Error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        import traceback
+        traceback.print_exc() # Выведет полную ошибку в консоль сервера
+        return JSONResponse({"error": f"Server Error: {str(e)}"}, status_code=500)
 # ========= Админ API =========
 @app.post("/api/admin/license/create")
 async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
@@ -740,6 +749,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
