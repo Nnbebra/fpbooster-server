@@ -18,6 +18,7 @@ from guards import admin_guard_ui           # Админка
 from auth.jwt_utils import verify_password, make_jwt
 # Добавляем этот импорт:
 from auth.guards import get_current_user 
+from routers import groups_router
 
 # --- Вспомогательная функция (ВСТАВИТЬ ПЕРЕД ОБЪЯВЛЕНИЕМ РОУТОВ) ---
 async def get_user_safe(request: Request):
@@ -97,6 +98,7 @@ app.include_router(creators_router)
 app.include_router(admin_creators_router)
 app.include_router(referrals_router)
 app.include_router(purchases_router, tags=["purchases"])
+app.include_router(groups_router.router)
 
 # --- ПОДКЛЮЧЕНИЕ ПЛАГИНОВ ---
 # Это добавит API методы плагина (например /api/plus/autobump/set)
@@ -748,6 +750,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
