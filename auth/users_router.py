@@ -19,6 +19,23 @@ class LauncherLoginModel(BaseModel):
     username: str
     password: str
 
+
+
+GROUP_COLORS = {
+    "tech-admin": "purple",     
+    "admin": "indigo",          
+    "senior-staff": "pink",     
+    "staff": "danger",          
+    "moderator": "orange",      
+    "media": "cyan",            
+    "plus": "primary",          
+    "alpha": "azure",           
+    "premium": "primary",       
+    "basic": "success",         
+    "user": "secondary"         
+}
+
+
 # ==========================================
 #  РЕГИСТРАЦИЯ
 # ==========================================
@@ -92,7 +109,7 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
 
 
 # ==========================================
-#  КАБИНЕТ
+#   КАБИНЕТ
 # ==========================================
 @router.get("/cabinet", response_class=HTMLResponse)
 async def account_page(request: Request):
@@ -102,22 +119,56 @@ async def account_page(request: Request):
         return RedirectResponse("/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
-        licenses = await conn.fetch("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid = $1 ORDER BY created_at DESC", user["uid"])
+        # 1. Получаем лицензии
+        licenses = await conn.fetch("SELECT license_key, status, expires, hwid, duration_days FROM licenses WHERE user_uid = $1 ORDER BY created_at DESC", user["uid"])
+        
+        # 2. Получаем сумму покупок
         total_spent = await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1", user["uid"])
+        
+        # 3. НОВОЕ: Получаем активную группу из user_groups
+        group_row = await conn.fetchrow("""
+            SELECT g.name, g.slug 
+            FROM user_groups ug
+            JOIN groups g ON ug.group_id = g.id
+            WHERE ug.user_uid = $1 AND ug.is_active = TRUE
+            LIMIT 1
+        """, user["uid"])
 
+        # 4. Ссылка на скачивание (Пытаемся взять из товаров, если нет - из конфига)
+        product_dl = await conn.fetchrow("SELECT download_url FROM products WHERE download_url IS NOT NULL AND download_url != '' LIMIT 1")
+        if product_dl:
+            download_url = product_dl['download_url']
+        else:
+            download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
+
+    # Логика поиска активной лицензии
     found_active = None
     if licenses:
         for lic in licenses:
-            if lic['status'] == 'active' and lic['expires'] and lic['expires'] >= date.today():
+            # Считаем активной если статус active И (дата не прошла ИЛИ это вечная лицуха > 10000 дней)
+            is_valid_date = lic['expires'] and (lic['expires'] >= date.today() or lic.get('duration_days', 0) > 10000)
+            if lic['status'] == 'active' and is_valid_date:
                 found_active = lic
                 break
     
     display_license = found_active if found_active else (licenses[0] if licenses else None)
     
+    # Определяем данные группы для шаблона
+    group_name = group_row['name'] if group_row else "User"
+    group_slug = group_row['slug'] if group_row else "user"
+    
     return templates.TemplateResponse("account.html", {
-        "request": request, "user": user, "licenses": licenses,
-        "active_license": display_license, "is_license_active": (found_active is not None),
-        "download_url": getattr(request.app.state, "DOWNLOAD_URL", ""), "total_spent": total_spent
+        "request": request, 
+        "user": user, 
+        "licenses": licenses,
+        "active_license": display_license, 
+        "is_license_active": (found_active is not None),
+        "download_url": download_url, 
+        "total_spent": total_spent,
+        # Новые данные для цветов
+        "group_name": group_name,
+        "group_slug": group_slug,
+        "group_colors": GROUP_COLORS
     })
 
 
@@ -308,5 +359,6 @@ async def sync_user_state(request: Request, user=Depends(get_current_user)):
             "is_valid": True if license else False
         }
     }
+
 
 
