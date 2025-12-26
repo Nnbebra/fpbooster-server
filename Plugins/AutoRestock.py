@@ -92,7 +92,7 @@ async def save_settings(req: Request):
     from auth.guards import get_current_user
     from utils_crypto import encrypt_data
     try:
-        u = await get_current_user(req.app, req)
+        u = await get_current_user(req)
         uid_obj = uuid.UUID(str(u['uid']))
         body = await req.json()
         
@@ -149,7 +149,7 @@ async def save_settings(req: Request):
 async def get_status(req: Request):
     from auth.guards import get_current_user
     try:
-        u = await get_current_user(req.app, req)
+        u = await get_current_user(req)
         uid_obj = uuid.UUID(str(u['uid']))
         async with req.app.state.pool.acquire() as conn:
             r = await conn.fetchrow("SELECT is_active, status_message, lots_config, last_check_at FROM autorestock_tasks WHERE user_uid=$1", uid_obj)
@@ -280,3 +280,4 @@ async def worker(app):
             
             await asyncio.sleep(10)
         except: await asyncio.sleep(30)
+
