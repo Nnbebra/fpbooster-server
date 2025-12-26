@@ -135,7 +135,7 @@ async def checkout_page(request: Request, plan_id: str):
     # 1. Проверяем авторизацию
     user = None
     try:
-        user = await get_current_user(request.app, request)
+        user = await get_current_user(request)
         if not user:
             raise Exception("No user")
     except Exception:
@@ -155,6 +155,7 @@ async def checkout_page(request: Request, plan_id: str):
         "plan": plan, 
         "user": user 
     })
+
 
 
 
