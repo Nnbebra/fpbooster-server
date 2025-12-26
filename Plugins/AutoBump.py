@@ -235,7 +235,8 @@ async def worker(app):
         except: await asyncio.sleep(5)
 
 # --- API ---
-async def get_plugin_user(request: Request): return await get_current_user_raw(request.app, request)
+async def get_plugin_user(request: Request):
+    return await get_current_user_raw(request)
 
 @router.post("/set")
 async def set_bump(data: CloudBumpSettings, req: Request, u=Depends(get_plugin_user)):
@@ -260,3 +261,4 @@ async def get_stat(req: Request, u=Depends(get_plugin_user)):
         r = await conn.fetchrow("SELECT is_active, next_bump_at, status_message, node_ids FROM autobump_tasks WHERE user_uid=$1", u['uid'])
     if not r: return {"is_active": False, "next_bump": None, "status_message": "Не настроено", "node_ids": []}
     return {"is_active": r['is_active'], "next_bump": r['next_bump_at'], "status_message": r['status_message'], "node_ids": [x.strip() for x in r['node_ids'].split(',') if x.strip()] if r['node_ids'] else []}
+
