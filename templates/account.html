@@ -8,6 +8,18 @@
         color: #fff;
     }
 
+    /* Цвета ГРУПП */
+    .bg-purple { background-color: #6f42c1 !important; color: white; }
+    .bg-indigo { background-color: #6610f2 !important; color: white; }
+    .bg-pink   { background-color: #d63384 !important; color: white; }
+    .bg-orange { background-color: #fd7e14 !important; color: white; }
+    .bg-cyan   { background-color: #0dcaf0 !important; color: black; }
+    .bg-azure  { background-color: #0d6efd !important; color: white; }
+    .bg-primary { background-color: #0d6efd !important; color: white; }
+    .bg-success { background-color: #198754 !important; color: white; }
+    .bg-secondary { background-color: #6c757d !important; color: white; }
+    .bg-danger  { background-color: #dc3545 !important; color: white; }
+
     .cabinet-container {
         max-width: 1000px;
         margin: 0 auto;
@@ -106,6 +118,15 @@
     .cabinet-value-text {
         color: #fff;
         font-family: monospace;
+        letter-spacing: 0.5px;
+    }
+    
+    .group-badge {
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        text-transform: uppercase;
         letter-spacing: 0.5px;
     }
 
@@ -284,7 +305,6 @@
 {% block content %}
 <div class="cabinet-container">
 
-    <!-- НАЗОЙЛИВОЕ УВЕДОМЛЕНИЕ О ПОЧТЕ С КНОПКОЙ -->
     {% if not user.email_confirmed %}
     <div class="email-alert">
         <i class="fa-solid fa-triangle-exclamation fa-shake"></i>
@@ -300,10 +320,8 @@
 
     <h3 class="cabinet-header">Личный кабинет</h3>
 
-    <!-- Основной блок информации -->
     <div class="cabinet-card-list">
         
-        <!-- UID -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-fingerprint"></i> UID
@@ -313,7 +331,6 @@
             </span>
         </div>
 
-        <!-- Логин -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-tag"></i> Логин
@@ -321,17 +338,18 @@
             <span class="cabinet-item-value" style="color: #eaeaea;">{{ user.username }}</span>
         </div>
 
-        <!-- Группа -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-gavel"></i> Группа
             </span>
             <span class="cabinet-item-value">
-                <span style="color: #a78bfa; font-weight: 500;">{{ user.user_group }}</span>
+                {% set badge_color = group_colors.get(group_slug, 'secondary') %}
+                <span class="group-badge bg-{{ badge_color }}">
+                    {{ group_name }}
+                </span>
             </span>
         </div>
 
-        <!-- Дата регистрации -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-calendar-days"></i> Дата регистрации
@@ -339,7 +357,6 @@
             <span class="cabinet-item-value">{{ user.created_at.strftime("%d.%m.%Y %H:%M") }}</span>
         </div>
 
-        <!-- Email -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-envelope"></i> E-mail
@@ -352,7 +369,6 @@
             </span>
         </div>
 
-        <!-- HWID -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-computer"></i> HWID
@@ -366,7 +382,6 @@
             </div>
         </div>
 
-        <!-- Подписка -->
         <div class="cabinet-item">
             <span class="cabinet-item-label">
                 <i class="fa-solid fa-clock"></i> Подписка
@@ -399,7 +414,6 @@
         </div>
     </div>
 
-    <!-- Кнопки действий -->
     <div class="actions-grid">
         <button type="button" class="btn-gradient" onclick="location.href='/creators/login'">
             <i class="fa-solid fa-ticket" style="margin-right:8px;"></i> Мои промокоды
@@ -408,14 +422,12 @@
             <i class="fa-solid fa-bag-shopping" style="margin-right:8px;"></i> Купленные товары
         </button>
         
-        <!-- НОВАЯ КНОПКА СКАЧИВАНИЯ (Здесь тоже) -->
         {% if is_license_active and download_url %}
         <a href="{{ download_url }}" target="_blank" class="btn-download-alt">
             <i class="fa-solid fa-cloud-arrow-down" style="margin-right:8px;"></i> Скачать лаунчер
         </a>
         {% endif %}
         
-        <!-- Распорка -->
         <div class="spacer" style="flex: 1;"></div> 
 
         <button type="button" class="btn-secondary" onclick="location.href='/change-password'">
