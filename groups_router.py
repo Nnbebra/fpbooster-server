@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from datetime import datetime, timedelta
 import uuid
 from auth.guards import get_current_user
-from schemas.groups import AssignGroupRequest, RevokeGroupRequest
+from groups import AssignGroupRequest, RevokeGroupRequest
 
 router = APIRouter(prefix="/admin/groups", tags=["Admin Groups"])
 
@@ -131,4 +131,5 @@ async def get_user_groups_admin(request: Request, user_uid: uuid.UUID):
         JOIN groups g ON ug.group_id = g.id
         WHERE ug.user_uid = :uid AND ug.is_active = TRUE
     """, {"uid": user_uid})
+
     return rows
