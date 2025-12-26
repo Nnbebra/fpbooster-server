@@ -276,3 +276,37 @@ async def get_api_profile_launcher(request: Request):
         print(f"[API ME] Error: {e}")
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
+
+
+@router.get("/api/user/sync_state")
+async def sync_user_state(request: Request, user=Depends(get_current_user)):
+    db = request.app.state.db
+    
+    # Получаем активные группы
+    groups = await db.fetch_all("""
+        SELECT g.slug, g.name, g.permissions 
+        FROM user_groups ug
+        JOIN groups g ON ug.group_id = g.id
+        WHERE ug.user_uid = :uid AND ug.is_active = TRUE
+        AND (ug.expires_at IS NULL OR ug.expires_at > NOW())
+    """, {"uid": user['uid']})
+
+    # Получаем активную лицензию
+    license = await db.fetch_one("""
+        SELECT status, expires, license_key 
+        FROM licenses WHERE user_uid = :uid AND status = 'active'
+        ORDER BY expires DESC LIMIT 1
+    """, {"uid": user['uid']})
+
+    return {
+        "uid": str(user['uid']),
+        "groups": [g['slug'] for g in groups],
+        "permissions": [p for g in groups for p in (g['permissions'] or {}).keys()], # Мержим права
+        "license": {
+            "type": license['license_key'] if license else None,
+            "expires": license['expires'] if license else None,
+            "is_valid": True if license else False
+        }
+    }
+
+
