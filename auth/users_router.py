@@ -296,46 +296,38 @@ async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
             "uid": str(user["uid"])
         }
 
-
 @router.get("/api/me_launcher")
-async def get_api_profile_launcher(request: Request, user=Depends(get_current_user)):
+async def get_api_profile_launcher(request: Request):
+    # Теперь эта функция корректно возьмет юзера через guards.py
     try:
-        async with request.app.state.pool.acquire() as conn:
-            # 1. Получаем имя группы
-            group_row = await conn.fetchrow("""
-                SELECT g.name FROM user_groups ug
-                JOIN groups g ON ug.group_id = g.id
-                WHERE ug.user_uid = $1 AND ug.is_active = TRUE LIMIT 1
-            """, user["uid"])
-            
-            # 2. Получаем лицензию
-            lic_row = await conn.fetchrow("""
-                SELECT expires FROM licenses 
-                WHERE user_uid=$1 AND status='active' 
-                ORDER BY expires DESC LIMIT 1
-            """, user["uid"])
+        user = await get_current_user(request)
         
-            g_name = group_row['name'] if group_row else "User"
-            
-            if lic_row and lic_row['expires']:
-                expires_str = lic_row['expires'].strftime("%d.%m.%Y")
-            else:
-                expires_str = "Нет лицензии"
-
-            # Формируем чистый словарь БЕЗ лишних объектов БД
-            response_data = {
-                "uid": str(user["uid"]),
-                "username": str(user["username"]),
-                "group_name": str(g_name),
-                "expires": str(expires_str),
-                "available_products": [] # Пока пусто, чтобы исключить ошибки здесь
-            }
-            
-            return JSONResponse(content=response_data)
-            
+        # Получаем статус лицензии
+        async with request.app.state.pool.acquire() as conn:
+             licenses = await conn.fetch("SELECT status, expires FROM licenses WHERE user_uid=$1", user["uid"])
+        
+        status_str = "No License"
+        expires_str = "-"
+        
+        if licenses:
+            for lic in licenses:
+                if lic['status'] == 'active' and lic['expires'] and lic['expires'] >= date.today():
+                    status_str = "Active"
+                    expires_str = str(lic['expires'])
+                    break
+        
+        return {
+            "uid": str(user["uid"]),
+            "username": user["username"],
+            "email": user["email"],
+            "group": user["group"] or "User",
+            "expires": expires_str,
+            "status": status_str,
+            "avatar_url": "" 
+        }
     except Exception as e:
-        print(f"SERER ERROR: {e}")
-        return JSONResponse({"detail": str(e)}, status_code=500)
+        print(f"[API ME] Error: {e}")
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
 
 
@@ -484,11 +476,5 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
-
-
-
-
-
-
 
 
