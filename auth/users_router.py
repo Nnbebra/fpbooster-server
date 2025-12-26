@@ -366,9 +366,10 @@ async def sync_user_state(request: Request, user=Depends(get_current_user)):
 
 
 # === МОДЕЛИ ОТВЕТА (Pydantic) ===
+# === МОДЕЛИ ОТВЕТА (Pydantic) ===
 class ProductSchema(BaseModel):
     id: int
-    name: string
+    name: str           # <--- БЫЛО string, СТАЛО str
     description: str
     image_url: str
     download_url: str
@@ -378,11 +379,11 @@ class UserProfileSchema(BaseModel):
     uid: str
     username: str
     email: str
-    group_name: str     # <--- Новое поле для лаунчера
-    group_slug: str     # <--- Техническое поле
-    avatar_url: str | None = None
-    expires: str | None = None
-    available_products: List[ProductSchema] # <--- Список доступных версий
+    group_name: str
+    group_slug: str
+    avatar_url: Optional[str] = None # Используем Optional или | None
+    expires: Optional[str] = None
+    available_products: List[ProductSchema]
 
 
 # ==========================================
@@ -475,4 +476,5 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
