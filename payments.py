@@ -2,14 +2,14 @@
 import os
 import hashlib
 import time
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 import httpx
 from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-# Импортируем PLANS, чтобы брать оттуда количество дней и тип товара
+# Импортируем PLANS
 from buy import PLANS
 from auth.guards import get_current_user
 
@@ -29,14 +29,10 @@ def verify_signature(out_sum: str, inv_id: str, signature_value: str, api_token:
     return expected == (signature_value or "").upper()
 
 
-# ===== Success / Fail страницы (POST редирект с подписью) =====
+# ===== Success / Fail страницы =====
 
 @router.post("/payment/success", response_class=HTMLResponse)
 async def payment_success(request: Request):
-    """
-    PayPalych делает POST-редирект сюда после успешной оплаты:
-    fields: InvId, OutSum, CurrencyIn, custom (optional), SignatureValue
-    """
     form = await request.form()
     inv_id = form.get("InvId", "")
     out_sum = form.get("OutSum", "")
@@ -44,11 +40,9 @@ async def payment_success(request: Request):
     signature = form.get("SignatureValue", "")
     custom = form.get("custom", "")
 
-    # Проверка подписи
     if not verify_signature(out_sum, inv_id, signature, API_TOKEN):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # Можно показать пользователю подтверждение с номером заказа
     return templates.TemplateResponse(
         "payment_success.html",
         {
@@ -63,10 +57,6 @@ async def payment_success(request: Request):
 
 @router.post("/payment/fail", response_class=HTMLResponse)
 async def payment_fail(request: Request):
-    """
-    PayPalych делает POST-редирект сюда после неуспешной оплаты:
-    fields: InvId, OutSum, CurrencyIn, custom (optional), SignatureValue
-    """
     form = await request.form()
     inv_id = form.get("InvId", "")
     out_sum = form.get("OutSum", "")
@@ -74,7 +64,6 @@ async def payment_fail(request: Request):
     signature = form.get("SignatureValue", "")
     custom = form.get("custom", "")
 
-    # Проверка подписи
     if not verify_signature(out_sum, inv_id, signature, API_TOKEN):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
@@ -90,34 +79,23 @@ async def payment_fail(request: Request):
     )
 
 
-# ===== Старт оплаты: создаём счёт и редиректим на страницу оплаты =====
+# ===== Старт оплаты =====
 
 @router.get("/payment/start")
 async def payment_start(request: Request, plan: str = Query(...), method: str = Query("card")):
-    """
-    Создаёт счёт через pal24.pro и редиректит пользователя на link_page_url.
-    - Сумма берётся из PLANS[plan]["price"].
-    - order_id уникален (plan + uid + ip + timestamp).
-    - В custom передаём uid и план для дальнейшей привязки.
-    """
     plan_data = PLANS.get(plan)
     if not plan_data:
         return {"ok": False, "error": "Неверный тариф"}
 
-    # Текущий пользователь (если авторизован)
     try:
-        user = await get_current_user(request.app, request)
+        user = await get_current_user(request)
     except Exception:
         user = None
 
     uid = (user.uid if (user and getattr(user, "uid", None)) else None)
 
     amount = plan_data["price"]
-    # Уникальный идентификатор заказа. InvId вернётся в Success/Fail/Postback.
     order_id = f"order_{plan}_{uid or 'anon'}_{request.client.host}_{int(time.time())}"
-
-    # custom: безопасная привязка данных, чтобы на postback восстановить контекст
-    # формат: "uid:<uid>|plan:<plan>"
     custom = f"uid:{uid or 'anon'}|plan:{plan}"
 
     payload = {
@@ -128,7 +106,6 @@ async def payment_start(request: Request, plan: str = Query(...), method: str = 
         "shop_id": SHOP_ID,
         "currency_in": "RUB",
         "custom": custom,
-        "payer_pays_commission": 1,  # по желанию: включает комиссию плательщику
         "name": "Платёж FPBooster",
     }
 
@@ -141,7 +118,6 @@ async def payment_start(request: Request, plan: str = Query(...), method: str = 
         r.raise_for_status()
         data = r.json()
 
-    # ожидаем success="true" и link_page_url
     link_page_url = data.get("link_page_url")
     success = str(data.get("success", "")).lower() == "true"
 
@@ -151,13 +127,15 @@ async def payment_start(request: Request, plan: str = Query(...), method: str = 
         return {"ok": False, "error": data}
 
 
-# ===== Postback: смена статуса заказа в нашей системе =====
+# ===== Postback: Обработка результата =====
 
 @router.post("/payment/result")
 async def payment_result(request: Request):
     """
-    Postback от PayPalych на Result URL (после оплаты):
-    Логика обновлена для поддержки Сброса HWID и новых тарифов.
+    Основная логика выдачи товара.
+    1. Проверяет подпись.
+    2. Определяет тариф и группу.
+    3. Выдает лицензию И группу в одной транзакции.
     """
     data = await request.form()
 
@@ -168,11 +146,11 @@ async def payment_result(request: Request):
     signature = data.get("SignatureValue", "")
     custom = data.get("custom", "")
 
-    # 1) Проверка подписи (обязательна)
+    # 1. Проверка подписи
     if not verify_signature(out_sum, inv_id, signature, API_TOKEN):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # 2) Разбор custom: uid и plan
+    # 2. Парсинг custom
     uid = None
     plan = None
     try:
@@ -180,65 +158,112 @@ async def payment_result(request: Request):
         uid = parts.get("uid")
         plan = parts.get("plan")
     except Exception:
-        uid = None
-        plan = None
+        pass
 
-    # 3) Получаем данные о плане из buy.py (вместо старого days_map)
     plan_data = PLANS.get(plan)
-    
-    # Берем количество дней из конфига, или ставим 30 по умолчанию
-    days = plan_data.get("days", 30) if plan_data else 30
+    if not plan_data:
+        # Если план не найден, но оплата прошла - логируем ошибку (или просто OK, чтобы шлюз не долбил)
+        return {"ok": True, "status": "UNKNOWN_PLAN"}
 
-    # 4) Смена статуса в нашей БД и логирование покупки
+    days = plan_data.get("days", 30)
+    group_slug = plan_data.get("group_slug") # Получаем slug группы из нового конфига
+
+    # 3. Обработка успешной оплаты
     if status == "SUCCESS" and uid:
         async with request.app.state.pool.acquire() as conn:
             async with conn.transaction():
                 
-                # --- ЛОГИКА ДЛЯ СБРОСА HWID ---
+                # --- A. СБРОС HWID ---
                 if plan == "hwid_reset":
-                    # Сбрасываем HWID в NULL
-                    await conn.execute(
-                        "UPDATE licenses SET hwid = NULL WHERE user_uid=$1",
-                        uid
-                    )
-                    new_expires = "HWID Reset" # Маркер для ответа API (не пишется в базу как дата)
+                    await conn.execute("UPDATE licenses SET hwid = NULL WHERE user_uid=$1", uid)
+                    new_expires = "HWID Reset"
 
-                # --- ЛОГИКА ДЛЯ ОБЫЧНЫХ ЛИЦЕНЗИЙ ---
+                # --- B. ВЫДАЧА ЛИЦЕНЗИИ И ГРУППЫ ---
                 else:
-                    row = await conn.fetchrow(
-                        "SELECT expires FROM licenses WHERE user_uid=$1",
-                        uid,
-                    )
-
+                    # 1. Расчет новой даты окончания
+                    # Смотрим текущую лицензию в таблице licenses (она главная для лаунчера)
+                    row = await conn.fetchrow("SELECT expires FROM licenses WHERE user_uid=$1", uid)
+                    
                     today = date.today()
-                    # Если лицензия есть и еще действует — продлеваем
-                    if row and row["expires"] and row["expires"] > today:
-                        new_expires = row["expires"] + timedelta(days=days)
+                    current_expires = row["expires"] if row else None
+                    
+                    # Логика продления: если лицензия активна и не истекла, добавляем к ней. Иначе - от сегодня.
+                    if current_expires and current_expires > today:
+                        new_expires_date = current_expires + timedelta(days=days)
                     else:
-                        # Иначе — начинаем с сегодня
-                        new_expires = today + timedelta(days=days)
+                        new_expires_date = today + timedelta(days=days)
+                    
+                    # Обработка "Вечной" лицензии (36500 дней)
+                    if days > 10000:
+                         # Если покупаем вечную, то ставим вечную дату, игнорируя старую
+                         new_expires_date = today + timedelta(days=36500)
 
-                    # Обновляем лицензию
-                    await conn.execute(
-                        """
-                        UPDATE licenses
-                        SET status='active', expires=$1
-                        WHERE user_uid=$2
-                        """,
-                        new_expires,
-                        uid,
-                    )
+                    # 2. Обновляем таблицу LICENSES (для лаунчера)
+                    # Определяем ключ лицензии на основе типа плана (маппинг типов)
+                    license_type_map = {
+                        "license": "Default",
+                        "license_alpha": "Alpha",
+                        "license_plus": "Plus"
+                    }
+                    license_key_val = license_type_map.get(plan_data.get("type"), "Default")
 
-                # Логируем покупку в purchases (источник: payment)
+                    existing_lic = await conn.fetchrow("SELECT user_uid FROM licenses WHERE user_uid=$1", uid)
+                    if existing_lic:
+                        await conn.execute(
+                            """
+                            UPDATE licenses
+                            SET status='active', expires=$1, license_key=$2
+                            WHERE user_uid=$3
+                            """,
+                            new_expires_date, license_key_val, uid
+                        )
+                    else:
+                        # Если вдруг записи нет (новый юзер), нужно получить username
+                        user_info = await conn.fetchrow("SELECT username FROM users WHERE uid=$1", uid)
+                        u_name = user_info["username"] if user_info else "Unknown"
+                        await conn.execute(
+                            """
+                            INSERT INTO licenses (user_uid, user_name, status, expires, created_at, duration_days, license_key)
+                            VALUES ($1, $2, 'active', $3, NOW(), $4, $5)
+                            """,
+                            uid, u_name, new_expires_date, days, license_key_val
+                        )
+
+                    # 3. Обновляем таблицу USER_GROUPS (Новая система!)
+                    if group_slug:
+                        # Получаем ID группы
+                        group_row = await conn.fetchrow("SELECT id FROM groups WHERE slug=$1", group_slug)
+                        if group_row:
+                            group_id = group_row["id"]
+                            
+                            # Конвертируем date в datetime для user_groups (там timestamp)
+                            expires_ts = datetime(
+                                new_expires_date.year, 
+                                new_expires_date.month, 
+                                new_expires_date.day, 
+                                23, 59, 59
+                            )
+                            
+                            # Upsert в user_groups
+                            await conn.execute(
+                                """
+                                INSERT INTO user_groups (user_uid, group_id, granted_at, expires_at, is_active, granted_by)
+                                VALUES ($1, $2, NOW(), $3, TRUE, NULL)
+                                ON CONFLICT (user_uid, group_id) 
+                                DO UPDATE SET expires_at = $3, is_active = TRUE, granted_at = NOW()
+                                """,
+                                uid, group_id, expires_ts
+                            )
+
+                    new_expires = str(new_expires_date)
+
+                # --- C. ЛОГИРОВАНИЕ ПОКУПКИ ---
                 await conn.execute(
                     """
                     INSERT INTO purchases (user_uid, plan, amount, currency, source)
                     VALUES ($1, $2, $3, $4, 'payment')
                     """,
-                    uid,
-                    plan,
-                    out_sum,
-                    currency_in,
+                    uid, plan, out_sum, currency_in
                 )
 
         return {
@@ -246,10 +271,8 @@ async def payment_result(request: Request):
             "status": "SUCCESS",
             "uid": uid,
             "plan": plan,
-            "expires": str(new_expires),
-            "inv_id": inv_id,
-            "amount": out_sum,
-            "currency": currency_in,
+            "expires": new_expires,
+            "inv_id": inv_id
         }
 
     elif status == "FAIL":
