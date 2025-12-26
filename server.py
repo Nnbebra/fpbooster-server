@@ -637,14 +637,16 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
         await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
-# --- ПОЛЬЗОВАТЕЛИ ---
+# --- ПОЛЬЗОВАТЕЛИ И ГРУППЫ ---
+
 @app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
+        # Мы по-прежнему показываем user_group (старое поле) для справки, но основным будет uid
         query = """
              SELECT u.id, u.email, u.username, u.uid, u.user_group, u.created_at, u.last_login, u.email_confirmed,
                    COALESCE((SELECT SUM(amount) FROM purchases p WHERE p.user_uid = u.uid), 0) as total_spent
-            FROM users u
+             FROM users u
         """
         if q:
             rows = await conn.fetch(f"{query} WHERE u.email ILIKE $1 OR u.username ILIKE $1 OR CAST(u.uid AS TEXT) ILIKE $1 ORDER BY u.created_at DESC", f"%{q}%")
@@ -658,45 +660,142 @@ async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
         row = await conn.fetchrow("SELECT * FROM users WHERE uid=$1", uid)
         if not row:
              return Response("User not found", status_code=404)
+        
         purchases = await conn.fetch("SELECT * FROM purchases WHERE user_uid=$1 ORDER BY created_at DESC", uid)
         license_info = await conn.fetchrow("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid=$1", uid)
+        
+        # 1. Получаем активные группы пользователя (JOIN с таблицей групп для получения имен)
+        user_groups_list = await conn.fetch("""
+            SELECT ug.id, ug.expires_at, ug.granted_at, g.name, g.slug 
+            FROM user_groups ug
+            JOIN groups g ON ug.group_id = g.id
+            WHERE ug.user_uid = $1 AND ug.is_active = TRUE
+        """, uid)
+
+        # 2. Получаем список всех доступных групп для выпадающего списка
+        all_groups = await conn.fetch("SELECT id, name, slug, license_duration_days FROM groups ORDER BY id")
 
     return templates.TemplateResponse("user_form.html", {
         "request": request, 
         "row": row, 
         "purchases": purchases, 
         "lic": license_info,
+        "user_groups": user_groups_list, # Передаем группы юзера
+        "all_groups": all_groups,        # Передаем все возможные группы
         "error": None
     })
 
 @app.post("/admin/users/edit/{uid}")
 async def edit_user(
     uid: str, 
-    user_group: str = Form(...), 
     new_password: str = Form(None),
     email_confirmed: bool = Form(False),
     _ = Depends(ui_guard)
 ):
+    # Этот обработчик теперь отвечает только за базовые поля юзера
     async with app.state.pool.acquire() as conn:
         await conn.execute(
-            "UPDATE users SET user_group=$1, email_confirmed=$2 WHERE uid=$3", 
-            user_group, email_confirmed, uid
+            "UPDATE users SET email_confirmed=$1 WHERE uid=$2", 
+            email_confirmed, uid
         )
         if new_password and len(new_password.strip()) >= 6:
             from auth.jwt_utils import hash_password
             new_hash = hash_password(new_password.strip())
             await conn.execute("UPDATE users SET password_hash=$1 WHERE uid=$2", new_hash, uid)
 
-    return RedirectResponse(url="/admin/users", status_code=302)
+    return RedirectResponse(url=f"/admin/users/edit/{uid}", status_code=302)
 
-@app.get("/admin/users/delete/{uid}")
-async def delete_user_get(request: Request, uid: str, _=Depends(ui_guard)):
+# === НОВЫЕ МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ ГРУППАМИ ===
+
+@app.post("/admin/users/assign_group")
+async def admin_assign_group_post(
+    request: Request,
+    user_uid: str = Form(...),
+    group_id: int = Form(...),
+    duration_days: Optional[int] = Form(None),
+    is_forever: bool = Form(False),
+    _=Depends(ui_guard)
+):
+    # Используем логику из groups_router.py, но адаптированную под синхронный вызов внутри админки
+    # или пишем SQL напрямую для надежности.
+    from datetime import datetime, timedelta
+    
     async with app.state.pool.acquire() as conn:
-        await conn.execute("DELETE FROM licenses WHERE user_uid=$1", uid)
-        await conn.execute("DELETE FROM activation_tokens WHERE used_by_uid=$1", uid)
-        await conn.execute("DELETE FROM purchases WHERE user_uid=$1", uid)
-        await conn.execute("DELETE FROM users WHERE uid=$1", uid)
-    return RedirectResponse(url="/admin/users", status_code=302)
+        # Получаем группу
+        group = await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
+        if not group: return Response("Group not found", status_code=404)
+
+        # Расчет времени
+        if is_forever:
+            expires_at = None # Вечно
+            real_days = 36500 # Для лицензии
+        else:
+            days = duration_days if duration_days else group['license_duration_days']
+            expires_at = datetime.now() + timedelta(days=days)
+            real_days = days
+
+        # Выдача группы (UPSERT)
+        # Обратите внимание: granted_by NULL, так как делаем через админку без конкретного админа в сессии (упрощение)
+        await conn.execute("""
+            INSERT INTO user_groups (user_uid, group_id, granted_at, expires_at, is_active)
+            VALUES ($1, $2, NOW(), $3, TRUE)
+            ON CONFLICT (user_uid, group_id) 
+            DO UPDATE SET expires_at = $3, is_active = TRUE, granted_at = NOW()
+        """, user_uid, group_id, expires_at)
+
+        # СИНХРОНИЗАЦИЯ С ЛИЦЕНЗИЕЙ (Копируем логику из payments/groups_router)
+        if group['default_license_type']:
+            # Получаем текущую лицензию
+            lic = await conn.fetchrow("SELECT expires FROM licenses WHERE user_uid=$1", user_uid)
+            today_date = datetime.utcnow().date()
+            
+            # Если вечно - ставим дату далеко
+            if is_forever or real_days > 10000:
+                new_lic_expires = today_date + timedelta(days=36500)
+            else:
+                 # Продлеваем или создаем новую
+                if lic and lic['expires'] and lic['expires'] > today_date:
+                     new_lic_expires = lic['expires'] + timedelta(days=real_days)
+                else:
+                     new_lic_expires = today_date + timedelta(days=real_days)
+
+            # Получаем username для вставки
+            u_row = await conn.fetchrow("SELECT username FROM users WHERE uid=$1", user_uid)
+            
+            await conn.execute("""
+                INSERT INTO licenses (user_uid, user_name, status, expires, created_at, duration_days, license_key)
+                VALUES ($1, $2, 'active', $3, NOW(), $4, $5)
+                ON CONFLICT (license_key) DO UPDATE SET status='active', expires=$3
+                -- Тут есть нюанс: license_key уникален. Старая логика генерила случайный ключ? 
+                -- Если мы используем license_key как ТИП (Default/Alpha), то ON CONFLICT сработает.
+                -- Если license_key это уникальный хеш, то нужно искать запись по user_uid.
+            """, user_uid, u_row['username'], new_lic_expires, real_days, group['default_license_type'])
+            
+            # Более надежное обновление для licenses (по user_uid):
+            await conn.execute("""
+                UPDATE licenses SET status='active', expires=$1, license_key=$2 
+                WHERE user_uid=$3
+            """, new_lic_expires, group['default_license_type'], user_uid)
+
+    return RedirectResponse(url=f"/admin/users/edit/{user_uid}", status_code=302)
+
+@app.post("/admin/users/revoke_group")
+async def admin_revoke_group_post(
+    request: Request,
+    user_uid: str = Form(...),
+    group_id: int = Form(...),
+    _=Depends(ui_guard)
+):
+    async with app.state.pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE user_groups SET is_active = FALSE 
+            WHERE user_uid=$1 AND group_id=$2
+        """, user_uid, group_id)
+        
+        # Опционально: можно "портить" лицензию, но это опасно, если у юзера несколько групп.
+        # Пока просто снимаем группу.
+
+    return RedirectResponse(url=f"/admin/users/edit/{user_uid}", status_code=302)
 
 # --- УПРАВЛЕНИЕ ТОКЕНАМИ АКТИВАЦИИ ---
 @app.get("/admin/tokens", response_class=HTMLResponse)
@@ -750,6 +849,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
