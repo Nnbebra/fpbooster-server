@@ -1,9 +1,11 @@
 {% extends "base.html" %}
+
 {% block content %}
 <h2 class="mb-4 text-white">Управление пользователем: <span class="text-purple">{{ row.username }}</span></h2>
 
 <div class="row">
     <div class="col-md-6">
+        
         <div class="card-dark mb-4">
             <h4 class="mb-3 text-white">Основные настройки</h4>
             <form method="post" action="/admin/users/edit/{{ row.uid }}">
@@ -13,7 +15,7 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label text-muted">Группа прав</label>
+                    <label class="form-label text-muted">Legacy Группа (Старое)</label>
                     <select class="form-select bg-dark text-white border-secondary" name="user_group">
                         <option value="user" {% if row.user_group == 'user' %}selected{% endif %}>User</option>
                         <option value="premium" {% if row.user_group == 'premium' %}selected{% endif %}>Premium</option>
@@ -37,50 +39,139 @@
                 <button type="submit" class="btn btn-purple w-100">Сохранить изменения</button>
             </form>
         </div>
+
+        <div class="card-dark mb-4 border border-info">
+            <h4 class="mb-3 text-info">Управление Группами (Новая система)</h4>
+            
+            {% if user_groups %}
+            <table class="table table-dark table-sm table-bordered border-secondary mb-3">
+                <thead>
+                    <tr>
+                        <th>Группа</th>
+                        <th>Истекает</th>
+                        <th>Действие</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for g in user_groups %}
+                    <tr>
+                        <td>
+                            <strong class="text-white">{{ g.name }}</strong> 
+                            <span class="badge bg-secondary" style="font-size: 0.7em;">{{ g.slug }}</span>
+                        </td>
+                        <td>
+                            {% if g.expires_at %}
+                                {{ g.expires_at.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                <span class="badge bg-success">Навсегда</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <form action="/admin/users/revoke_group" method="POST" onsubmit="return confirm('Снять группу {{ g.name }}?');">
+                                <input type="hidden" name="user_uid" value="{{ row.uid }}">
+                                <input type="hidden" name="group_id" value="{{ g.id }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">X</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+                <p class="text-muted small">Активных групп нет.</p>
+            {% endif %}
+
+            <form action="/admin/users/assign_group" method="POST" class="row g-2 align-items-end border-top border-secondary pt-3">
+                <input type="hidden" name="user_uid" value="{{ row.uid }}">
+                
+                <div class="col-12">
+                    <label class="form-label text-muted small mb-1">Выдать группу</label>
+                    <select class="form-select form-select-sm bg-dark text-white border-secondary" name="group_id" required>
+                        {% for group in all_groups %}
+                        <option value="{{ group.id }}">{{ group.name }} ({{ group.license_duration_days }}д)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-6">
+                    <input type="number" name="duration_days" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="Дней (опц.)">
+                </div>
+
+                <div class="col-6">
+                    <div class="form-check pt-1">
+                        <input class="form-check-input" type="checkbox" name="is_forever" id="isForever" value="true">
+                        <label class="form-check-label text-white small" for="isForever">Навсегда</label>
+                    </div>
+                </div>
+
+                <div class="col-12 mt-2">
+                    <button type="submit" class="btn btn-outline-info btn-sm w-100">Выдать и обновить лицензию</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <div class="col-md-6">
+        
         <div class="card-dark mb-4">
             <h4 class="mb-3 text-white">Активная Лицензия</h4>
             {% if lic %}
-                <div class="alert {% if lic.status == 'active' %}alert-success{% else %}alert-danger{% endif %}">
-                    <strong>Статус:</strong> {{ lic.status|upper }}<br>
-                    <strong>Истекает:</strong> {{ lic.expires }}<br>
-                    <strong>HWID:</strong> {{ lic.hwid or "Не привязан" }}
+                <div class="alert {% if lic.status == 'active' %}alert-success{% else %}alert-danger{% endif %} py-2">
+                    <div class="d-flex justify-content-between">
+                        <span><strong>Ключ:</strong> {{ lic.license_key }}</span>
+                        <span class="badge bg-dark">{{ lic.status|upper }}</span>
+                    </div>
+                    <div class="small mt-1">
+                        Истекает: <strong>{{ lic.expires }}</strong>
+                    </div>
+                    <div class="small mt-1">
+                        HWID: {{ lic.hwid or "Не привязан" }}
+                        {% if lic.hwid %}
+                        <a href="/admin/licenses/reset_hwid/{{ lic.license_key }}" class="text-danger ms-2" style="text-decoration: underline;">Сбросить</a>
+                        {% endif %}
+                    </div>
                 </div>
-                <a href="/admin/licenses/edit/{{ lic.license_key }}" class="btn btn-outline-light btn-sm">Перейти к лицензии</a>
+                <div class="text-end">
+                    <a href="/admin/licenses/edit/{{ lic.license_key }}" class="btn btn-outline-secondary btn-sm">Редактировать вручную</a>
+                </div>
             {% else %}
                 <p class="text-muted">У пользователя нет лицензии.</p>
-                <a href="/admin/licenses/new" class="btn btn-outline-success btn-sm">Выдать лицензию</a>
+                <a href="/admin/licenses/new" class="btn btn-outline-success btn-sm w-100">Создать вручную</a>
             {% endif %}
         </div>
 
         <div class="card-dark">
             <h4 class="mb-3 text-white">История покупок</h4>
             {% if purchases %}
-                <table class="table table-dark table-sm" style="font-size: 0.85rem;">
-                    <thead>
-                        <tr>
-                            <th>Дата</th>
-                            <th>Товар</th>
-                            <th>Сумма</th>
-                            <th>Метод</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for p in purchases %}
-                        <tr>
-                            <td>{{ p.created_at.strftime("%d.%m.%Y") }}</td>
-                            <td>{{ p.plan }} дней</td>
-                            <td class="text-success fw-bold">{{ p.amount }} {{ p.currency }}</td>
-                            <td>{{ p.source }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm table-hover" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Товар</th>
+                                <th>Сумма</th>
+                                <th>Метод</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in purchases %}
+                            <tr>
+                                <td>{{ p.created_at.strftime("%d.%m.%Y") }}</td>
+                                <td>{{ p.plan }}</td>
+                                <td class="text-success fw-bold">{{ p.amount }} {{ p.currency }}</td>
+                                <td>{{ p.source }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             {% else %}
-                <p class="text-muted">Покупок не найдено.</p>
+                <p class="text-muted text-center py-3">Покупок не найдено.</p>
             {% endif %}
+        </div>
+        
+        <div class="mt-4 text-end">
+             <a href="/admin/users/delete/{{ row.uid }}" class="btn btn-danger btn-sm" onclick="return confirm('Удалить пользователя и все его данные?')">Удалить пользователя</a>
         </div>
     </div>
 </div>
