@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 
 {% block content %}
+
+<style>
+    /* Высшие привилегии (Фиолетовые) */
+    .bg-purple { background-color: #6f42c1 !important; color: white; }
+    .bg-indigo { background-color: #6610f2 !important; color: white; }
+    
+    /* Персонал (Розовые/Оранжевые/Циан) */
+    .bg-pink   { background-color: #d63384 !important; color: white; }
+    .bg-orange { background-color: #fd7e14 !important; color: white; }
+    .bg-cyan   { background-color: #0dcaf0 !important; color: black; }
+    
+    /* Лицензии (Лазурный) - остальные берем из Bootstrap (primary, success) */
+    .bg-azure  { background-color: #0d6efd !important; color: white; }
+</style>
+
 <h2 class="mb-4 text-white">Управление пользователем: <span class="text-purple">{{ row.username }}</span></h2>
 
 <div class="row">
@@ -49,7 +64,9 @@
                     <tr>
                         <td>
                             <strong class="text-white">{{ g.name }}</strong> 
-                            <span class="badge bg-{{ badge_color }} ms-1" style="font-size: 0.7em;">{{ g.slug }}</span>
+                            <span class="badge bg-{{ badge_color }} ms-1" style="font-size: 0.75em; padding: 5px 8px;">
+                                {{ g.slug }}
+                            </span>
                         </td>
                         <td>
                             {% if g.expires_at %}
@@ -171,23 +188,20 @@
 </div>
 
 <script>
-    // Скрипт для скрытия поля дней
     function checkGroupType() {
         const select = document.getElementById('groupSelect');
         const selectedOption = select.options[select.selectedIndex];
         const slug = selectedOption.getAttribute('data-slug');
         const isForeverCheckbox = document.getElementById('isForever');
         
-        // Список групп, которые по умолчанию "вечные"
-        const foreverGroups = ['admin', 'tech_admin', 'moderator', 'plus', 'support'];
+        // Группы, которые по умолчанию вечные (здесь тоже можно использовать слаги)
+        const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media'];
         
         if (foreverGroups.includes(slug)) {
             isForeverCheckbox.checked = true;
             toggleDaysInput();
         } else {
-            // Если переключили на обычную группу, снимаем галочку (если не была поставлена вручную пользователем ранее)
-            // Но для UX лучше просто оставить как есть или сбросить. Сбросим:
-            // isForeverCheckbox.checked = false; // Можно раскомментировать, если хотим авто-сброс
+            // isForeverCheckbox.checked = false; // Опционально: сбрасывать галочку
             toggleDaysInput();
         }
     }
@@ -199,13 +213,12 @@
         
         if (isForever) {
             daysContainer.style.display = 'none';
-            daysInput.value = ''; // Очищаем значение
+            daysInput.value = ''; 
         } else {
             daysContainer.style.display = 'block';
         }
     }
 
-    // Запуск при загрузке страницы
     document.addEventListener('DOMContentLoaded', function() {
         checkGroupType();
     });
