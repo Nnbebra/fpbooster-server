@@ -117,16 +117,17 @@ PLANS = {
 
 @router.get("/buy", response_class=HTMLResponse)
 async def buy_page(request: Request):
-    user = None
+    # 1. Пытаемся получить текущего пользователя
     try:
-        user = await get_current_user(request.app, request)
-    except Exception:
+        user = await get_current_user(request)
+    except:
         user = None
-        
+
+    # 2. Передаем user в шаблон
     return templates.TemplateResponse("buy.html", {
-        "request": request, 
-        "plans": PLANS.values(),
-        "user": user 
+        "request": request,
+        "user": user,      # <--- ЭТОЙ СТРОКИ НЕ ХВАТАЛО
+        "plans": PLANS
     })
 
 @router.get("/checkout/{plan_id}", response_class=HTMLResponse)
@@ -154,4 +155,5 @@ async def checkout_page(request: Request, plan_id: str):
         "plan": plan, 
         "user": user 
     })
+
 
