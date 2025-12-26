@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from auth.guards import get_current_user
 
 # Импортируем зависимость для получения пользователя
 from auth.guards import get_current_user
@@ -153,3 +154,4 @@ async def checkout_page(request: Request, plan_id: str):
         "plan": plan, 
         "user": user 
     })
+
