@@ -638,8 +638,18 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
     return RedirectResponse(url="/admin/licenses", status_code=302)
 
 # ==========================================================
-#              УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ И ГРУППАМИ
+#               УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ И ГРУППАМИ
 # ==========================================================
+
+# Настройка цветов для групп (slug -> css class или hex)
+GROUP_COLORS = {
+    "admin": "danger",      # Красный (Bootstrap bg-danger)
+    "tech_admin": "danger", 
+    "moderator": "warning", # Желтый/Оранжевый
+    "premium": "warning",   # Золотой
+    "basic": "primary",     # Синий
+    "user": "secondary"     # Серый
+}
 
 @app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
@@ -665,7 +675,7 @@ async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
         purchases = await conn.fetch("SELECT * FROM purchases WHERE user_uid=$1 ORDER BY created_at DESC", uid)
         license_info = await conn.fetchrow("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid=$1", uid)
         
-        # 1. Получаем активные группы пользователя
+        # 1. Получаем активную группу пользователя (теперь она одна, но fetch вернет список, берем первый)
         user_groups_list = await conn.fetch("""
             SELECT ug.id, ug.expires_at, ug.granted_at, g.name, g.slug 
             FROM user_groups ug
@@ -683,22 +693,22 @@ async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
         "lic": license_info,
         "user_groups": user_groups_list, 
         "all_groups": all_groups,
+        "group_colors": GROUP_COLORS, # Передаем цвета
         "error": None
     })
 
 @app.post("/admin/users/edit/{uid}")
 async def edit_user(
     uid: str, 
-    user_group: str = Form(...), # Оставляем старое поле для обратной совместимости
     new_password: str = Form(None),
     email_confirmed: bool = Form(False),
     _ = Depends(ui_guard)
 ):
     async with app.state.pool.acquire() as conn:
-        # Обновляем базовые поля
+        # Обновляем только подтверждение почты (группу Legacy не трогаем)
         await conn.execute(
-            "UPDATE users SET user_group=$1, email_confirmed=$2 WHERE uid=$3", 
-            user_group, email_confirmed, uid
+            "UPDATE users SET email_confirmed=$1 WHERE uid=$2", 
+            email_confirmed, uid
         )
         if new_password and len(new_password.strip()) >= 6:
             from auth.jwt_utils import hash_password
@@ -715,72 +725,74 @@ async def admin_assign_group_post(
     request: Request,
     user_uid: str = Form(...),
     group_id: int = Form(...),
-    duration_days: Optional[int] = Form(None),
+    duration_days: Optional[str] = Form(None),
     is_forever: bool = Form(False),
     _=Depends(ui_guard)
 ):
     from datetime import datetime, timedelta
     
+    # Обработка пустой строки дней
+    days_val = None
+    if duration_days and duration_days.strip():
+        try:
+            days_val = int(duration_days)
+        except ValueError:
+            pass 
+
     async with app.state.pool.acquire() as conn:
-        # 1. Получаем данные группы
-        group = await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
-        if not group: return Response("Group not found", status_code=404)
-
-        # 2. Считаем дату
-        if is_forever:
-            expires_at = None 
-            real_days = 36500 
-        else:
-            days = duration_days if duration_days else group['license_duration_days']
-            expires_at = datetime.now() + timedelta(days=days)
-            real_days = days
-
-        # 3. Выдаем группу (UPSERT)
-        await conn.execute("""
-            INSERT INTO user_groups (user_uid, group_id, granted_at, expires_at, is_active)
-            VALUES ($1, $2, NOW(), $3, TRUE)
-            ON CONFLICT (user_uid, group_id) 
-            DO UPDATE SET expires_at = $3, is_active = TRUE, granted_at = NOW()
-        """, user_uid, group_id, expires_at)
-
-        # 4. СИНХРОНИЗАЦИЯ С ЛИЦЕНЗИЕЙ
-        if group['default_license_type']:
-            # Логика: если выдаем группу выше рангом или дольше — обновляем лицензию
+        async with conn.transaction(): # В транзакции, чтобы сброс и выдача были атомарны
             
-            # Проверяем текущую лицензию
-            lic = await conn.fetchrow("SELECT expires, license_key FROM licenses WHERE user_uid=$1", user_uid)
-            today_date = datetime.utcnow().date()
-            
-            # Определяем новую дату истечения
-            if is_forever or real_days > 10000:
-                new_lic_expires = today_date + timedelta(days=36500)
+            # 0. СБРОС ВСЕХ ТЕКУЩИХ АКТИВНЫХ ГРУПП (Правило: 1 пользователь = 1 группа)
+            await conn.execute("UPDATE user_groups SET is_active=FALSE WHERE user_uid=$1", user_uid)
+
+            # 1. Получаем данные новой группы
+            group = await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
+            if not group: return Response("Group not found", status_code=404)
+
+            # 2. Считаем дату
+            if is_forever:
+                expires_at = None 
+                real_days = 36500 
             else:
-                # Если лицензия активна, продлеваем её
-                if lic and lic['expires'] and lic['expires'] > today_date:
-                     new_lic_expires = lic['expires'] + timedelta(days=real_days)
+                # Если дней ввели вручную - берем их, иначе - дефолт из группы
+                days = days_val if days_val else group['license_duration_days']
+                expires_at = datetime.now() + timedelta(days=days)
+                real_days = days
+
+            # 3. Выдаем группу (UPSERT)
+            await conn.execute("""
+                INSERT INTO user_groups (user_uid, group_id, granted_at, expires_at, is_active)
+                VALUES ($1, $2, NOW(), $3, TRUE)
+                ON CONFLICT (user_uid, group_id) 
+                DO UPDATE SET expires_at = $3, is_active = TRUE, granted_at = NOW()
+            """, user_uid, group_id, expires_at)
+
+            # 4. СИНХРОНИЗАЦИЯ С ЛИЦЕНЗИЕЙ
+            if group['default_license_type']:
+                lic = await conn.fetchrow("SELECT expires, license_key FROM licenses WHERE user_uid=$1", user_uid)
+                today_date = datetime.utcnow().date()
+                
+                if is_forever or real_days > 10000:
+                    new_lic_expires = today_date + timedelta(days=36500)
                 else:
-                     new_lic_expires = today_date + timedelta(days=real_days)
+                    if lic and lic['expires'] and lic['expires'] > today_date:
+                        new_lic_expires = lic['expires'] + timedelta(days=real_days)
+                    else:
+                        new_lic_expires = today_date + timedelta(days=real_days)
 
-            # Получаем username
-            u_row = await conn.fetchrow("SELECT username FROM users WHERE uid=$1", user_uid)
-            
-            # Обновляем или создаем лицензию
-            # ВАЖНО: используем group['default_license_type'] как license_key (например 'Alpha' или 'Default')
-            target_lic_type = group['default_license_type']
-            
-            # Если лицензии нет - создаем
-            if not lic:
-                await conn.execute("""
-                    INSERT INTO licenses (user_uid, user_name, status, expires, created_at, duration_days, license_key)
-                    VALUES ($1, $2, 'active', $3, NOW(), $4, $5)
-                """, user_uid, u_row['username'], new_lic_expires, real_days, target_lic_type)
-            else:
-                # Если есть — апдейтим дату и тип (повышаем тип если новая круче, или просто перезаписываем)
-                # Для простоты — просто перезаписываем тип на тот, что дает группа
-                await conn.execute("""
-                    UPDATE licenses SET status='active', expires=$1, license_key=$2 
-                    WHERE user_uid=$3
-                """, new_lic_expires, target_lic_type, user_uid)
+                u_row = await conn.fetchrow("SELECT username FROM users WHERE uid=$1", user_uid)
+                target_lic_type = group['default_license_type']
+                
+                if not lic:
+                    await conn.execute("""
+                        INSERT INTO licenses (user_uid, user_name, status, expires, created_at, duration_days, license_key)
+                        VALUES ($1, $2, 'active', $3, NOW(), $4, $5)
+                    """, user_uid, u_row['username'], new_lic_expires, real_days, target_lic_type)
+                else:
+                    await conn.execute("""
+                        UPDATE licenses SET status='active', expires=$1, license_key=$2 
+                        WHERE user_uid=$3
+                    """, new_lic_expires, target_lic_type, user_uid)
 
     return RedirectResponse(url=f"/admin/users/edit/{user_uid}", status_code=302)
 
@@ -852,6 +864,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
