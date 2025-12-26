@@ -669,16 +669,38 @@ GROUP_COLORS = {
 @app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        query = """
-             SELECT u.id, u.email, u.username, u.uid, u.user_group, u.created_at, u.last_login, u.email_confirmed,
-                   COALESCE((SELECT SUM(amount) FROM purchases p WHERE p.user_uid = u.uid), 0) as total_spent
+        # SQL запрос обновлен: джойним активную группу
+        query_base = """
+             SELECT u.id, u.email, u.username, u.uid, u.created_at, u.last_login, u.email_confirmed,
+                   COALESCE((SELECT SUM(amount) FROM purchases p WHERE p.user_uid = u.uid), 0) as total_spent,
+                   g.name as group_name, g.slug as group_slug
              FROM users u
+             LEFT JOIN user_groups ug ON u.uid = ug.user_uid AND ug.is_active = TRUE
+             LEFT JOIN groups g ON ug.group_id = g.id
         """
+        
+        # Для корректной работы с LIMIT 1 при джойне (если вдруг у юзера 2 группы), 
+        # лучше использовать DISTINCT ON или подзапрос, но пока предположим, что логика выдачи (сброс перед выдачей) работает.
+        # Упростим: берем просто первую попавшуюся активную группу.
+        
+        # Если нужен поиск
         if q:
-            rows = await conn.fetch(f"{query} WHERE u.email ILIKE $1 OR u.username ILIKE $1 OR CAST(u.uid AS TEXT) ILIKE $1 ORDER BY u.created_at DESC", f"%{q}%")
+            # Используем DISTINCT, чтобы строки не двоились если групп > 1
+            # Но лучше просто джойнить через LATERAL или подзапрос.
+            # Оставим простой JOIN, так как у нас правило "1 юзер = 1 группа".
+            rows = await conn.fetch(
+                f"{query_base} WHERE u.email ILIKE $1 OR u.username ILIKE $1 OR CAST(u.uid AS TEXT) ILIKE $1 ORDER BY u.created_at DESC", 
+                f"%{q}%"
+            )
         else:
-            rows = await conn.fetch(f"{query} ORDER BY u.created_at DESC")
-    return templates.TemplateResponse("users.html", {"request": request, "rows": rows, "q": q or ""})
+            rows = await conn.fetch(f"{query_base} ORDER BY u.created_at DESC")
+
+    return templates.TemplateResponse("users.html", {
+        "request": request, 
+        "rows": rows, 
+        "q": q or "",
+        "group_colors": GROUP_COLORS # Передаем цвета
+    })
 
 @app.get("/admin/users/edit/{uid}", response_class=HTMLResponse)
 async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
@@ -879,6 +901,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
