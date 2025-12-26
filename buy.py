@@ -3,14 +3,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from auth.guards import get_current_user
 
-# Импортируем зависимость для получения пользователя
-from auth.guards import get_current_user
-
 templates = Jinja2Templates(directory="templates")
 router = APIRouter()
 
+# === КОНФИГУРАЦИЯ ТАРИФОВ ===
+# Мы добавили поле 'group_slug', чтобы связать тарифы с новой системой групп.
+# payment_router будет читать это поле при успешной оплате.
+
 PLANS = {
-    # === СТАНДАРТНАЯ ВЕРСИЯ ===
+    # === СТАНДАРТНАЯ ВЕРСИЯ (FPBooster Basic) ===
     "30": {
         "id": "30",
         "title": "Лицензия на 30 дней",
@@ -21,6 +22,7 @@ PLANS = {
         "available": True,
         "type": "license",
         "days": 30,
+        "group_slug": "basic", # <--- СВЯЗЬ С ГРУППОЙ
         "desc": "Полный доступ ко всем основным функциям FPBooster: авто-restock, авто-поднятие, копирование чужих лотов..."
     },
     "90": {
@@ -33,6 +35,7 @@ PLANS = {
         "available": True,
         "type": "license",
         "days": 90,
+        "group_slug": "basic", # <--- СВЯЗЬ С ГРУППОЙ
         "desc": "Выгодный вариант для постоянных продавцов. Включает все основные функции на 3 месяца."
     },
     "365": {
@@ -45,10 +48,11 @@ PLANS = {
         "available": True,
         "type": "license",
         "days": 365,
+        "group_slug": "basic", # <--- СВЯЗЬ С ГРУППОЙ
         "desc": "Максимальная выгода. Год полного доступа ко всему основному функционалу без ограничений + FPBooster+ в подарок."
     },
 
-    # === FPBooster Alpha ===
+    # === FPBooster Alpha (FPBooster Alpha Access) ===
     "alpha_30": {
         "id": "alpha_30",
         "title": "FPBooster Alpha (30 дней)",
@@ -59,6 +63,7 @@ PLANS = {
         "available": False, 
         "type": "license_alpha",
         "days": 30,
+        "group_slug": "alpha", # <--- СВЯЗЬ С ГРУППОЙ
         "desc": "Доступ к 20+ доп. функциям, автоматизация через сервер, дополнительные темы и эксклюзивный визуал."
     },
     "alpha_90": {
@@ -71,6 +76,7 @@ PLANS = {
         "available": False, 
         "type": "license_alpha",
         "days": 90,
+        "group_slug": "alpha", # <--- СВЯЗЬ С ГРУППОЙ
         "desc": "Доступ к 20+ доп. функциям, автоматизация через сервер, дополнительные темы и эксклюзивный визуал."
     },
     "alpha_365": {
@@ -83,10 +89,11 @@ PLANS = {
         "available": False, 
         "type": "license_alpha",
         "days": 365,
+        "group_slug": "alpha", # <--- СВЯЗЬ С ГРУППОЙ
         "desc": "Доступ к 20+ доп. функциям, автоматизация через сервер, дополнительные темы и эксклюзивный визуал."
     },
 
-    # === FPBooster+ ===
+    # === FPBooster+ (FPBooster Plus) ===
     "plus_lifetime": {
         "id": "plus_lifetime",
         "title": "FPBooster+ (Навсегда)",
@@ -96,11 +103,12 @@ PLANS = {
         "img": "/static/FPBooster+.png",
         "available": False, 
         "type": "license_plus",
-        "days": 36500,
+        "days": 36500, # 100 лет
+        "group_slug": "plus", # <--- СВЯЗЬ С ГРУППОЙ
         "desc": "Дополнение к лицензии. Позволяет автоматизировать некоторые процессы через сервер и даёт доп. темы."
     },
 
-    # === Услуги ===
+    # === Услуги (Без группы) ===
     "hwid_reset": {
         "id": "hwid_reset",
         "title": "Сброс HWID",
@@ -111,6 +119,7 @@ PLANS = {
         "available": True,
         "type": "service",
         "days": 0,
+        "group_slug": None, # Услуга не выдает группу
         "desc": "Сброс привязки к железу (HWID) для запуска софта на новом компьютере."
     },
 }
@@ -119,7 +128,7 @@ PLANS = {
 async def buy_page(request: Request):
     user = None
     try:
-        # Исправленная строка: убрали request.app
+        # Корректное получение пользователя для шапки сайта
         user = await get_current_user(request)
     except Exception:
         user = None
@@ -132,13 +141,14 @@ async def buy_page(request: Request):
 
 @router.get("/checkout/{plan_id}", response_class=HTMLResponse)
 async def checkout_page(request: Request, plan_id: str):
-    # 1. Проверяем авторизацию
+    # 1. Проверяем авторизацию (строгая проверка для покупки)
     user = None
     try:
         user = await get_current_user(request)
         if not user:
             raise Exception("No user")
     except Exception:
+        # Если не авторизован -> редирект на логин с возвратом обратно
         return RedirectResponse(url=f"/login?next=/checkout/{plan_id}", status_code=302)
 
     # 2. Ищем тариф
@@ -146,16 +156,13 @@ async def checkout_page(request: Request, plan_id: str):
     if not plan:
         raise HTTPException(status_code=404, detail="Тариф не найден")
     
+    # 3. Проверка доступности тарифа
     if not plan.get("available", True):
          raise HTTPException(status_code=403, detail="Этот товар пока недоступен для покупки")
 
-    # ВАЖНО: Добавил "user": user, чтобы в шапке (base.html) отрисовался "Личный кабинет"
+    # 4. Рендер страницы
     return templates.TemplateResponse("checkout.html", {
         "request": request, 
         "plan": plan, 
         "user": user 
     })
-
-
-
-
