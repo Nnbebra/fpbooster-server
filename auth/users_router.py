@@ -298,68 +298,68 @@ async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
 
 
 @router.get("/api/me_launcher")
-async def get_api_profile_launcher(request: Request):
-    # Пытаемся получить пользователя через ваш guard
+async def get_api_profile_launcher(request: Request, user=Depends(get_current_user)): # <--- Добавили Depends!
     try:
-        user = await get_current_user(request)
-        
         async with request.app.state.pool.acquire() as conn:
-            # 1. Получаем активную группу (как в кабинете)
+            # 1. Группа
             group_row = await conn.fetchrow("""
-                SELECT g.name, g.slug 
-                FROM user_groups ug
+                SELECT g.name, g.slug FROM user_groups ug
                 JOIN groups g ON ug.group_id = g.id
-                WHERE ug.user_uid = $1 AND ug.is_active = TRUE
-                LIMIT 1
+                WHERE ug.user_uid = $1 AND ug.is_active = TRUE LIMIT 1
             """, user["uid"])
+            
+            g_name = group_row['name'] if group_row else "User"
+            g_slug = group_row['slug'] if group_row else "user"
 
-            group_name = group_row['name'] if group_row else "User"
-            group_slug = group_row['slug'] if group_row else "user"
-
-            # 2. Получаем статус лицензии
+            # 2. Лицензия
             lic_row = await conn.fetchrow("""
-                SELECT status, expires FROM licenses 
+                SELECT expires, status FROM licenses 
                 WHERE user_uid=$1 AND status='active' 
                 ORDER BY expires DESC LIMIT 1
             """, user["uid"])
-        
-            status_str = "No License"
-            expires_str = "-"
             
+            expires_str = "Нет лицензии"
+            status_str = "Inactive"
             if lic_row:
                 status_str = "Active"
-                if lic_row['expires']:
-                    expires_str = lic_row['expires'].strftime("%d.%m.%Y")
+                expires_str = lic_row['expires'].strftime("%d.%m.%Y") if lic_row['expires'] else "Навсегда"
 
-            # 3. Получаем список продуктов для лаунчера (чтобы не было пустого списка)
-            # Тут можно применить ту же логику access_level, что и в /api/me
-            products_rows = await conn.fetch("SELECT id, name, version, download_url, description, image_url FROM products WHERE is_available = TRUE")
+            # 3. Продукты (с фильтрацией по группе)
+            all_products = await conn.fetch("SELECT id, name, version, download_url, description, image_url FROM products WHERE is_available = TRUE")
             
-            products_list = []
-            for p in products_rows:
-                products_list.append({
-                    "id": p["id"],
-                    "name": p["name"],
-                    "version": p["version"],
-                    "description": p["description"] or "",
-                    "image_url": p["image_url"] or "",
-                    "download_url": p["download_url"] or ""
-                })
+            # Та же логика фильтрации, что мы обсуждали
+            allowed = []
+            for p in all_products:
+                p_name = p['name'].lower()
+                is_ok = False
+                if g_slug in ['admin', 'tech-admin', 'alpha']: is_ok = True
+                elif g_slug in ['plus', 'premium']:
+                    if "alpha" not in p_name: is_ok = True
+                else:
+                    if "plus" not in p_name and "alpha" not in p_name: is_ok = True
+                
+                if is_ok:
+                    allowed.append({
+                        "id": p["id"],
+                        "name": p["name"],
+                        "version": p["version"],
+                        "description": p["description"] or "",
+                        "image_url": p["image_url"] or "",
+                        "download_url": p["download_url"] or ""
+                    })
 
-        # ВАЖНО: Ключи должны СТРОГО совпадать с именами в LoginResponse.cs (маленькие буквы)
         return {
             "uid": str(user["uid"]),
             "username": user["username"],
             "email": user["email"],
-            "group_name": group_name,      # Было "group", стало "group_name" (как в C#)
+            "group_name": g_name,
             "expires": expires_str,
             "status": status_str,
-            "available_products": products_list # Добавили список, чтобы C# не падал
+            "available_products": allowed
         }
-        
     except Exception as e:
-        print(f"[API ME LAUNCHER ERROR] {e}")
-        return JSONResponse({"status": "error", "message": "Unauthorized"}, status_code=401)
+        print(f"CRITICAL API ERROR: {e}")
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 
@@ -508,6 +508,7 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
 
