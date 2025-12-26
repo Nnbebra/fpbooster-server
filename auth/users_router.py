@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Request, Form, Body, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel # ВАЖНО: Добавили Pydantic
-from typing import List
+from typing import List, Optional  # <--- Должно быть так
+from pydantic import BaseModel
 
 from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
@@ -381,7 +381,7 @@ class UserProfileSchema(BaseModel):
     email: str
     group_name: str
     group_slug: str
-    avatar_url: Optional[str] = None # Используем Optional или | None
+    avatar_url: Optional[str] = None
     expires: Optional[str] = None
     available_products: List[ProductSchema]
 
@@ -476,5 +476,6 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
