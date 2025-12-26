@@ -642,13 +642,28 @@ async def delete_license_get(request: Request, license_key: str, _=Depends(ui_gu
 # ==========================================================
 
 # Настройка цветов для групп (slug -> css class или hex)
+# Настройка цветов для групп (slug -> css class suffix)
 GROUP_COLORS = {
-    "admin": "danger",      # Красный (Bootstrap bg-danger)
-    "tech_admin": "danger", 
-    "moderator": "warning", # Желтый/Оранжевый
-    "premium": "warning",   # Золотой
-    "basic": "primary",     # Синий
-    "user": "secondary"     # Серый
+    # === ВЫСШАЯ АДМИНИСТРАЦИЯ (Фиолетовая гамма) ===
+    "tech-admin": "purple",     # Глубокий фиолетовый
+    "admin": "indigo",          # Индиго (сине-фиолетовый)
+    
+    # === ПЕРСОНАЛ (Красная/Розовая гамма) ===
+    "senior-staff": "pink",     # Ярко-розовый
+    "staff": "danger",          # Красный (стандартный Bootstrap)
+    "moderator": "orange",      # Оранжевый
+    "media": "cyan",            # Циан (яркий голубой, для медиа)
+
+    # === ПРЕМИУМ ЛИЦЕНЗИИ (Синяя гамма) ===
+    "plus": "primary",          # Синий (стандартный Bootstrap)
+    "alpha": "azure",           # Лазурный
+    "premium": "primary",       # (Legacy)
+
+    # === БАЗОВЫЕ (Зеленая гамма) ===
+    "basic": "success",         # Зеленый (стандартный Bootstrap)
+    
+    # === ОБЫЧНЫЕ ===
+    "user": "secondary"         # Серый
 }
 
 @app.get("/admin/users", response_class=HTMLResponse)
@@ -864,6 +879,7 @@ async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
