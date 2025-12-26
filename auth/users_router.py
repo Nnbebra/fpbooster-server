@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Form, Body, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel # ВАЖНО: Добавили Pydantic
+from typing import List
 
 from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
@@ -10,6 +11,7 @@ from datetime import date, datetime, timedelta
 import secrets
 import string
 import uuid
+
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -361,4 +363,116 @@ async def sync_user_state(request: Request, user=Depends(get_current_user)):
     }
 
 
+
+
+# === МОДЕЛИ ОТВЕТА (Pydantic) ===
+class ProductSchema(BaseModel):
+    id: int
+    name: string
+    description: str
+    image_url: str
+    download_url: str
+    version: str
+
+class UserProfileSchema(BaseModel):
+    uid: str
+    username: str
+    email: str
+    group_name: str     # <--- Новое поле для лаунчера
+    group_slug: str     # <--- Техническое поле
+    avatar_url: str | None = None
+    expires: str | None = None
+    available_products: List[ProductSchema] # <--- Список доступных версий
+
+
+# ==========================================
+#   API PROFLIE (Вызывается лаунчером при запуске)
+# ==========================================
+@router.get("/api/me", response_model=UserProfileSchema)
+async def get_my_profile(request: Request, user=Depends(get_current_user)):
+    async with request.app.state.pool.acquire() as conn:
+        # 1. Получаем активную группу
+        group_row = await conn.fetchrow("""
+            SELECT g.name, g.slug 
+            FROM user_groups ug
+            JOIN groups g ON ug.group_id = g.id
+            WHERE ug.user_uid = $1 AND ug.is_active = TRUE
+            LIMIT 1
+        """, user['uid'])
+
+        group_name = group_row['name'] if group_row else "User"
+        slug = group_row['slug'] if group_row else "user"
+
+        # 2. Получаем лицензию (для отображения даты истечения)
+        lic_row = await conn.fetchrow("""
+            SELECT expires, status, duration_days FROM licenses 
+            WHERE user_uid=$1 AND status='active' 
+            ORDER BY expires DESC LIMIT 1
+        """, user['uid'])
+        
+        expires_str = "Нет лицензии"
+        if lic_row:
+             if lic_row['duration_days'] > 10000:
+                 expires_str = "Навсегда"
+             else:
+                 expires_str = lic_row['expires'].strftime("%d.%m.%Y")
+
+        # 3. ЛОГИКА ДОСТУПА К ПРОДУКТАМ
+        # Определяем уровень доступа на основе слага группы
+        access_level = 0
+        
+        # Уровень 3: Admin, Tech Admin, Alpha (Видят всё)
+        if slug in ['admin', 'tech-admin', 'senior-staff', 'alpha', 'media']:
+            access_level = 3
+        # Уровень 2: Premium, Plus (Видят Plus и Standard)
+        elif slug in ['premium', 'plus', 'moderator']:
+            access_level = 2
+        # Уровень 1: Basic, User (Видят только Standard)
+        else:
+            access_level = 1
+
+        # 4. Получаем ВСЕ продукты
+        all_products = await conn.fetch("SELECT * FROM products WHERE is_available = TRUE ORDER BY id DESC")
+        
+        allowed_products = []
+        for p in all_products:
+            p_name = p['name'].lower()
+            
+            # Фильтрация по названию (предполагаем, что в названии есть ключевые слова)
+            # Если у тебя логика другая, можно добавить колонку 'required_level' в таблицу products
+            
+            is_allowed = False
+            
+            if access_level == 3:
+                is_allowed = True # Админ/Альфа видит всё
+                
+            elif access_level == 2:
+                # Видит всё, КРОМЕ Alpha/Private
+                if "alpha" not in p_name and "private" not in p_name:
+                    is_allowed = True
+                    
+            elif access_level == 1:
+                # Видит только Standard / Free / Basic
+                if "plus" not in p_name and "alpha" not in p_name and "private" not in p_name:
+                    is_allowed = True
+            
+            if is_allowed:
+                allowed_products.append({
+                    "id": p['id'],
+                    "name": p['name'],
+                    "description": p['description'],
+                    "image_url": p['image_url'],
+                    "download_url": p['download_url'],
+                    "version": p['version']
+                })
+
+    return {
+        "uid": str(user['uid']),
+        "username": user['username'],
+        "email": user['email'],
+        "group_name": group_name, # "Tech Admin"
+        "group_slug": slug,       # "tech-admin"
+        "expires": expires_str,
+        "available_products": allowed_products
+    }
 
