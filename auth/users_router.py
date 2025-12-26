@@ -297,33 +297,47 @@ async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
         }
 
 @router.get("/api/me_launcher")
-async def get_api_profile_launcher(request: Request):
-    # Теперь эта функция корректно возьмет юзера через guards.py
+async def get_api_profile_launcher(request: Request, user=Depends(get_current_user)):
+    """
+    Обновленная версия для лаунчера, которая возвращает расширенные данные группы
+    """
     try:
-        user = await get_current_user(request)
-        
-        # Получаем статус лицензии
         async with request.app.state.pool.acquire() as conn:
-             licenses = await conn.fetch("SELECT status, expires FROM licenses WHERE user_uid=$1", user["uid"])
+            # 1. Получаем активную группу
+            group_row = await conn.fetchrow("""
+                SELECT g.name, g.slug 
+                FROM user_groups ug
+                JOIN groups g ON ug.group_id = g.id
+                WHERE ug.user_uid = $1 AND ug.is_active = TRUE
+                LIMIT 1
+            """, user['uid'])
+
+            group_name = group_row['name'] if group_row else "User"
+            
+            # 2. Получаем статус лицензии
+            lic_row = await conn.fetchrow("""
+                SELECT expires, status FROM licenses 
+                WHERE user_uid=$1 AND status='active' 
+                ORDER BY expires DESC LIMIT 1
+            """, user['uid'])
         
-        status_str = "No License"
-        expires_str = "-"
-        
-        if licenses:
-            for lic in licenses:
-                if lic['status'] == 'active' and lic['expires'] and lic['expires'] >= date.today():
-                    status_str = "Active"
-                    expires_str = str(lic['expires'])
-                    break
-        
+            status_str = "No License"
+            expires_str = "-"
+            if lic_row:
+                status_str = "Active"
+                expires_str = lic_row['expires'].strftime("%d.%m.%Y") if lic_row['expires'] else "Never"
+
+            # 3. Список продуктов (простой фильтр для совместимости)
+            all_products = await conn.fetch("SELECT id, name, version, download_url FROM products WHERE is_available = TRUE")
+            
         return {
             "uid": str(user["uid"]),
             "username": user["username"],
             "email": user["email"],
-            "group": user["group"] or "User",
+            "group_name": group_name,      # Тот самый ключ, который ищет C#
             "expires": expires_str,
             "status": status_str,
-            "avatar_url": "" 
+            "available_products": [dict(p) for p in all_products] # Возвращаем список
         }
     except Exception as e:
         print(f"[API ME] Error: {e}")
@@ -476,6 +490,7 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
 
