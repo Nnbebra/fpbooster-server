@@ -1,5 +1,16 @@
 {% extends "base.html" %}
+
 {% block content %}
+
+<style>
+    .bg-purple { background-color: #6f42c1 !important; color: white; }
+    .bg-indigo { background-color: #6610f2 !important; color: white; }
+    .bg-pink   { background-color: #d63384 !important; color: white; }
+    .bg-orange { background-color: #fd7e14 !important; color: white; }
+    .bg-cyan   { background-color: #0dcaf0 !important; color: black; }
+    .bg-azure  { background-color: #0d6efd !important; color: white; }
+</style>
+
 <div class="mb-4">
     <h2 class="text-white"><i class="fas fa-users text-purple"></i> Пользователи</h2>
 </div>
@@ -17,7 +28,7 @@
       <thead>
         <tr>
           <th style="color: #D6BCFA;">Пользователь</th>
-          <th style="color: #D6BCFA;">Статус</th>
+          <th style="color: #D6BCFA;">Группа</th>
           <th style="color: #D6BCFA;">LTV (Покупки)</th>
           <th style="color: #D6BCFA;">Инфо</th>
           <th style="color: #D6BCFA;" class="text-end">Действия</th>
@@ -34,10 +45,11 @@
           
           <td>
               <div class="mb-1">
-                {% if row.user_group == 'admin' %}
-                    <span class="badge bg-danger">ADMIN</span>
-                {% elif row.user_group == 'premium' %}
-                    <span class="badge bg-warning text-dark">PREMIUM</span>
+                {% if row.group_slug %}
+                    {% set badge_class = group_colors.get(row.group_slug, 'secondary') %}
+                    <span class="badge bg-{{ badge_class }}">
+                        {{ row.group_name|upper }}
+                    </span>
                 {% else %}
                     <span class="badge bg-secondary">USER</span>
                 {% endif %}
