@@ -273,7 +273,7 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                 # 3. Гасим ключ
                 await conn.execute("""
                     UPDATE group_keys 
-                    SET is_used = TRUE, activated_by = $1, used_at = NOW()
+                    SET is_used = TRUE, activated_by = $1,
                     WHERE id = $2
                 """, user['uid'], key_data['id'])
 
@@ -351,7 +351,7 @@ async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
             "uid": str(user["uid"])
         }
 
-@router.get("/api/me", response_model=UserProfileSchema)
+@router.get("/api/me_launcher", response_model=UserProfileSchema)
 async def get_my_profile(request: Request, user=Depends(get_current_user)):
     """
     Профиль для лаунчера с расчетом доступных продуктов на основе ГРУППЫ.
@@ -362,7 +362,7 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
             SELECT g.name, g.slug, g.access_level, ug.expires_at
             FROM user_groups ug
             JOIN groups g ON ug.group_id = g.id
-            WHERE ug.user_uid = $1 AND ug.is_active = TRUE AND ug.expires_at > NOW()
+            WHERE ug.user_uid = $1 AND ug.is_active = TRUE AND (ug.expires_at IS NULL OR ug.expires_at > NOW())
             ORDER BY g.access_level DESC
             LIMIT 1
         """, user['uid'])
