@@ -496,9 +496,9 @@ async def download_product(
         user_uid = user_row['uid'] 
         
         async with request.app.state.pool.acquire() as conn:
-            # 1. Получаем инфо о продукте и требуемом уровне доступа
+            # 1. Получаем расширенную информацию о продукте
             prod = await conn.fetchrow("""
-                SELECT exe_name, secret_key, name, is_available, required_access_level 
+                SELECT exe_name, secret_key, name, is_available, required_access_level, download_url
                 FROM products WHERE id = $1
             """, product_id)
             
@@ -506,12 +506,11 @@ async def download_product(
                 return JSONResponse({"error": "Product not found"}, status_code=404)
 
             if not prod['is_available']:
-                 return JSONResponse({"error": "Product is temporarily unavailable"}, status_code=403)
+                return JSONResponse({"error": "Product is temporarily unavailable"}, status_code=403)
 
             required_level = prod['required_access_level'] if prod['required_access_level'] else 1
 
-            # 2. === ПРОВЕРКА ДОСТУПА (ГРУППЫ) ===
-            # ИСПРАВЛЕНО: Добавлена проверка на NULL (вечный доступ)
+            # 2. ПРОВЕРКА ДОСТУПА
             has_access = await conn.fetchval("""
                 SELECT COUNT(*) 
                 FROM user_groups ug
@@ -525,48 +524,56 @@ async def download_product(
             if has_access == 0:
                  return JSONResponse({"error": f"NO_ACCESS: Required Level {required_level}"}, status_code=403)
 
-            # 3. === HWID (Логика привязки и проверки) ===
+            # 3. ПРИВЯЗКА HWID
             if x_hwid:
                 current_hwid = user_row.get('hwid')
-                
                 if not current_hwid:
-                    # Если у пользователя HWID еще не привязан — привязываем первый присланный
                     await conn.execute("UPDATE users SET hwid = $1 WHERE uid = $2", x_hwid, user_uid)
                     print(f"DEBUG: Bound new HWID {x_hwid} to user {user_row['username']}")
-                
                 elif current_hwid != x_hwid:
-                    # Если HWID в базе есть, но он другой — запрещаем доступ
-                    # (Либо закомментируй это, если хочешь разрешить вход с разных ПК)
                     return JSONResponse({
                         "error": "HWID_MISMATCH", 
-                        "message": "Этот аккаунт привязан к другому устройству. Сбросьте HWID в кабинете."
+                        "message": "Аккаунт привязан к другому ПК."
                     }, status_code=403)
 
-            # 4. === ОТДАЧА ФАЙЛА ===
-            filename = prod['exe_name'] 
-            # Фолбэк имен файлов для старой базы
-            if not filename:
-                if product_id == 1: filename = "FPBoosterPlus.dll"
-                else: filename = "FPBoosterDefault.dll"
-
-            # ПУТЬ К ФАЙЛАМ
-            # protected_folder = "protected_builds" # Для локального теста
-            protected_folder = "/opt/fpbooster/protected_builds" # Для продакшена
-
-            file_path = os.path.join(protected_folder, filename)
+            # 4. ЛОГИКА ОПРЕДЕЛЕНИЯ ПУТИ К ФАЙЛУ
+            protected_folder = "/opt/fpbooster/protected_builds"
             
-            if not os.path.exists(file_path):
-                print(f"CRITICAL: File missing at {file_path}") 
-                return JSONResponse({"error": f"File missing on server: {filename}"}, status_code=404)
+            # Список возможных имен файлов для этого продукта (приоритетный порядок)
+            possible_filenames = []
+            if prod['exe_name']: possible_filenames.append(prod['exe_name'])
+            if prod['download_url']: possible_filenames.append(prod['download_url'])
+            
+            # Фолбэки, если в базе странные данные
+            if product_id == 1: possible_filenames.append("FPBoosterPlus.dll")
+            if product_id == 2: possible_filenames.append("FPBoosterDefault.dll")
+            possible_filenames.append("FPBooster.exe")
 
+            final_file_path = None
+            final_filename = "software.dat"
+
+            for fname in possible_filenames:
+                temp_path = os.path.join(protected_folder, fname)
+                if os.path.exists(temp_path):
+                    final_file_path = temp_path
+                    final_filename = fname
+                    break
+
+            if not final_file_path:
+                print(f"CRITICAL: No file found for product {product_id} in {protected_folder}")
+                print(f"Tried names: {possible_filenames}")
+                return JSONResponse({"error": f"File missing on server. Please contact admin."}, status_code=404)
+
+            # 5. ОТПРАВКА
             key_to_send = prod['secret_key'] if prod['secret_key'] else ""
 
             headers = {
                 "X-Encryption-Key": key_to_send,
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "Access-Control-Expose-Headers": "X-Encryption-Key" # Важно для лаунчера
+                "Content-Disposition": f'attachment; filename="{final_filename}"',
+                "Access-Control-Expose-Headers": "X-Encryption-Key"
             }
-            return FileResponse(file_path, headers=headers, media_type='application/octet-stream')
+            
+            return FileResponse(final_file_path, headers=headers, media_type='application/octet-stream')
 
     except Exception as e:
         import traceback
@@ -890,6 +897,7 @@ async def admin_reset_hwid(request: Request, uid: uuid.UUID, _=Depends(admin_gua
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE users SET hwid = NULL WHERE uid = $1", uid)
     return RedirectResponse(url=f"/admin/users/edit/{uid}", status_code=302)
+
 
 
 
