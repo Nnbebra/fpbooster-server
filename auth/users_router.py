@@ -150,7 +150,9 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
 async def account_page(request: Request):
     try:
         user = await get_current_user(request)
-    except:
+    except Exception as e:
+        # ЭТО ПОКАЖЕТ НАСТОЯЩУЮ ОШИБКУ В ЛОГАХ
+        print(f"!!! AUTH ERROR !!!: {e}") 
         return RedirectResponse("/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
@@ -404,5 +406,6 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
