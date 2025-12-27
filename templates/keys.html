@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-white"><i class="fas fa-key text-info"></i> Ключи доступа</h2>
+    <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#createKeysModal">
+        <i class="fas fa-plus-circle"></i> Создать ключи
+    </button>
+</div>
+
+<div class="modal fade" id="createKeysModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content card-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title text-white">Генерация ключей</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="/admin/tokens/create" method="post">
+          <div class="modal-body">
+            <div class="mb-3">
+                <label class="form-label text-muted">Группа доступа</label>
+                <select class="form-select bg-dark text-white border-secondary" name="group_id" required>
+                    {% for g in groups %}
+                        <option value="{{ g.id }}">{{ g.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-muted">Длительность (дней)</label>
+                <input type="number" class="form-control bg-dark text-white border-secondary" name="days" value="30" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-muted">Количество ключей</label>
+                <input type="number" class="form-control bg-dark text-white border-secondary" name="count" value="1" max="50" required>
+            </div>
+          </div>
+          <div class="modal-footer border-secondary">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-info">Сгенерировать</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card-dark p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th class="text-muted">Ключ</th>
+          <th class="text-muted">Группа</th>
+          <th class="text-muted">Срок</th>
+          <th class="text-muted">Статус</th>
+          <th class="text-muted text-end">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+              <code class="text-warning user-select-all">{{ row.key_code }}</code>
+          </td>
+          <td>
+              <span class="badge bg-secondary">{{ row.group_name }}</span>
+          </td>
+          <td>{{ row.duration_days }} дн.</td>
+          <td>
+              {% if row.is_used %}
+                <span class="badge bg-danger">Использован</span>
+              {% else %}
+                <span class="badge bg-success">Новый</span>
+              {% endif %}
+          </td>
+          <td class="text-end">
+             {% if not row.is_used %}
+            <a href="/admin/tokens/delete/{{ row.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить ключ?')">
+              <i class="fas fa-trash"></i>
+            </a>
+            {% else %}
+             <span class="text-muted small"><i class="fas fa-check"></i></span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
