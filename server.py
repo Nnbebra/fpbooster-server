@@ -32,7 +32,8 @@ from Plugins import AutoBump, AutoRestock
 
 async def get_current_user_raw(app, request: Request):
     try:
-        return await get_current_user(app, request)
+        # Убираем app из вызова
+        return await get_current_user(request)
     except:
         return None
 
@@ -863,6 +864,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
