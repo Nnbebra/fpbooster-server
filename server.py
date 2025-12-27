@@ -2,6 +2,7 @@ import os
 import secrets
 import pathlib
 import asyncio
+import uuid
 import json
 from typing import Optional, Literal
 from datetime import date, datetime, timedelta
@@ -879,6 +880,7 @@ async def admin_reset_hwid(request: Request, uid: uuid.UUID, _=Depends(admin_gua
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE users SET hwid = NULL WHERE uid = $1", uid)
     return RedirectResponse(url=f"/admin/users/edit/{uid}", status_code=302)
+
 
 
 
