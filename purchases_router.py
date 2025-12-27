@@ -11,7 +11,7 @@ templates = Jinja2Templates(directory="templates")
 
 async def current_user(request: Request):
     # wrapper so Depends doesn't look for "app" param
-    return await get_current_user_raw(request.app, request)
+    return await get_current_user_raw(request)
 
 @router.get("/purchases", response_class=HTMLResponse)
 async def purchases_page(request: Request, user=Depends(current_user)):
@@ -29,3 +29,4 @@ async def purchases_page(request: Request, user=Depends(current_user)):
         "purchases.html",
         {"request": request, "user": user, "purchases": rows}
     )
+
