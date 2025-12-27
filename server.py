@@ -825,17 +825,13 @@ async def admin_assign_group_post(
 @app.post("/admin/users/revoke_group")
 async def admin_revoke_group(
     user_uid: uuid.UUID = Form(...),
-    group_id: int = Form(...),
+    record_id: int = Form(...),  # Теперь принимаем ID конкретной записи
     _=Depends(admin_guard_ui)
 ):
     async with app.state.pool.acquire() as conn:
-        # Удаляем конкретную привязку. 
-        # Если вы хотите удалить ВСЕ записи этой группы у юзера:
-        await conn.execute("DELETE FROM user_groups WHERE user_uid = $1 AND group_id = $2", user_uid, group_id)
+        # Удаляем строго одну конкретную строку
+        await conn.execute("DELETE FROM user_groups WHERE id = $1", record_id)
         
-        # Опционально: если у вас логика завязана на поле 'is_active', 
-        # можно просто делать UPDATE user_groups SET is_active = false...
-        # Но DELETE — это полное очищение истории прав.
     return RedirectResponse(url=f"/admin/users/edit/{user_uid}", status_code=302)
 
 # --- УПРАВЛЕНИЕ КЛЮЧАМИ (Вместо старых токенов) ---
@@ -898,6 +894,7 @@ async def admin_reset_hwid(request: Request, uid: uuid.UUID, _=Depends(admin_gua
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE users SET hwid = NULL WHERE uid = $1", uid)
     return RedirectResponse(url=f"/admin/users/edit/{uid}", status_code=302)
+
 
 
 
