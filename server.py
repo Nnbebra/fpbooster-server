@@ -44,7 +44,7 @@ app = FastAPI(title="FPBooster License Server", version="1.6.0")
 templates = Jinja2Templates(directory="templates")
 
 async def ui_guard(request: Request):
-    # Теперь передаем только request, и обязательно добавляем await
+    # Исправлено: убрали второй аргумент, добавили await
     return await admin_guard_ui(request)
 
 @app.get("/", response_class=HTMLResponse)
@@ -862,6 +862,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
