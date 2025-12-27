@@ -1,16 +1,18 @@
-# groups_router.py
 from fastapi import APIRouter, Request, HTTPException, Depends
 from datetime import datetime, timedelta
 import uuid
-from auth.guards import admin_guard_api # Убедись, что используешь правильный гард для админки
+
+# ИСПРАВЛЕНО: Импортируем из корневого файла guards.py
+from guards import admin_guard_api 
+
 from groups import AssignGroupRequest, RevokeGroupRequest
 
 router = APIRouter(prefix="/admin/groups", tags=["Admin Groups"])
 
 @router.post("/assign")
-async def assign_group_admin(request: Request, body: AssignGroupRequest):
+async def assign_group_admin(request: Request, body: AssignGroupRequest, _=Depends(admin_guard_api)):
     """
-    Выдача группы пользователю (без привязки к старым лицензиям).
+    Выдача группы пользователю.
     """
     pool = request.app.state.pool
     async with pool.acquire() as conn:
@@ -30,7 +32,6 @@ async def assign_group_admin(request: Request, body: AssignGroupRequest):
         
         if existing:
             # Если уже есть - ПРОДЛЕВАЕМ
-            # Если текущая дата просрочена, продлеваем от "сейчас", иначе от даты окончания
             current_expires = existing['expires_at']
             if current_expires < datetime.now():
                 new_expires = datetime.now() + timedelta(days=duration)
@@ -56,7 +57,7 @@ async def assign_group_admin(request: Request, body: AssignGroupRequest):
             return {"status": "created", "new_expires": new_expires}
 
 @router.post("/revoke")
-async def revoke_group_admin(request: Request, body: RevokeGroupRequest):
+async def revoke_group_admin(request: Request, body: RevokeGroupRequest, _=Depends(admin_guard_api)):
     """
     Снятие группы (просто ставим is_active = FALSE)
     """
