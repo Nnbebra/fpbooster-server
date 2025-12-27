@@ -112,21 +112,6 @@ app.mount("/templates_css", StaticFiles(directory="templates_css"), name="templa
 app.mount("/JavaScript", StaticFiles(directory="JavaScript"), name="javascript")
 
 # --- МОДЕЛИ ---
-class LicenseIn(BaseModel):
-    license: str
-
-class LicenseAdmin(BaseModel):
-    license_key: str
-    status: Literal["active", "expired", "banned"]
-    expires: Optional[date] = None
-    user: Optional[str] = None
-
-    @validator("expires", pre=True)
-    def parse_expires(cls, v):
-        if v in (None, "", "null"): return None
-        if isinstance(v, date): return v
-        try: return date.fromisoformat(str(v))
-        except Exception as e: raise ValueError(f"expires error: {e}")
 
 class LauncherLogin(BaseModel):
     email: str
@@ -195,70 +180,70 @@ async def get_current_user_api(request: Request):
 async def launcher_login(data: LauncherLogin, request: Request):
     email = data.email.strip().lower()
     async with request.app.state.pool.acquire() as conn:
+        # 1. Проверяем пользователя
         user = await conn.fetchrow("SELECT id, uid, password_hash, username FROM users WHERE email=$1", email)
         
         if not user or not verify_password(data.password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
-        license_row = await conn.fetchrow("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid = $1", user["uid"])
+        # 2. Проверяем наличие АКТИВНОЙ группы (Подписки)
+        # Берем самую "крутую" группу (с максимальным access_level), если их несколько
+        active_sub = await conn.fetchrow("""
+            SELECT ug.expires_at, g.name as group_name, g.access_level
+            FROM user_groups ug
+            JOIN groups g ON ug.group_id = g.id
+            WHERE ug.user_uid = $1 
+              AND ug.is_active = TRUE 
+              AND ug.expires_at > NOW()
+            ORDER BY g.access_level DESC
+            LIMIT 1
+        """, user["uid"])
 
-        if not license_row:
-             raise HTTPException(status_code=403, detail="Лицензия не найдена. Купите подписку на сайте.")
+        if not active_sub:
+             raise HTTPException(status_code=403, detail="Нет активной подписки. Купите доступ на сайте.")
 
-        # Базовая проверка активности аккаунта
-        if license_row['status'] != 'active':
-             raise HTTPException(status_code=402, detail="Подписка не активна")
-             
-        # Проверяем срок действия (если истек - 402)
-        if license_row['expires'] and license_row['expires'] < date.today():
-             raise HTTPException(status_code=402, detail="Срок подписки истек")
+        # 3. (Опционально) Обновляем HWID в таблице users (если добавлял колонку hwid)
+        # Если колонки hwid в users нет, закомментируй строку ниже, чтобы не было ошибки 500
+        try:
+            await conn.execute("UPDATE users SET hwid=$1 WHERE uid=$2", data.hwid, user["uid"])
+        except:
+            pass # Игнорируем ошибку, если колонки hwid нет
 
-        # HWID
-        db_hwid = license_row['hwid']
-        if db_hwid is None:
-            await conn.execute("UPDATE licenses SET hwid=$1 WHERE license_key=$2", data.hwid, license_row['license_key'])
-        elif db_hwid != data.hwid:
-            raise HTTPException(status_code=403, detail="Ошибка HWID: Заход с другого ПК запрещен.")
-
+        # 4. Генерируем токен
         token = make_jwt(user["id"], email)
         
         return {
             "status": "success",
             "username": user["username"],
             "token": token,
-            "expires": str(license_row["expires"])
+            "expires": str(active_sub["expires_at"].date()),
+            "group": active_sub["group_name"]
         }
-
 # --- API СПИСОК ПРОДУКТОВ ---
 @app.get("/api/client/products")
 async def get_client_products(request: Request, user_data=Depends(current_user)):
     uid = user_data["uid"]
     
-    # Флаги доступа
-    has_standard = False
-    has_alpha = False
-    has_plus = False
-    
     async with request.app.state.pool.acquire() as conn:
-        # 1. Проверяем текущую активную лицензию (это дает доступ к Standard)
-        license_row = await conn.fetchrow("SELECT status, expires FROM licenses WHERE user_uid=$1", uid)
-        
-        if license_row and license_row['status'] == 'active':
-             if not license_row['expires'] or license_row['expires'] >= date.today():
-                 has_standard = True
+        # Получаем максимальный уровень доступа пользователя
+        # 1 = Basic/Standard, 2 = Plus, 3 = Alpha/Admin
+        access_level = await conn.fetchval("""
+            SELECT COALESCE(MAX(g.access_level), 0)
+            FROM user_groups ug
+            JOIN groups g ON ug.group_id = g.id
+            WHERE ug.user_uid = $1 
+              AND ug.is_active = TRUE 
+              AND ug.expires_at > NOW()
+        """, uid)
 
-        # 2. Проверяем историю покупок на наличие Alpha или Plus
-        rows = await conn.fetch("SELECT plan FROM purchases WHERE user_uid=$1", uid)
-        for r in rows:
-            plan_name = (r['plan'] or "").lower()
-            if "alpha" in plan_name:
-                has_alpha = True
-            if "plus" in plan_name:
-                has_plus = True
+    # Логика доступа
+    has_standard = access_level >= 1
+    has_plus = access_level >= 2
+    has_alpha = access_level >= 3
 
     products = []
 
-    # Standard
+    # Standard (Доступен всем с подпиской)
     products.append({
         "id": "standard",
         "name": "FPBooster Standard",
@@ -268,52 +253,59 @@ async def get_client_products(request: Request, user_data=Depends(current_user))
         "download_url": "/api/client/get-core?ver=standard"
     })
 
-    # Alpha
-    products.append({
-        "id": "alpha",
-        "name": "FPBooster Alpha",
-        "description": "Бета-версия (Early Access)",
-        "image_url": "pack://application:,,,/Assets/FPBoosterAlpha.png",
-        "is_available": has_alpha and has_standard, 
-        "download_url": "/api/client/get-core?ver=alpha"
-    })
-
-    # Plus
+    # Plus (Уровень 2+)
     products.append({
         "id": "plus",
         "name": "FPBooster Plus",
         "description": "Расширенная версия",
         "image_url": "pack://application:,,,/Assets/FPBooster+Def.png",
-        "is_available": has_plus and has_standard,
+        "is_available": has_plus,
         "download_url": "/api/client/get-core?ver=plus"
+    })
+
+    # Alpha (Уровень 3+)
+    products.append({
+        "id": "alpha",
+        "name": "FPBooster Alpha",
+        "description": "Бета-версия (Early Access)",
+        "image_url": "pack://application:,,,/Assets/FPBoosterAlpha.png",
+        "is_available": has_alpha, 
+        "download_url": "/api/client/get-core?ver=alpha"
     })
 
     return products
 
 # Твой секретный ключ
+# Твой секретный ключ (убедись, что он совпадает с тем, что в лаунчере)
 SERVER_SIDE_AES_KEY = "15345172281214561882123456789999"
 
 @app.get("/api/client/get-core")
 async def get_client_core(request: Request, ver: str = "standard", user_data = Depends(current_user)):
-    # 1. Проверяем лицензию
+    # 1. Проверяем подписку
     async with request.app.state.pool.acquire() as conn:
-        license_row = await conn.fetchrow("SELECT status, expires FROM licenses WHERE user_uid=$1", user_data["uid"])
-        if not license_row or license_row['status'] != 'active':
+        active = await conn.fetchval("""
+            SELECT COUNT(*) FROM user_groups 
+            WHERE user_uid=$1 AND is_active=TRUE AND expires_at > NOW()
+        """, user_data["uid"])
+        
+        if active == 0:
              raise HTTPException(403, "No active license")
-        if license_row['expires'] and license_row['expires'] < date.today():
-            raise HTTPException(403, "License expired")
 
-    # 2. Выбираем ЗАШИФРОВАННЫЙ файл
+    # 2. Выбираем файл
     filename = "FPBooster.dll.enc"
     if ver == "alpha": filename = "FPBooster_Alpha.dll.enc"
     elif ver == "plus": filename = "FPBooster_Plus.dll.enc"
 
-    file_path = f"protected_builds/{filename}"
+    # Путь к папке с билдами
+    protected_folder = os.path.join(BASE_DIR, "protected_builds") 
+    file_path = os.path.join(protected_folder, filename)
     
+    # Фолбэк (если запрошенного файла нет, отдаем обычный)
     if not os.path.exists(file_path):
-        file_path = "protected_builds/FPBooster.dll.enc"
+        file_path = os.path.join(protected_folder, "FPBooster.dll.enc")
 
     if not os.path.exists(file_path):
+        print(f"CRITICAL: File not found: {file_path}")
         raise HTTPException(500, "Build not found on server")
 
     with open(file_path, "rb") as f:
@@ -869,6 +861,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
