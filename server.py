@@ -725,6 +725,7 @@ async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
         "request": request, 
         "row": row, 
         "purchases": purchases, 
+        "now": datetime.now(),
         "user_groups": user_groups_list, 
         "all_groups": all_groups,
         "group_colors": GROUP_COLORS,
@@ -862,6 +863,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
