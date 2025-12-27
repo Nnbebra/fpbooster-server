@@ -53,6 +53,7 @@
                     </div>
                     <small class="text-muted" style="font-size: 0.7rem;">После сброса привязка произойдет при следующем входе.</small>
                 </div>
+
                 <div class="mb-3 form-check">
                     <input class="form-check-input" type="checkbox" value="true" id="email_confirmed" name="email_confirmed" 
                            {% if row.email_confirmed %}checked{% endif %}>
@@ -100,7 +101,7 @@
                             <td>
                                 <span class="badge bg-{{ badge_color }} fs-6">{{ ug.name }}</span>
                                 {% if not ug.is_active %}
-                                    <span class="badge bg-danger ms-1">Выкл</span>
+                                    <span class="badge bg-danger ms-1" style="font-size: 0.6rem;">OFF</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -114,10 +115,11 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                <form action="/admin/users/revoke_group" method="post" style="display:inline;" onsubmit="return confirm('Удалить привязку к группе {{ ug.name }}?');">
+                                <form action="/admin/users/revoke_group" method="post" style="display:inline;" onsubmit="return confirm('Удалить эту конкретную привязку к группе {{ ug.name }}?');">
                                     <input type="hidden" name="user_uid" value="{{ row.uid }}">
-                                    <input type="hidden" name="group_id" value="{{ ug.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Удалить">
+                                    <input type="hidden" name="record_id" value="{{ ug.id }}">
+                                    <input type="hidden" name="group_id" value="{{ ug.group_id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Удалить запись">
                                         <i class="fas fa-trash-alt"></i>
                                     </button>
                                 </form>
@@ -204,7 +206,6 @@
         const slug = selectedOption.getAttribute('data-slug');
         const isForeverCheckbox = document.getElementById('isForever');
         
-        // Группы, которые по умолчанию выдаются навсегда
         const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media', 'moderator'];
         
         if (foreverGroups.includes(slug)) {
