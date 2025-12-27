@@ -215,19 +215,27 @@ async def account_page(request: Request):
 # ==========================================
 @router.post("/cabinet", response_class=HTMLResponse)
 async def activate_license(request: Request, license_key: str = Form(...)):
+    # 1. Проверка авторизации
     try:
         user = await get_current_user(request)
+        if not user:
+            return RedirectResponse("/login", status_code=303)
     except:
-        return RedirectResponse("/login", status_code=302)
+        return RedirectResponse("/login", status_code=303)
 
     key_value = license_key.strip()
     if not key_value:
-         return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Введите ключ"})
+        return templates.TemplateResponse("activation_result.html", {
+            "request": request, 
+            "user": user, 
+            "success": False, 
+            "error": "Введите ключ"
+        })
 
     try:
         async with request.app.state.pool.acquire() as conn:
             async with conn.transaction():
-                # 1. Ищем ключ в НОВОЙ таблице group_keys
+                # 2. Ищем ключ в таблице group_keys
                 key_data = await conn.fetchrow("""
                     SELECT id, group_id, duration_days 
                     FROM group_keys 
@@ -235,27 +243,31 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                 """, key_value)
 
                 if not key_data:
-                    return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Ключ не найден или уже использован"})
+                    return templates.TemplateResponse("activation_result.html", {
+                        "request": request, 
+                        "user": user, 
+                        "success": False, 
+                        "error": "Ключ не найден или уже использован"
+                    })
 
+                key_id = key_data['id']
                 group_id = key_data['group_id']
                 duration = key_data['duration_days']
+                user_uid = user['uid']
                 
-                # 2. Проверяем текущую подписку на эту группу
+                # 3. Проверяем текущую подписку на эту группу
                 existing = await conn.fetchrow("""
                     SELECT id, expires_at FROM user_groups 
                     WHERE user_uid = $1 AND group_id = $2
-                """, user['uid'], group_id)
+                """, user_uid, group_id)
 
                 now = datetime.now()
-                new_expires = None
                 
                 if existing:
-                    # Продлеваем
+                    # Продлеваем: если старая еще действует — добавляем к ней, если нет — от текущего момента
                     current_expires = existing['expires_at']
-                    if current_expires > now:
-                        new_expires = current_expires + timedelta(days=duration)
-                    else:
-                        new_expires = now + timedelta(days=duration)
+                    start_point = current_expires if current_expires > now else now
+                    new_expires = start_point + timedelta(days=duration)
                     
                     await conn.execute("""
                         UPDATE user_groups 
@@ -263,32 +275,42 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                         WHERE id = $2
                     """, new_expires, existing['id'])
                 else:
-                    # Выдаем новую
+                    # Выдаем новую подписку
                     new_expires = now + timedelta(days=duration)
                     await conn.execute("""
                         INSERT INTO user_groups (user_uid, group_id, expires_at, is_active, granted_at)
                         VALUES ($1, $2, $3, TRUE, NOW())
-                    """, user['uid'], group_id, new_expires)
+                    """, user_uid, group_id, new_expires)
 
-                # 3. Гасим ключ
-                await conn.execute(
-                    """
+                # 4. Помечаем ключ как использованный
+                await conn.execute("""
                     UPDATE group_keys 
-                    SET is_used = TRUE, activated_by = $1
+                    SET is_used = TRUE, activated_by = $1, used_at = NOW()
                     WHERE id = $2
-                    """, user_uid, key_id
-                )
-                # 4. Лог
+                """, user_uid, key_id)
+
+                # 5. Записываем в историю покупок/активаций
                 await conn.execute("""
                     INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
                     VALUES ($1, $2, 0, 'KEY', 'key_activation', $3, NOW())
-                """, user['uid'], f"activation_group_{group_id}_{duration}d", key_value)
+                """, user_uid, f"activation_group_{group_id}_{duration}d", key_value)
 
-                return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": True, "days": duration, "new_expires": new_expires})
+                return templates.TemplateResponse("activation_result.html", {
+                    "request": request, 
+                    "user": user, 
+                    "success": True, 
+                    "days": duration, 
+                    "new_expires": new_expires.strftime("%d.%m.%Y %H:%M")
+                })
 
     except Exception as e:
-        print(f"Activation Error: {e}")
-        return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Ошибка при активации"})
+        print(f"Activation error: {e}") # Для отладки
+        return templates.TemplateResponse("activation_result.html", {
+            "request": request, 
+            "user": user, 
+            "success": False, 
+            "error": "Произошла внутренняя ошибка при активации"
+        })
 
 
 # ==========================================
@@ -407,6 +429,7 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
 
