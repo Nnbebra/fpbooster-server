@@ -510,27 +510,25 @@ async def download_product(
             required_level = prod['required_access_level'] if prod['required_access_level'] else 1
 
             # 2. === ПРОВЕРКА ДОСТУПА (ГРУППЫ) ===
-            # Ищем, есть ли у пользователя АКТИВНАЯ группа с достаточным уровнем (>= required)
+            # ИСПРАВЛЕНО: Добавлена проверка на NULL (вечный доступ)
             has_access = await conn.fetchval("""
                 SELECT COUNT(*) 
                 FROM user_groups ug
                 JOIN groups g ON ug.group_id = g.id
                 WHERE ug.user_uid = $1 
                   AND ug.is_active = TRUE 
-                  AND ug.expires_at > NOW()
+                  AND (ug.expires_at IS NULL OR ug.expires_at > NOW())
                   AND g.access_level >= $2
             """, user_uid, required_level)
 
             if has_access == 0:
                  return JSONResponse({"error": f"NO_ACCESS: Required Level {required_level}"}, status_code=403)
 
-            # 3. === HWID (Опционально) ===
-            # В новой системе можно привязывать HWID к пользователю в таблице users
-            # Для простоты пока просто обновляем HWID пользователя при скачивании
+            # 3. === HWID (Логика привязки) ===
+            # Если в заголовках пришел HWID, можно его залогировать или обновить у юзера
             if x_hwid:
-                # Можно добавить логику блокировки, если HWID сменился
-                # Пока просто обновляем "последний известный HWID" (нужно поле hwid в users)
-                # await conn.execute("UPDATE users SET hwid=$1 WHERE uid=$2", x_hwid, user_uid)
+                # В таблице 'users' у тебя есть поле 'uid', можно добавить колонку 'last_hwid'
+                # await conn.execute("UPDATE users SET last_login_hwid=$1 WHERE uid=$2", x_hwid, user_uid)
                 pass
 
             # 4. === ОТДАЧА ФАЙЛА ===
@@ -554,7 +552,8 @@ async def download_product(
 
             headers = {
                 "X-Encryption-Key": key_to_send,
-                "Content-Disposition": f'attachment; filename="{filename}"'
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "X-Encryption-Key" # Важно для лаунчера
             }
             return FileResponse(file_path, headers=headers, media_type='application/octet-stream')
 
@@ -871,6 +870,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
