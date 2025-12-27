@@ -46,15 +46,13 @@ async def get_current_user(request: Request):
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
             """
-            SELECT id, email, username, email_confirmed, created_at, last_login, 
-                   uid, user_group as "group"
-            FROM users 
-            WHERE id=$1
-            """,
-            user_id
+            SELECT id, email, username, email_confirmed, created_at, last_login, uid 
+            FROM users WHERE id = $1
+            """, user_id
         )
 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     
     return user
+
