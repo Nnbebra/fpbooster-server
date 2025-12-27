@@ -1,28 +1,43 @@
 from fastapi import APIRouter, Request, Form, Body, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from typing import List, Optional  # <--- Должно быть так
+from typing import List, Optional
 from pydantic import BaseModel
+from datetime import date, datetime, timedelta
+import secrets
+import string
 
 from .jwt_utils import hash_password, verify_password, make_jwt
 from .guards import get_current_user
 from .email_service import create_and_send_confirmation
-from datetime import date, datetime, timedelta
-import secrets
-import string
-import uuid
-
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-# === МОДЕЛЬ ДЛЯ ВХОДА ЛАУНЧЕРА (Новое) ===
+# === МОДЕЛИ ===
 class LauncherLoginModel(BaseModel):
     username: str
     password: str
 
+class ProductSchema(BaseModel):
+    id: int
+    name: str
+    description: str
+    image_url: str
+    download_url: str
+    version: str
 
+class UserProfileSchema(BaseModel):
+    uid: str
+    username: str
+    email: str
+    group_name: str
+    group_slug: str
+    avatar_url: Optional[str] = None
+    expires: Optional[str] = None
+    available_products: List[ProductSchema]
 
+# Цвета групп для шаблонов
 GROUP_COLORS = {
     "tech-admin": "purple",     
     "admin": "indigo",          
@@ -36,7 +51,6 @@ GROUP_COLORS = {
     "basic": "success",         
     "user": "secondary"         
 }
-
 
 # ==========================================
 #  РЕГИСТРАЦИЯ
@@ -67,23 +81,24 @@ async def register_submit(
         
         pw_hash = hash_password(password)
         
+        # Создаем пользователя
         row = await conn.fetchrow(
             "INSERT INTO users (email, password_hash, username) VALUES ($1, $2, $3) RETURNING id, email, uid, username",
             email, pw_hash, (username or "").strip() or None
         )
-
-        lic_key_internal = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
-        await conn.execute(
-            "INSERT INTO licenses (license_key, status, user_name, user_uid) VALUES ($1, 'expired', $2, $3)",
-            lic_key_internal, row['username'], row['uid']
-        )
+        
+        # ВНИМАНИЕ: Мы убрали INSERT INTO licenses, так как этой таблицы больше нет.
+        # Группу по умолчанию (User) можно не выдавать явно, если логика подразумевает отсутствие группы = User.
 
     try:
         await create_and_send_confirmation(request.app, row["id"], row["email"])
     except: pass
 
+    # Авторизуем сразу после регистрации
     token = make_jwt(row["id"], row["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
+    
+    # КУКИ УСТАНАВЛИВАЮТСЯ ЗДЕСЬ
     resp.set_cookie("user_auth", token, path="/", httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
     return resp
 
@@ -106,6 +121,8 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
 
     token = make_jwt(user["id"], user["email"])
     resp = RedirectResponse(url="/cabinet", status_code=302)
+    
+    # КУКИ УСТАНАВЛИВАЮТСЯ ЗДЕСЬ
     resp.set_cookie("user_auth", token, path="/", httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
     return resp
 
@@ -121,53 +138,54 @@ async def account_page(request: Request):
         return RedirectResponse("/login", status_code=302)
 
     async with request.app.state.pool.acquire() as conn:
-        # 1. Получаем лицензии
-        licenses = await conn.fetch("SELECT license_key, status, expires, hwid, duration_days FROM licenses WHERE user_uid = $1 ORDER BY created_at DESC", user["uid"])
-        
-        # 2. Получаем сумму покупок
+        # 1. Получаем сумму покупок
         total_spent = await conn.fetchval("SELECT COALESCE(SUM(amount), 0) FROM purchases WHERE user_uid=$1", user["uid"])
         
-        # 3. НОВОЕ: Получаем активную группу из user_groups
-        group_row = await conn.fetchrow("""
-            SELECT g.name, g.slug 
+        # 2. Получаем ВСЕ группы пользователя для отображения
+        # Используем НОВУЮ таблицу user_groups
+        groups = await conn.fetch("""
+            SELECT g.name, g.slug, ug.expires_at, ug.is_active
             FROM user_groups ug
             JOIN groups g ON ug.group_id = g.id
-            WHERE ug.user_uid = $1 AND ug.is_active = TRUE
-            LIMIT 1
+            WHERE ug.user_uid = $1
+            ORDER BY ug.is_active DESC, ug.expires_at DESC
         """, user["uid"])
 
-        # 4. Ссылка на скачивание (Пытаемся взять из товаров, если нет - из конфига)
-        product_dl = await conn.fetchrow("SELECT download_url FROM products WHERE download_url IS NOT NULL AND download_url != '' LIMIT 1")
-        if product_dl:
-            download_url = product_dl['download_url']
-        else:
-            download_url = getattr(request.app.state, "DOWNLOAD_URL", "")
-
-    # Логика поиска активной лицензии
-    found_active = None
-    if licenses:
-        for lic in licenses:
-            # Считаем активной если статус active И (дата не прошла ИЛИ это вечная лицуха > 10000 дней)
-            is_valid_date = lic['expires'] and (lic['expires'] >= date.today() or lic.get('duration_days', 0) > 10000)
-            if lic['status'] == 'active' and is_valid_date:
-                found_active = lic
+        # 3. Определяем "Главную" активную группу
+        active_group = None
+        for g in groups:
+            if g['is_active'] and (g['expires_at'] is None or g['expires_at'] > datetime.now()):
+                active_group = g
                 break
+        
+        # 4. Ссылка на скачивание
+        # Берем любой доступный продукт
+        download_url = "/api/client/products" # Заглушка, если конкретного URL нет
+
+    # Подготовка данных для шаблона
+    # Старый шаблон account.html ждет переменные licenses, active_license.
+    # Мы их эмулируем, чтобы шаблон не ломался.
     
-    display_license = found_active if found_active else (licenses[0] if licenses else None)
-    
-    # Определяем данные группы для шаблона
-    group_name = group_row['name'] if group_row else "User"
-    group_slug = group_row['slug'] if group_row else "user"
+    display_license = None
+    if active_group:
+        display_license = {
+            "license_key": active_group['name'], # Вместо ключа показываем имя группы
+            "status": "active",
+            "expires": active_group['expires_at'].date() if active_group['expires_at'] else date(2099, 1, 1),
+            "hwid": "Привязан" # Заглушка
+        }
+
+    group_name = active_group['name'] if active_group else "User"
+    group_slug = active_group['slug'] if active_group else "user"
     
     return templates.TemplateResponse("account.html", {
         "request": request, 
         "user": user, 
-        "licenses": licenses,
+        "licenses": [], # Пустой список, чтобы шаблон не ругался
         "active_license": display_license, 
-        "is_license_active": (found_active is not None),
+        "is_license_active": (active_group is not None),
         "download_url": download_url, 
         "total_spent": total_spent,
-        # Новые данные для цветов
         "group_name": group_name,
         "group_slug": group_slug,
         "group_colors": GROUP_COLORS
@@ -175,7 +193,7 @@ async def account_page(request: Request):
 
 
 # ==========================================
-#  АКТИВАЦИЯ
+#  АКТИВАЦИЯ (Через group_keys)
 # ==========================================
 @router.post("/cabinet", response_class=HTMLResponse)
 async def activate_license(request: Request, license_key: str = Form(...)):
@@ -184,41 +202,74 @@ async def activate_license(request: Request, license_key: str = Form(...)):
     except:
         return RedirectResponse("/login", status_code=302)
 
-    input_token = license_key.strip()
+    key_value = license_key.strip()
+    if not key_value:
+         return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Введите ключ"})
 
-    async with request.app.state.pool.acquire() as conn:
-        token_row = await conn.fetchrow("SELECT * FROM activation_tokens WHERE token=$1 AND status='unused'", input_token)
-        
-        if not token_row:
-            return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Ключ не найден или уже использован"})
+    try:
+        async with request.app.state.pool.acquire() as conn:
+            async with conn.transaction():
+                # 1. Ищем ключ в НОВОЙ таблице group_keys
+                key_data = await conn.fetchrow("""
+                    SELECT id, group_id, duration_days 
+                    FROM group_keys 
+                    WHERE key_code = $1 AND is_used = FALSE
+                """, key_value)
 
-        try:
-            user_lic = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1 ORDER BY created_at DESC LIMIT 1", user['uid'])
-            days_to_add = token_row['duration_days']
-            today = date.today()
-            new_expires = None
-            
-            if user_lic:
-                current_expires = user_lic['expires']
-                is_active_now = (user_lic['status'] == 'active')
-                if is_active_now and current_expires and current_expires >= today:
-                    new_expires = current_expires + timedelta(days=days_to_add)
+                if not key_data:
+                    return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Ключ не найден или уже использован"})
+
+                group_id = key_data['group_id']
+                duration = key_data['duration_days']
+                
+                # 2. Проверяем текущую подписку на эту группу
+                existing = await conn.fetchrow("""
+                    SELECT id, expires_at FROM user_groups 
+                    WHERE user_uid = $1 AND group_id = $2
+                """, user['uid'], group_id)
+
+                now = datetime.now()
+                new_expires = None
+                
+                if existing:
+                    # Продлеваем
+                    current_expires = existing['expires_at']
+                    if current_expires > now:
+                        new_expires = current_expires + timedelta(days=duration)
+                    else:
+                        new_expires = now + timedelta(days=duration)
+                    
+                    await conn.execute("""
+                        UPDATE user_groups 
+                        SET expires_at = $1, is_active = TRUE, granted_at = NOW()
+                        WHERE id = $2
+                    """, new_expires, existing['id'])
                 else:
-                    new_expires = today + timedelta(days=days_to_add)
-                target_key = user_lic['license_key']
-                async with conn.transaction():
-                    await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user['uid'], token_row['id'])
-                    await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE license_key=$2", new_expires, target_key)
-            else:
-                new_expires = today + timedelta(days=days_to_add)
-                new_lic_key = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(16))
-                async with conn.transaction():
-                    await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user['uid'], token_row['id'])
-                    await conn.execute("INSERT INTO licenses (license_key, status, user_name, user_uid, expires, activated_at) VALUES ($1, 'active', $2, $3, $4, NOW())", new_lic_key, user['username'], user['uid'], new_expires)
+                    # Выдаем новую
+                    new_expires = now + timedelta(days=duration)
+                    await conn.execute("""
+                        INSERT INTO user_groups (user_uid, group_id, expires_at, is_active, granted_at)
+                        VALUES ($1, $2, $3, TRUE, NOW())
+                    """, user['uid'], group_id, new_expires)
 
-            return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": True, "days": days_to_add, "new_expires": new_expires})
-        except Exception as e:
-            return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Ошибка БД"})
+                # 3. Гасим ключ
+                await conn.execute("""
+                    UPDATE group_keys 
+                    SET is_used = TRUE, activated_by = $1, used_at = NOW()
+                    WHERE id = $2
+                """, user['uid'], key_data['id'])
+
+                # 4. Лог
+                await conn.execute("""
+                    INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
+                    VALUES ($1, $2, 0, 'KEY', 'key_activation', $3, NOW())
+                """, user['uid'], f"activation_group_{group_id}_{duration}d", key_value)
+
+                return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": True, "days": duration, "new_expires": new_expires})
+
+    except Exception as e:
+        print(f"Activation Error: {e}")
+        return templates.TemplateResponse("activation_result.html", {"request": request, "user": user, "success": False, "error": "Ошибка при активации"})
 
 
 # ==========================================
@@ -258,36 +309,22 @@ async def user_logout():
 
 
 # ==========================================
-#  API ДЛЯ ЛАУНЧЕРА (ИСПРАВЛЕНО)
+#  API ДЛЯ ЛАУНЧЕРА
 # ==========================================
 
 @router.post("/api/login_launcher")
 async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
-    """
-    Теперь принимаем данные через Pydantic модель LauncherLoginModel.
-    FastAPI сам проверит, что это JSON и что там есть username/password.
-    """
     email = login_data.username.strip().lower()
     password = login_data.password
-
-    print(f"[LAUNCHER] Login attempt: {email}") # Лог в консоль
 
     async with request.app.state.pool.acquire() as conn:
         user = await conn.fetchrow("SELECT id, email, password_hash, username, uid FROM users WHERE email=$1", email)
         
-        if not user:
-            print("[LAUNCHER] User not found")
+        if not user or not verify_password(password, user["password_hash"]):
             return JSONResponse({"status": "error", "message": "Invalid credentials"}, status_code=401)
         
-        if not verify_password(password, user["password_hash"]):
-            print("[LAUNCHER] Wrong password")
-            return JSONResponse({"status": "error", "message": "Invalid credentials"}, status_code=401)
-        
-        # Обновляем last_login
         await conn.execute("UPDATE users SET last_login=NOW() WHERE id=$1", user["id"])
-        
         token = make_jwt(user["id"], user["email"])
-        print(f"[LAUNCHER] Success for {user['username']}")
         
         return {
             "status": "success", 
@@ -296,211 +333,49 @@ async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
             "uid": str(user["uid"])
         }
 
-# auth/users_router.py
-
-@router.get("/api/me_launcher")
-async def get_api_profile_launcher(request: Request, user=Depends(get_current_user)):
-    """
-    Эндпоинт специально для C# Лаунчера.
-    Возвращает профиль + список доступных продуктов на основе ГРУППЫ.
-    """
-    try:
-        pool = request.app.state.pool
-        async with pool.acquire() as conn:
-            # 1. Ищем самую "сильную" активную группу пользователя
-            # Сортируем по access_level DESC (3 = Alpha, 2 = Plus, 1 = Basic)
-            # Берем только ту, у которой срок действия еще не истек
-            active_group = await conn.fetchrow("""
-                SELECT g.name, g.slug, g.access_level, ug.expires_at 
-                FROM user_groups ug
-                JOIN groups g ON ug.group_id = g.id
-                WHERE ug.user_uid = $1 
-                  AND ug.is_active = TRUE 
-                  AND ug.expires_at > NOW()
-                ORDER BY g.access_level DESC 
-                LIMIT 1
-            """, user["uid"])
-
-            # 2. Определяем данные для ответа
-            if not active_group:
-                group_name = "User"
-                expires_str = "Нет активной подписки"
-                user_access_level = 0 # Уровень доступа обычного юзера
-            else:
-                group_name = active_group['name']
-                user_access_level = active_group['access_level']
-                # Форматируем дату красиво для C#
-                expires_str = active_group['expires_at'].strftime("%d.%m.%Y %H:%M")
-
-            # 3. Получаем список продуктов, доступных для этого уровня
-            # Если access_level юзера >= required_access_level продукта, он его видит.
-            products_rows = await conn.fetch("""
-                SELECT id, name, description, image_url, download_url, version 
-                FROM products 
-                WHERE is_available = TRUE 
-                  AND required_access_level <= $1
-                ORDER BY id ASC
-            """, user_access_level)
-
-            products = []
-            for p in products_rows:
-                products.append({
-                    "id": p['id'],
-                    "name": p['name'],
-                    "description": p['description'],
-                    "image_url": p['image_url'],
-                    "download_url": p['download_url'],
-                    "version": p['version']
-                })
-
-            # 4. Возвращаем JSON, который ждет наш C# ApiClient
-            return {
-                "uid": str(user["uid"]),
-                "username": user["username"],
-                "group_name": group_name, # Лаунчер покрасит это поле сам
-                "expires": expires_str,
-                "available_products": products
-            }
-
-    except Exception as e:
-        print(f"Launcher Error: {e}") # Логируем в консоль сервера
-        return JSONResponse({"detail": str(e)}, status_code=500)
-
-
-
-@router.get("/api/user/sync_state")
-async def sync_user_state(request: Request, user=Depends(get_current_user)):
-    db = request.app.state.db
-    
-    # Получаем активные группы
-    groups = await db.fetch_all("""
-        SELECT g.slug, g.name, g.permissions 
-        FROM user_groups ug
-        JOIN groups g ON ug.group_id = g.id
-        WHERE ug.user_uid = :uid AND ug.is_active = TRUE
-        AND (ug.expires_at IS NULL OR ug.expires_at > NOW())
-    """, {"uid": user['uid']})
-
-    # Получаем активную лицензию
-    license = await db.fetch_one("""
-        SELECT status, expires, license_key 
-        FROM licenses WHERE user_uid = :uid AND status = 'active'
-        ORDER BY expires DESC LIMIT 1
-    """, {"uid": user['uid']})
-
-    return {
-        "uid": str(user['uid']),
-        "groups": [g['slug'] for g in groups],
-        "permissions": [p for g in groups for p in (g['permissions'] or {}).keys()], # Мержим права
-        "license": {
-            "type": license['license_key'] if license else None,
-            "expires": license['expires'] if license else None,
-            "is_valid": True if license else False
-        }
-    }
-
-
-
-
-# === МОДЕЛИ ОТВЕТА (Pydantic) ===
-# === МОДЕЛИ ОТВЕТА (Pydantic) ===
-class ProductSchema(BaseModel):
-    id: int
-    name: str           # <--- БЫЛО string, СТАЛО str
-    description: str
-    image_url: str
-    download_url: str
-    version: str
-
-class UserProfileSchema(BaseModel):
-    uid: str
-    username: str
-    email: str
-    group_name: str
-    group_slug: str
-    avatar_url: Optional[str] = None
-    expires: Optional[str] = None
-    available_products: List[ProductSchema]
-
-
-# ==========================================
-#   API PROFLIE (Вызывается лаунчером при запуске)
-# ==========================================
 @router.get("/api/me", response_model=UserProfileSchema)
 async def get_my_profile(request: Request, user=Depends(get_current_user)):
+    """
+    Профиль для лаунчера с расчетом доступных продуктов на основе ГРУППЫ.
+    """
     async with request.app.state.pool.acquire() as conn:
         # 1. Получаем активную группу
         group_row = await conn.fetchrow("""
-            SELECT g.name, g.slug 
+            SELECT g.name, g.slug, g.access_level, ug.expires_at
             FROM user_groups ug
             JOIN groups g ON ug.group_id = g.id
-            WHERE ug.user_uid = $1 AND ug.is_active = TRUE
+            WHERE ug.user_uid = $1 AND ug.is_active = TRUE AND ug.expires_at > NOW()
+            ORDER BY g.access_level DESC
             LIMIT 1
         """, user['uid'])
 
         group_name = group_row['name'] if group_row else "User"
         slug = group_row['slug'] if group_row else "user"
-
-        # 2. Получаем лицензию (для отображения даты истечения)
-        lic_row = await conn.fetchrow("""
-            SELECT expires, status, duration_days FROM licenses 
-            WHERE user_uid=$1 AND status='active' 
-            ORDER BY expires DESC LIMIT 1
-        """, user['uid'])
+        access_level = group_row['access_level'] if group_row else 0
         
         expires_str = "Нет лицензии"
-        if lic_row:
-             if lic_row['duration_days'] > 10000:
+        if group_row:
+             if group_row['expires_at'].year > 3000:
                  expires_str = "Навсегда"
              else:
-                 expires_str = lic_row['expires'].strftime("%d.%m.%Y")
+                 expires_str = group_row['expires_at'].strftime("%d.%m.%Y")
 
-        # 3. ЛОГИКА ДОСТУПА К ПРОДУКТАМ
-        # Определяем уровень доступа на основе слага группы
-        access_level = 0
-        
-        # Уровень 3: Admin, Tech Admin, Alpha (Видят всё)
-        if slug in ['admin', 'tech-admin', 'senior-staff', 'alpha', 'media']:
-            access_level = 3
-        # Уровень 2: Premium, Plus (Видят Plus и Standard)
-        elif slug in ['premium', 'plus', 'moderator']:
-            access_level = 2
-        # Уровень 1: Basic, User (Видят только Standard)
-        else:
-            access_level = 1
-
-        # 4. Получаем ВСЕ продукты
-        all_products = await conn.fetch("SELECT * FROM products WHERE is_available = TRUE ORDER BY id DESC")
+        # 2. Получаем доступные продукты
+        all_products = await conn.fetch("SELECT * FROM products WHERE is_available = TRUE ORDER BY id ASC")
         
         allowed_products = []
         for p in all_products:
-            p_name = p['name'].lower()
+            # Сравниваем уровень доступа группы с требуемым уровнем продукта
+            required_level = p.get('required_access_level', 1) 
+            # Если колонки required_access_level нет в БД, считаем её равной 1 (Basic)
             
-            # Фильтрация по названию (предполагаем, что в названии есть ключевые слова)
-            # Если у тебя логика другая, можно добавить колонку 'required_level' в таблицу products
-            
-            is_allowed = False
-            
-            if access_level == 3:
-                is_allowed = True # Админ/Альфа видит всё
-                
-            elif access_level == 2:
-                # Видит всё, КРОМЕ Alpha/Private
-                if "alpha" not in p_name and "private" not in p_name:
-                    is_allowed = True
-                    
-            elif access_level == 1:
-                # Видит только Standard / Free / Basic
-                if "plus" not in p_name and "alpha" not in p_name and "private" not in p_name:
-                    is_allowed = True
-            
-            if is_allowed:
+            if access_level >= required_level:
                 allowed_products.append({
                     "id": p['id'],
                     "name": p['name'],
                     "description": p['description'],
                     "image_url": p['image_url'],
-                    "download_url": p['download_url'],
+                    "download_url": f"/api/download/{p['id']}", # Генерируем ссылку на скачивание
                     "version": p['version']
                 })
 
@@ -508,12 +383,8 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "uid": str(user['uid']),
         "username": user['username'],
         "email": user['email'],
-        "group_name": group_name, # "Tech Admin"
-        "group_slug": slug,       # "tech-admin"
+        "group_name": group_name,
+        "group_slug": slug,
         "expires": expires_str,
         "available_products": allowed_products
     }
-
-
-
-
