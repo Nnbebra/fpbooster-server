@@ -13,6 +13,7 @@
     .bg-primary { background-color: #0d6efd !important; color: white; }
     .bg-success { background-color: #198754 !important; color: white; }
     .bg-secondary { background-color: #6c757d !important; color: white; }
+    .bg-alpha  { background-color: #0dcaf0 !important; color: black; font-weight: bold; } /* Alpha */
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -25,6 +26,11 @@
         <div class="card-dark mb-4">
             <h4 class="mb-3 text-white">Основные настройки</h4>
             <form method="post" action="/admin/users/edit/{{ row.uid }}">
+                <div class="mb-3">
+                  <label class="form-label text-muted">UID</label>
+                  <input type="text" class="form-control bg-dark text-muted border-secondary" value="{{ row.uid }}" readonly disabled style="font-size: 0.8rem;">
+                </div>
+
                 <div class="mb-3">
                   <label class="form-label text-muted">Email</label>
                   <input type="text" class="form-control bg-dark text-white border-secondary" value="{{ row.email }}" readonly disabled>
@@ -56,7 +62,7 @@
         
         <div class="card-dark mb-4 border border-info">
             <h4 class="mb-3 text-info">Подписки (Группы)</h4>
-            <p class="text-muted small">Наличие активной группы дает доступ к соответствующим продуктам в Лаунчере.</p>
+            <p class="text-muted small">Внимание: У пользователя может быть только одна активная группа одновременно. При выдаче новой, старая будет отключена.</p>
             
             {% if user_groups %}
             <div class="table-responsive">
@@ -109,7 +115,7 @@
             {% endif %}
 
             <form action="/admin/users/assign_group" method="POST" class="bg-dark p-3 rounded border border-secondary">
-                <h6 class="text-white mb-2">Выдать / Продлить группу</h6>
+                <h6 class="text-white mb-2">Выдать / Сменить группу</h6>
                 <input type="hidden" name="user_uid" value="{{ row.uid }}">
                 
                 <div class="row g-2 align-items-end">
@@ -173,12 +179,15 @@
 <script>
     function checkGroupType() {
         const select = document.getElementById('groupSelect');
+        // Защита от отсутствия options
+        if (!select || select.selectedIndex < 0) return;
+
         const selectedOption = select.options[select.selectedIndex];
         const slug = selectedOption.getAttribute('data-slug');
         const isForeverCheckbox = document.getElementById('isForever');
         
-        // Группы персонала обычно выдаются навсегда
-        const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media'];
+        // Список групп, которые по умолчанию выдаются навсегда
+        const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media', 'moderator'];
         
         if (foreverGroups.includes(slug)) {
             isForeverCheckbox.checked = true;
@@ -191,13 +200,16 @@
     function toggleDaysInput() {
         const isForever = document.getElementById('isForever').checked;
         const daysContainer = document.getElementById('daysContainer');
+        const daysInput = document.getElementById('daysInput');
         
         if (isForever) {
             daysContainer.style.opacity = '0.3';
-            daysContainer.style.pointerEvents = 'none';
+            // Не просто pointer-events, а disable input, чтобы не отправлялся мусор (опционально)
+            // Но лучше оставить enabled, просто скрыть визуально, логика на бэкенде справится
+            daysInput.disabled = true; 
         } else {
             daysContainer.style.opacity = '1';
-            daysContainer.style.pointerEvents = 'auto';
+            daysInput.disabled = false;
         }
     }
 
@@ -206,6 +218,3 @@
     });
 </script>
 {% endblock %}
-
-
-
