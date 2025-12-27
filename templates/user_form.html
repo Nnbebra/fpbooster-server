@@ -37,7 +37,22 @@
                   <label class="form-label text-muted small">Email</label>
                   <input type="text" class="form-control bg-dark text-white border-secondary" value="{{ row.email }}" readonly disabled>
                 </div>
-                
+
+                <div class="mb-3">
+                    <label class="form-label text-muted small">Идентификатор железа (HWID)</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control bg-dark text-info border-secondary" 
+                               value="{{ row.hwid if row.hwid else 'Не привязан' }}" readonly style="font-size: 0.75rem;">
+                        {% if row.hwid %}
+                        <a href="/admin/users/reset_hwid/{{ row.uid }}" 
+                           class="btn btn-outline-danger" 
+                           onclick="return confirm('Сбросить привязку железа для этого пользователя?')">
+                            <i class="fas fa-undo"></i> Сброс
+                        </a>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted" style="font-size: 0.7rem;">После сброса привязка произойдет при следующем входе.</small>
+                </div>
                 <div class="mb-3 form-check">
                     <input class="form-check-input" type="checkbox" value="true" id="email_confirmed" name="email_confirmed" 
                            {% if row.email_confirmed %}checked{% endif %}>
@@ -59,7 +74,7 @@
         
         <div class="text-center mt-2">
              <a href="/admin/users/delete/{{ row.uid }}" class="text-danger small" onclick="return confirm('Вы уверены? Это действие удалит пользователя и все его подписки навсегда.')">
-                <i class="fas fa-user-slash"></i> Удалить пользователя
+                <i class="fas fa-user-slash"></i> Удалить пользователя навсегда
              </a>
         </div>
     </div>
@@ -84,6 +99,9 @@
                         <tr>
                             <td>
                                 <span class="badge bg-{{ badge_color }} fs-6">{{ ug.name }}</span>
+                                {% if not ug.is_active %}
+                                    <span class="badge bg-danger ms-1">Выкл</span>
+                                {% endif %}
                             </td>
                             <td>
                                 {% if ug.expires_at and ug.expires_at.year > 2090 %}
@@ -99,8 +117,8 @@
                                 <form action="/admin/users/revoke_group" method="post" style="display:inline;" onsubmit="return confirm('Удалить привязку к группе {{ ug.name }}?');">
                                     <input type="hidden" name="user_uid" value="{{ row.uid }}">
                                     <input type="hidden" name="group_id" value="{{ ug.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Отозвать группу">
-                                        <i class="fas fa-times"></i>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Удалить">
+                                        <i class="fas fa-trash-alt"></i>
                                     </button>
                                 </form>
                             </td>
@@ -114,33 +132,33 @@
             {% endif %}
 
             <form action="/admin/users/assign_group" method="POST" class="bg-dark p-3 rounded border border-secondary shadow-sm">
-                <h6 class="text-white mb-3">Выдать новую группу / продлить существующую</h6>
+                <h6 class="text-white mb-3">Выдать новую группу</h6>
                 <input type="hidden" name="user_uid" value="{{ row.uid }}">
                 
                 <div class="row g-2 align-items-end">
                     <div class="col-md-5">
-                        <label class="form-label text-muted small mb-1">Выберите группу</label>
+                        <label class="form-label text-muted small mb-1">Группа</label>
                         <select name="group_id" class="form-select form-select-sm bg-dark text-white border-secondary" id="groupSelect" required onchange="checkGroupType()">
                             {% for g in all_groups %}
                                 <option value="{{ g.id }}" data-slug="{{ g.slug }}">
-                                    {{ g.name }} (Доступ: {{ g.access_level }})
+                                    {{ g.name }} (Lvl: {{ g.access_level }})
                                 </option>
                             {% endfor %}
                         </select>
                     </div>
                     
                     <div class="col-md-3" id="daysContainer">
-                        <label class="form-label text-muted small mb-1">Длительность (дней)</label>
+                        <label class="form-label text-muted small mb-1">Дней</label>
                         <input type="number" name="duration_days" id="daysInput" class="form-control form-control-sm bg-dark text-white border-secondary" value="30" min="1">
                     </div>
 
                     <div class="col-md-4">
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="is_forever" id="isForever" value="true" onchange="toggleDaysInput()">
-                            <label class="form-check-label text-white small" for="isForever">Выдать навсегда</label>
+                            <label class="form-check-label text-white small" for="isForever">Навсегда</label>
                         </div>
                         <button type="submit" class="btn btn-success btn-sm w-100">
-                            <i class="fas fa-plus-circle"></i> Применить
+                            <i class="fas fa-plus-circle"></i> Выдать
                         </button>
                     </div>
                 </div>
@@ -155,7 +173,7 @@
                         <thead class="sticky-top bg-dark">
                             <tr class="text-muted">
                                 <th>Дата</th>
-                                <th>Товар / План</th>
+                                <th>Действие</th>
                                 <th>Сумма</th>
                             </tr>
                         </thead>
@@ -171,7 +189,7 @@
                     </table>
                 </div>
             {% else %}
-                <p class="text-muted text-center py-3 mb-0">Транзакций не найдено.</p>
+                <p class="text-muted text-center py-3 mb-0">История пуста.</p>
             {% endif %}
         </div>
     </div>
@@ -186,7 +204,7 @@
         const slug = selectedOption.getAttribute('data-slug');
         const isForeverCheckbox = document.getElementById('isForever');
         
-        // Группы персонала, которые обычно выдаются навсегда
+        // Группы, которые по умолчанию выдаются навсегда
         const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media', 'moderator'];
         
         if (foreverGroups.includes(slug)) {
