@@ -13,7 +13,7 @@
     .bg-primary { background-color: #0d6efd !important; color: white; }
     .bg-success { background-color: #198754 !important; color: white; }
     .bg-secondary { background-color: #6c757d !important; color: white; }
-    .bg-alpha  { background-color: #0dcaf0 !important; color: black; font-weight: bold; } /* Alpha */
+    .bg-alpha  { background-color: #0dcaf0 !important; color: black; font-weight: bold; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -54,15 +54,13 @@
         </div>
         
         <div class="text-center mt-2">
-             <a href="/admin/users/delete/{{ row.uid }}" class="text-danger small" onclick="return confirm('Удалить пользователя и все его данные?')">Удалить пользователя навсегда</a>
+             <a href="/admin/users/delete/{{ row.uid }}" class="text-danger small" onclick="return confirm('Удалить пользователя навсегда?')">Удалить пользователя</a>
         </div>
     </div>
 
     <div class="col-md-7">
-        
         <div class="card-dark mb-4 border border-info">
-            <h4 class="mb-3 text-info">Подписки (Группы)</h4>
-            <p class="text-muted small">Внимание: У пользователя может быть только одна активная группа одновременно. При выдаче новой, старая будет отключена.</p>
+            <h4 class="mb-3 text-info">Активные подписки</h4>
             
             {% if user_groups %}
             <div class="table-responsive">
@@ -79,12 +77,7 @@
                         {% set badge_color = group_colors.get(ug.slug, 'secondary') %}
                         <tr>
                             <td>
-                                <span class="badge bg-{{ badge_color }} fs-6">
-                                    {{ ug.name }}
-                                </span>
-                                {% if not ug.is_active %}
-                                    <span class="badge bg-danger ms-1">Отключена</span>
-                                {% endif %}
+                                <span class="badge bg-{{ badge_color }} fs-6">{{ ug.name }}</span>
                             </td>
                             <td>
                                 {% if ug.expires_at and ug.expires_at.year > 2090 %}
@@ -97,11 +90,11 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                <form action="/admin/users/revoke_group" method="POST" onsubmit="return confirm('Отключить группу {{ ug.name }}?');">
+                                <form action="/admin/users/revoke_group" method="post" style="display:inline;" onsubmit="return confirm('Удалить привязку к группе {{ ug.name }}?');">
                                     <input type="hidden" name="user_uid" value="{{ row.uid }}">
                                     <input type="hidden" name="group_id" value="{{ ug.id }}">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" title="Снять группу">
-                                        <i class="fas fa-times"></i>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
+                                        <i class="fas fa-trash-alt"></i>
                                     </button>
                                 </form>
                             </td>
@@ -111,28 +104,28 @@
                 </table>
             </div>
             {% else %}
-                <div class="alert alert-secondary py-2 small mb-3">У пользователя нет активных подписок.</div>
+                <div class="alert alert-secondary py-2 small mb-3">Нет активных групп.</div>
             {% endif %}
 
             <form action="/admin/users/assign_group" method="POST" class="bg-dark p-3 rounded border border-secondary">
-                <h6 class="text-white mb-2">Выдать / Сменить группу</h6>
+                <h6 class="text-white mb-2">Выдать новую группу</h6>
                 <input type="hidden" name="user_uid" value="{{ row.uid }}">
                 
                 <div class="row g-2 align-items-end">
                     <div class="col-md-5">
-                        <label class="form-label text-muted small mb-0">Группа</label>
-                        <select class="form-select form-select-sm bg-dark text-white border-secondary" name="group_id" id="groupSelect" required onchange="checkGroupType()">
-                            {% for group in all_groups %}
-                            <option value="{{ group.id }}" data-slug="{{ group.slug }}">
-                                {{ group.name }}
-                            </option>
+                        <label class="form-label text-muted small mb-0">Выберите группу</label>
+                        <select name="group_id" class="form-select form-select-sm bg-dark text-white border-secondary" id="groupSelect" required onchange="checkGroupType()">
+                            {% for g in all_groups %}
+                                <option value="{{ g.id }}" data-slug="{{ g.slug }}">
+                                    {{ g.name }} (Lvl: {{ g.access_level }})
+                                </option>
                             {% endfor %}
                         </select>
                     </div>
                     
                     <div class="col-md-3" id="daysContainer">
                         <label class="form-label text-muted small mb-0">Дней</label>
-                        <input type="number" name="duration_days" id="daysInput" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="30" value="30">
+                        <input type="number" name="duration_days" id="daysInput" class="form-control form-control-sm bg-dark text-white border-secondary" value="30">
                     </div>
 
                     <div class="col-md-4">
@@ -140,21 +133,21 @@
                             <input class="form-check-input" type="checkbox" name="is_forever" id="isForever" value="true" onchange="toggleDaysInput()">
                             <label class="form-check-label text-white small" for="isForever">Навсегда</label>
                         </div>
-                        <button type="submit" class="btn btn-success btn-sm w-100">Выдать</button>
+                        <button type="submit" class="btn btn-success btn-sm w-100">Добавить / Обновить</button>
                     </div>
                 </div>
             </form>
         </div>
 
         <div class="card-dark">
-            <h4 class="mb-3 text-white">История покупок</h4>
+            <h4 class="mb-3 text-white">История транзакций</h4>
             {% if purchases %}
                 <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
                     <table class="table table-dark table-sm table-hover mb-0" style="font-size: 0.85rem;">
                         <thead>
                             <tr>
                                 <th>Дата</th>
-                                <th>Товар</th>
+                                <th>Товар / Действие</th>
                                 <th>Сумма</th>
                             </tr>
                         </thead>
@@ -179,14 +172,12 @@
 <script>
     function checkGroupType() {
         const select = document.getElementById('groupSelect');
-        // Защита от отсутствия options
         if (!select || select.selectedIndex < 0) return;
 
         const selectedOption = select.options[select.selectedIndex];
         const slug = selectedOption.getAttribute('data-slug');
         const isForeverCheckbox = document.getElementById('isForever');
         
-        // Список групп, которые по умолчанию выдаются навсегда
         const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media', 'moderator'];
         
         if (foreverGroups.includes(slug)) {
@@ -204,8 +195,6 @@
         
         if (isForever) {
             daysContainer.style.opacity = '0.3';
-            // Не просто pointer-events, а disable input, чтобы не отправлялся мусор (опционально)
-            // Но лучше оставить enabled, просто скрыть визуально, логика на бэкенде справится
             daysInput.disabled = true; 
         } else {
             daysContainer.style.opacity = '1';
@@ -213,8 +202,6 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        checkGroupType();
-    });
+    document.addEventListener('DOMContentLoaded', checkGroupType);
 </script>
 {% endblock %}
