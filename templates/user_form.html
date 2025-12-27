@@ -81,7 +81,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if ug.expires_at.year > 2090 %}
+                                {% if ug.expires_at and ug.expires_at.year > 2090 %}
                                     <span class="text-success fw-bold">Навсегда</span>
                                 {% else %}
                                     {{ ug.expires_at.strftime('%d.%m.%Y') }}
@@ -206,3 +206,4 @@
     });
 </script>
 {% endblock %}
+
