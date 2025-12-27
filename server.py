@@ -375,73 +375,111 @@ async def get_client_profile(request: Request, user_data=Depends(current_user)):
         }
 
 # ==========================================================
-#             АДМИНКА И ЛИЦЕНЗИИ
+#             АДМИНКА, КЛЮЧИ И СКАЧИВАНИЕ (НОВОЕ)
 # ==========================================================
 
+# 1. АКТИВАЦИЯ КЛЮЧА (Замена старой активации)
 @app.post("/api/license/activate")
 async def activate_license(request: Request, token: Optional[str] = Form(None), key: Optional[str] = Form(None), user=Depends(current_user)):
-    token_value = (token or key or "").strip()
-    if not token_value: raise HTTPException(400, "Token is required")
+    """
+    Активирует ключ группы (из таблицы group_keys).
+    Работает и для веба, и для лаунчера.
+    """
+    key_value = (token or key or "").strip()
+    if not key_value: 
+        raise HTTPException(400, "Key is required")
+    
     try:
         async with request.app.state.pool.acquire() as conn:
             async with conn.transaction():
-                activation = await conn.fetchrow("SELECT * FROM activation_tokens WHERE token=$1", token_value)
-                if not activation: raise HTTPException(404, "Токен не найден")
-                if activation["status"] != "unused": raise HTTPException(400, "Токен уже использован")
+                # 1. Ищем ключ
+                key_data = await conn.fetchrow("""
+                    SELECT id, group_id, duration_days 
+                    FROM group_keys 
+                    WHERE key_code = $1 AND is_used = FALSE
+                """, key_value)
+
+                if not key_data:
+                    raise HTTPException(404, "Ключ не найден или уже использован")
+
+                group_id = key_data['group_id']
+                duration = key_data['duration_days']
                 
-                license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
-                if not license_row:
-                     import secrets
-                     new_key = "key_" + secrets.token_hex(8)
-                     await conn.execute("INSERT INTO licenses (license_key, status, user_uid, created_at) VALUES ($1, 'expired', $2, NOW())", new_key, user["uid"])
-                     license_row = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1", user["uid"])
+                # 2. Проверяем текущую подписку на эту группу
+                existing = await conn.fetchrow("""
+                    SELECT id, expires_at FROM user_groups 
+                    WHERE user_uid = $1 AND group_id = $2
+                """, user['uid'], group_id)
+
+                now = datetime.now()
                 
-                today = datetime.utcnow().date()
-                current_expires = license_row["expires"]
-                if current_expires and current_expires.year > 2090: base_date = today 
-                else: base_date = (current_expires if current_expires and current_expires >= today else today)
-                
-                days_to_add = activation["duration_days"]
-                try:
-                    new_expires = base_date + timedelta(days=days_to_add)
-                    if new_expires.year > 2100: new_expires = date(2100, 1, 1)
-                except OverflowError: new_expires = date(2100, 1, 1)
-                
-                await conn.execute("UPDATE licenses SET status='active', expires=$1, activated_at=NOW() WHERE user_uid=$2", new_expires, user["uid"])
-                await conn.execute("UPDATE activation_tokens SET status='used', used_at=NOW(), used_by_uid=$1 WHERE id=$2", user["uid"], activation["id"])
-                await conn.execute("INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) VALUES ($1, $2, 0, 'TOKEN', 'token', $3, NOW())", user["uid"], f"activation_{days_to_add}_days", token_value)
-    except HTTPException: raise 
+                # 3. Выдаем или продлеваем
+                if existing:
+                    # Если подписка активна - продлеваем от даты окончания
+                    # Если истекла - продлеваем от текущего момента
+                    current_expires = existing['expires_at']
+                    if current_expires > now:
+                        new_expires = current_expires + timedelta(days=duration)
+                    else:
+                        new_expires = now + timedelta(days=duration)
+                    
+                    await conn.execute("""
+                        UPDATE user_groups 
+                        SET expires_at = $1, is_active = TRUE, granted_at = NOW() 
+                        WHERE id = $2
+                    """, new_expires, existing['id'])
+                else:
+                    # Создаем новую запись
+                    new_expires = now + timedelta(days=duration)
+                    await conn.execute("""
+                        INSERT INTO user_groups (user_uid, group_id, expires_at, is_active, granted_at)
+                        VALUES ($1, $2, $3, TRUE, NOW())
+                    """, user['uid'], group_id, new_expires)
+
+                # 4. Помечаем ключ как использованный
+                await conn.execute("""
+                    UPDATE group_keys 
+                    SET is_used = TRUE, activated_by = $1 
+                    WHERE id = $2
+                """, user['uid'], key_data['id'])
+
+                # 5. Логируем покупку (для истории)
+                await conn.execute("""
+                    INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
+                    VALUES ($1, $2, 0, 'KEY', 'key_activation', $3, NOW())
+                """, user['uid'], f"activation_group_{group_id}_{duration}d", key_value)
+
+    except HTTPException: 
+        raise 
     except Exception as e:
         print(f"CRITICAL ERROR in activate_license: {e}")
         raise HTTPException(500, f"SQL Error: {str(e)}")
+    
     return RedirectResponse(url="/cabinet", status_code=302)
 
 
 # ==========================================
-#      FPBOOSTER PROTECTED API (FINAL)
+#       FPBOOSTER PROTECTED API (FINAL)
 # ==========================================
 
-# 1. СПИСОК ТОВАРОВ
+# 2. СПИСОК ТОВАРОВ
 @app.get("/api/products")
-async def get_api_products():
+async def get_api_products(request: Request):
     try:
-        async with app.state.pool.acquire() as conn:
-            # Запрашиваем товары. 
-            # Для Plus версии (id=1) image_url уже должен быть '/static/FPBooster+.png' в базе.
-            rows = await conn.fetch("SELECT id, name, description, image_url, is_available FROM products ORDER BY id ASC")
+        async with request.app.state.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT id, name, description, image_url, is_available, required_access_level FROM products ORDER BY id ASC")
             
             products = []
             for row in rows:
-                # Генерируем ссылку на наш API скачивания
                 secure_url = f"/api/download/{row['id']}"
-                
                 products.append({
                     "id": str(row['id']),
                     "name": row['name'],
                     "description": row['description'],
-                    "image_url": row['image_url'], # Лаунчер покажет картинку из папки static
+                    "image_url": row['image_url'], 
                     "is_available": row['is_available'],
-                    "download_url": secure_url 
+                    "download_url": secure_url,
+                    # Можно добавить поле required_level, если лаунчеру это нужно
                 })
             return products
     except Exception as e:
@@ -449,9 +487,10 @@ async def get_api_products():
         return JSONResponse({"error": "Internal Server Error"}, status_code=500)
 
 
-# 2. ЗАЩИЩЕННОЕ СКАЧИВАНИЕ (ЧИТАЕТ ИЗ PROTECTED_BUILDS)
+# 3. ЗАЩИЩЕННОЕ СКАЧИВАНИЕ (С ПРОВЕРКОЙ ГРУПП)
 @app.get("/api/download/{product_id}")
 async def download_product(
+    request: Request,
     product_id: int, 
     x_hwid: Optional[str] = Header(None, alias="X-HWID"), 
     user_row = Depends(get_current_user)
@@ -459,9 +498,12 @@ async def download_product(
     try:
         user_uid = user_row['uid'] 
         
-        async with app.state.pool.acquire() as conn:
-            # Запрашиваем данные о товаре
-            prod = await conn.fetchrow("SELECT exe_name, secret_key, name, is_available FROM products WHERE id = $1", product_id)
+        async with request.app.state.pool.acquire() as conn:
+            # 1. Получаем инфо о продукте и требуемом уровне доступа
+            prod = await conn.fetchrow("""
+                SELECT exe_name, secret_key, name, is_available, required_access_level 
+                FROM products WHERE id = $1
+            """, product_id)
             
             if not prod:
                 return JSONResponse({"error": "Product not found"}, status_code=404)
@@ -469,86 +511,71 @@ async def download_product(
             if not prod['is_available']:
                  return JSONResponse({"error": "Product is temporarily unavailable"}, status_code=403)
 
-            # === ЛОГИКА ОПРЕДЕЛЕНИЯ ФАЙЛА ===
-            # Жестко задаем имя файла для Plus версии, чтобы избежать ошибок базы данных
-            if product_id == 1: 
-                filename = "FPBoosterPlus.dll"
-            else:
-                # Для других товаров (на будущее) можно брать из exe_name или сделать switch
-                filename = "FPBoosterDefault.dll"
+            required_level = prod['required_access_level'] if prod['required_access_level'] else 1
 
-            # === ПРОВЕРКА ЛИЦЕНЗИИ (Только для Plus/ID=1) ===
-            if product_id == 1:
-                license = await conn.fetchrow("SELECT * FROM licenses WHERE user_uid=$1 AND status='active' AND expires >= CURRENT_DATE", user_uid)
-                
-                if not license:
-                     return JSONResponse({"error": "NO_LICENSE"}, status_code=403)
+            # 2. === ПРОВЕРКА ДОСТУПА (ГРУППЫ) ===
+            # Ищем, есть ли у пользователя АКТИВНАЯ группа с достаточным уровнем (>= required)
+            has_access = await conn.fetchval("""
+                SELECT COUNT(*) 
+                FROM user_groups ug
+                JOIN groups g ON ug.group_id = g.id
+                WHERE ug.user_uid = $1 
+                  AND ug.is_active = TRUE 
+                  AND ug.expires_at > NOW()
+                  AND g.access_level >= $2
+            """, user_uid, required_level)
 
-                # Привязка HWID
-                if not license['hwid']:
-                    if x_hwid: await conn.execute("UPDATE licenses SET hwid=$1 WHERE license_key=$2", x_hwid, license['license_key'])
-                elif x_hwid and license['hwid'] != x_hwid:
-                    return JSONResponse({"error": "HWID_MISMATCH"}, status_code=403)
-            # =======================================
+            if has_access == 0:
+                 return JSONResponse({"error": f"NO_ACCESS: Required Level {required_level}"}, status_code=403)
 
-            # === ПУТЬ К ФАЙЛУ ===
-            # ВАЖНО: Убедись, что эта папка существует на сервере!
-            # Если ты запускаешь на Windows локально, путь будет другой (например, "C:\\FPBoosterBuilds")
-            protected_folder = "/opt/fpbooster/protected_builds"
-            
-            # Если ты тестируешь на Windows, раскомментируй строку ниже:
-            # protected_folder = "protected_builds" 
+            # 3. === HWID (Опционально) ===
+            # В новой системе можно привязывать HWID к пользователю в таблице users
+            # Для простоты пока просто обновляем HWID пользователя при скачивании
+            if x_hwid:
+                # Можно добавить логику блокировки, если HWID сменился
+                # Пока просто обновляем "последний известный HWID" (нужно поле hwid в users)
+                # await conn.execute("UPDATE users SET hwid=$1 WHERE uid=$2", x_hwid, user_uid)
+                pass
+
+            # 4. === ОТДАЧА ФАЙЛА ===
+            filename = prod['exe_name'] 
+            # Фолбэк имен файлов для старой базы
+            if not filename:
+                if product_id == 1: filename = "FPBoosterPlus.dll"
+                else: filename = "FPBoosterDefault.dll"
+
+            # ПУТЬ К ФАЙЛАМ
+            # protected_folder = "protected_builds" # Для локального теста
+            protected_folder = "/opt/fpbooster/protected_builds" # Для продакшена
 
             file_path = os.path.join(protected_folder, filename)
             
             if not os.path.exists(file_path):
                 print(f"CRITICAL: File missing at {file_path}") 
-                return JSONResponse({"error": f"Build file missing on server: {filename}"}, status_code=404)
+                return JSONResponse({"error": f"File missing on server: {filename}"}, status_code=404)
 
-            # Формируем ключ шифрования
             key_to_send = prod['secret_key'] if prod['secret_key'] else ""
 
             headers = {
                 "X-Encryption-Key": key_to_send,
-                "Content-Disposition": f'attachment; filename="{prod["exe_name"]}"'
+                "Content-Disposition": f'attachment; filename="{filename}"'
             }
             return FileResponse(file_path, headers=headers, media_type='application/octet-stream')
 
     except Exception as e:
         import traceback
-        traceback.print_exc() # Выведет полную ошибку в консоль сервера
+        traceback.print_exc()
         return JSONResponse({"error": f"Server Error: {str(e)}"}, status_code=500)
-# ========= Админ API =========
-@app.post("/api/admin/license/create")
-async def create_or_update_license(data: LicenseAdmin, _guard: bool = Depends(admin_guard_api)):
-    async with app.state.pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO licenses (license_key, status, expires, user_name) VALUES ($1, $2, $3, $4)
-            ON CONFLICT (license_key) DO UPDATE SET status=EXCLUDED.status, expires=EXCLUDED.expires, user_name=EXCLUDED.user_name
-            """,
-            data.license_key.strip(), data.status, data.expires, data.user.strip() if data.user else None
-        )
-        return {"ok": True}
 
-@app.post("/api/admin/license/delete")
-async def delete_license(data: LicenseIn, _guard: bool = Depends(admin_guard_api)):
-    async with app.state.pool.acquire() as conn:
-        result = await conn.execute("DELETE FROM licenses WHERE license_key = $1", data.license.strip())
-        return {"ok": True, "result": result}
 
-@app.get("/api/admin/license/get")
-async def get_license_api(license: str, _guard: bool = Depends(admin_guard_api)):
-    async with app.state.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT license_key, status, expires, user_name, created_at, last_check FROM licenses WHERE license_key = $1", license.strip())
-        if not row:
-            raise HTTPException(status_code=404, detail="License not found")
-        return dict(row)
+# ==========================================
+#           ВЕБ-АДМИНКА (Обновленная)
+# ==========================================
 
-# ========= Веб-админка =========
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_root(request: Request, _=Depends(ui_guard)):
-    return RedirectResponse(url="/admin/licenses", status_code=302)
+    # Вместо лицензий редиректим на пользователей или ключи
+    return RedirectResponse(url="/admin/users", status_code=302)
 
 @app.get("/admin/login", response_class=HTMLResponse)
 async def admin_login_page(request: Request):
@@ -560,7 +587,8 @@ async def admin_login(request: Request, password: str = Form(...)):
         return templates.TemplateResponse("login.html", {"request": request, "error": "ADMIN_TOKEN не настроен"}, status_code=500)
     if password != app.state.ADMIN_TOKEN:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный токен"}, status_code=401)
-    resp = RedirectResponse(url="/admin/licenses", status_code=302)
+    
+    resp = RedirectResponse(url="/admin/users", status_code=302)
     resp.set_cookie("admin_auth", app.state.ADMIN_TOKEN, httponly=True, samesite="lax", secure=True, max_age=7*24*3600)
     return resp
 
@@ -570,124 +598,101 @@ async def admin_logout():
     resp.delete_cookie("admin_auth")
     return resp
 
-# --- ЛИЦЕНЗИИ ---
-@app.get("/admin/licenses", response_class=HTMLResponse)
-async def admin_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
+# --- УПРАВЛЕНИЕ КЛЮЧАМИ (Вместо лицензий) ---
+
+@app.get("/admin/keys", response_class=HTMLResponse)
+async def admin_keys_list(request: Request, _=Depends(ui_guard)):
+    """Страница со списком всех ключей"""
     async with app.state.pool.acquire() as conn:
-        query_base = """
-            SELECT l.license_key, l.status, l.expires, l.user_name, l.user_uid, l.hwid, 
-                   l.created_at, l.last_check, l.promocode_used, u.email
-            FROM licenses l
-            LEFT JOIN users u ON l.user_uid = u.uid
-        """
-        if q:
-            rows = await conn.fetch(
-                f"{query_base} WHERE l.license_key ILIKE $1 OR COALESCE(l.user_name,'') ILIKE $1 OR u.email ILIKE $1 ORDER BY l.created_at DESC", 
-                f"%{q}%"
-            )
-        else:
-            rows = await conn.fetch(f"{query_base} ORDER BY l.created_at DESC")
+        # Получаем ключи и имена групп
+        keys = await conn.fetch("""
+            SELECT gk.id, gk.key_code, gk.duration_days, gk.is_used, gk.created_at, g.name as group_name
+            FROM group_keys gk
+            LEFT JOIN groups g ON gk.group_id = g.id
+            ORDER BY gk.created_at DESC
+            LIMIT 100
+        """)
+        # Получаем список групп для формы создания
+        groups = await conn.fetch("SELECT id, name, slug FROM groups ORDER BY access_level ASC")
+        
+    # Вам понадобится шаблон keys.html (можно скопировать users.html и упростить)
+    # Если шаблона нет, покажем простой текст или JSON для теста
+    try:
+        return templates.TemplateResponse("keys.html", {"request": request, "keys": keys, "groups": groups})
+    except:
+        return JSONResponse({"detail": "Template keys.html not found, but data works", "keys": [dict(k) for k in keys]})
+
+@app.post("/admin/keys/create")
+async def admin_create_keys(
+    request: Request, 
+    group_id: int = Form(...), 
+    days: int = Form(...), 
+    count: int = Form(1), 
+    _=Depends(ui_guard)
+):
+    import secrets
+    if count > 50: count = 50
+    
+    async with app.state.pool.acquire() as conn:
+        for _ in range(count):
+            # Генерируем ключ формата XXXX-YYYY-ZZZZ
+            code = f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}".upper()
+            await conn.execute("""
+                INSERT INTO group_keys (key_code, group_id, duration_days) 
+                VALUES ($1, $2, $3)
+            """, code, group_id, days)
             
-    return templates.TemplateResponse("licenses.html", {"request": request, "rows": rows, "q": q or ""})
+    return RedirectResponse(url="/admin/keys", status_code=302)
 
-@app.get("/admin/licenses/new", response_class=HTMLResponse)
-async def admin_new_form(request: Request, _=Depends(ui_guard)):
-    return templates.TemplateResponse("license_form.html", {"request": request, "row": None, "error": None})
-
-@app.post("/admin/licenses/new")
-async def admin_create_form(request: Request, license_key: str = Form(...), status: str = Form(...), expires: str = Form(None), user: str = Form(None), _=Depends(ui_guard)):
-    try:
-        exp = date.fromisoformat(expires) if expires else None
-    except Exception:
-        return templates.TemplateResponse("license_form.html", {"request": request, "row": None, "error": "Неверный формат даты"}, status_code=400)
+@app.get("/admin/keys/delete/{id}")
+async def admin_delete_key(request: Request, id: int, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO licenses (license_key, status, expires, user_name) VALUES ($1, $2, $3, $4) ON CONFLICT (license_key) DO UPDATE SET status=EXCLUDED.status, expires=EXCLUDED.expires, user_name=EXCLUDED.user_name",
-            license_key.strip(), status, exp, (user or "").strip() or None
-        )
-    return RedirectResponse(url="/admin/licenses", status_code=302)
-
-@app.get("/admin/licenses/edit/{license_key}", response_class=HTMLResponse)
-async def edit_license_form(request: Request, license_key: str, _=Depends(ui_guard)):
-    async with app.state.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM licenses WHERE license_key=$1", license_key)
-    if not row:
-        return Response("License not found", status_code=404)
-    return templates.TemplateResponse("license_form.html", {"request": request, "row": row, "error": None})
-
-@app.post("/admin/licenses/edit/{license_key}")
-async def edit_license(request: Request, license_key: str, status: str = Form(...), expires: str = Form(None), user: str = Form(None), _=Depends(ui_guard)):
-    try:
-        exp = date.fromisoformat(expires) if expires else None
-    except Exception:
-        return RedirectResponse(url=f"/admin/licenses/edit/{license_key}", status_code=303)
-    async with app.state.pool.acquire() as conn:
-        await conn.execute("UPDATE licenses SET status=$1, expires=$2, user_name=$3 WHERE license_key=$4", status, exp, (user or "").strip() or None, license_key)
-    return RedirectResponse(url="/admin/licenses", status_code=302)
-
-@app.get("/admin/licenses/reset_hwid/{license_key}")
-async def reset_hwid(request: Request, license_key: str, _=Depends(ui_guard)):
-    async with app.state.pool.acquire() as conn:
-        await conn.execute("UPDATE licenses SET hwid = NULL WHERE license_key=$1", license_key)
-    return RedirectResponse(url="/admin/licenses", status_code=302)
-
-@app.get("/admin/licenses/delete/{license_key}")
-async def delete_license_get(request: Request, license_key: str, _=Depends(ui_guard)):
-    async with app.state.pool.acquire() as conn:
-        await conn.execute("DELETE FROM licenses WHERE license_key=$1", license_key)
-    return RedirectResponse(url="/admin/licenses", status_code=302)
+        await conn.execute("DELETE FROM group_keys WHERE id = $1", id)
+    return RedirectResponse(url="/admin/keys", status_code=302)
 
 # ==========================================================
-#               УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ И ГРУППАМИ
+#                УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ И ГРУППАМИ
 # ==========================================================
 
-# Настройка цветов для групп (slug -> css class или hex)
 # Настройка цветов для групп (slug -> css class suffix)
 GROUP_COLORS = {
-    # === ВЫСШАЯ АДМИНИСТРАЦИЯ (Фиолетовая гамма) ===
-    "tech-admin": "purple",     # Глубокий фиолетовый
-    "admin": "indigo",          # Индиго (сине-фиолетовый)
+    # === ВЫСШАЯ АДМИНИСТРАЦИЯ ===
+    "tech-admin": "purple",     
+    "admin": "indigo",          
     
-    # === ПЕРСОНАЛ (Красная/Розовая гамма) ===
-    "senior-staff": "pink",     # Ярко-розовый
-    "staff": "danger",          # Красный (стандартный Bootstrap)
-    "moderator": "orange",      # Оранжевый
-    "media": "cyan",            # Циан (яркий голубой, для медиа)
+    # === ПЕРСОНАЛ ===
+    "senior-staff": "pink",     
+    "staff": "danger",          
+    "moderator": "orange",      
+    "media": "cyan",            
 
-    # === ПРЕМИУМ ЛИЦЕНЗИИ (Синяя гамма) ===
-    "plus": "primary",          # Синий (стандартный Bootstrap)
-    "alpha": "azure",           # Лазурный
-    "premium": "primary",       # (Legacy)
+    # === ПРЕМИУМ ===
+    "plus": "primary",          
+    "alpha": "azure",           
+    "premium": "primary",       
 
-    # === БАЗОВЫЕ (Зеленая гамма) ===
-    "basic": "success",         # Зеленый (стандартный Bootstrap)
+    # === БАЗОВЫЕ ===
+    "basic": "success",         
     
     # === ОБЫЧНЫЕ ===
-    "user": "secondary"         # Серый
+    "user": "secondary"         
 }
 
 @app.get("/admin/users", response_class=HTMLResponse)
 async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        # SQL запрос обновлен: джойним активную группу
+        # Получаем пользователей и их АКТИВНУЮ группу (если есть)
         query_base = """
              SELECT u.id, u.email, u.username, u.uid, u.created_at, u.last_login, u.email_confirmed,
-                   COALESCE((SELECT SUM(amount) FROM purchases p WHERE p.user_uid = u.uid), 0) as total_spent,
-                   g.name as group_name, g.slug as group_slug
+                    COALESCE((SELECT SUM(amount) FROM purchases p WHERE p.user_uid = u.uid), 0) as total_spent,
+                    g.name as group_name, g.slug as group_slug
              FROM users u
-             LEFT JOIN user_groups ug ON u.uid = ug.user_uid AND ug.is_active = TRUE
+             LEFT JOIN user_groups ug ON u.uid = ug.user_uid AND ug.is_active = TRUE AND ug.expires_at > NOW()
              LEFT JOIN groups g ON ug.group_id = g.id
         """
         
-        # Для корректной работы с LIMIT 1 при джойне (если вдруг у юзера 2 группы), 
-        # лучше использовать DISTINCT ON или подзапрос, но пока предположим, что логика выдачи (сброс перед выдачей) работает.
-        # Упростим: берем просто первую попавшуюся активную группу.
-        
-        # Если нужен поиск
+        # Сортировка: сначала новые регистрации
         if q:
-            # Используем DISTINCT, чтобы строки не двоились если групп > 1
-            # Но лучше просто джойнить через LATERAL или подзапрос.
-            # Оставим простой JOIN, так как у нас правило "1 юзер = 1 группа".
             rows = await conn.fetch(
                 f"{query_base} WHERE u.email ILIKE $1 OR u.username ILIKE $1 OR CAST(u.uid AS TEXT) ILIKE $1 ORDER BY u.created_at DESC", 
                 f"%{q}%"
@@ -699,7 +704,7 @@ async def admin_users(request: Request, q: Optional[str] = None, _=Depends(ui_gu
         "request": request, 
         "rows": rows, 
         "q": q or "",
-        "group_colors": GROUP_COLORS # Передаем цвета
+        "group_colors": GROUP_COLORS
     })
 
 @app.get("/admin/users/edit/{uid}", response_class=HTMLResponse)
@@ -710,27 +715,26 @@ async def edit_user_form(request: Request, uid: str, _=Depends(ui_guard)):
              return Response("User not found", status_code=404)
         
         purchases = await conn.fetch("SELECT * FROM purchases WHERE user_uid=$1 ORDER BY created_at DESC", uid)
-        license_info = await conn.fetchrow("SELECT license_key, status, expires, hwid FROM licenses WHERE user_uid=$1", uid)
         
-        # 1. Получаем активную группу пользователя (теперь она одна, но fetch вернет список, берем первый)
+        # 1. Получаем активную группу пользователя
         user_groups_list = await conn.fetch("""
-            SELECT ug.id, ug.expires_at, ug.granted_at, g.name, g.slug 
+            SELECT ug.id, ug.expires_at, ug.granted_at, g.name, g.slug, ug.is_active
             FROM user_groups ug
             JOIN groups g ON ug.group_id = g.id
-            WHERE ug.user_uid = $1 AND ug.is_active = TRUE
+            WHERE ug.user_uid = $1
+            ORDER BY ug.is_active DESC, ug.expires_at DESC
         """, uid)
 
-        # 2. Получаем список всех доступных групп
-        all_groups = await conn.fetch("SELECT id, name, slug, license_duration_days FROM groups ORDER BY id")
+        # 2. Получаем список всех доступных групп для выпадающего списка
+        all_groups = await conn.fetch("SELECT id, name, slug FROM groups ORDER BY access_level ASC")
 
     return templates.TemplateResponse("user_form.html", {
         "request": request, 
         "row": row, 
         "purchases": purchases, 
-        "lic": license_info,
         "user_groups": user_groups_list, 
         "all_groups": all_groups,
-        "group_colors": GROUP_COLORS, # Передаем цвета
+        "group_colors": GROUP_COLORS,
         "error": None
     })
 
@@ -742,11 +746,8 @@ async def edit_user(
     _ = Depends(ui_guard)
 ):
     async with app.state.pool.acquire() as conn:
-        # Обновляем только подтверждение почты (группу Legacy не трогаем)
-        await conn.execute(
-            "UPDATE users SET email_confirmed=$1 WHERE uid=$2", 
-            email_confirmed, uid
-        )
+        await conn.execute("UPDATE users SET email_confirmed=$1 WHERE uid=$2", email_confirmed, uid)
+        
         if new_password and len(new_password.strip()) >= 6:
             from auth.jwt_utils import hash_password
             new_hash = hash_password(new_password.strip())
@@ -769,7 +770,7 @@ async def admin_assign_group_post(
     from datetime import datetime, timedelta
     
     # Обработка пустой строки дней
-    days_val = None
+    days_val = 30 # Дефолт
     if duration_days and duration_days.strip():
         try:
             days_val = int(duration_days)
@@ -777,59 +778,25 @@ async def admin_assign_group_post(
             pass 
 
     async with app.state.pool.acquire() as conn:
-        async with conn.transaction(): # В транзакции, чтобы сброс и выдача были атомарны
-            
-            # 0. СБРОС ВСЕХ ТЕКУЩИХ АКТИВНЫХ ГРУПП (Правило: 1 пользователь = 1 группа)
+        async with conn.transaction(): 
+            # 1. СБРОС ВСЕХ ТЕКУЩИХ АКТИВНЫХ ГРУПП (Правило: 1 пользователь = 1 группа)
             await conn.execute("UPDATE user_groups SET is_active=FALSE WHERE user_uid=$1", user_uid)
 
-            # 1. Получаем данные новой группы
-            group = await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
-            if not group: return Response("Group not found", status_code=404)
-
-            # 2. Считаем дату
+            # 2. Считаем дату окончания
             if is_forever:
-                expires_at = None 
-                real_days = 36500 
+                # Ставим дату очень далеко (например, 100 лет)
+                expires_at = datetime.now() + timedelta(days=36500)
             else:
-                # Если дней ввели вручную - берем их, иначе - дефолт из группы
-                days = days_val if days_val else group['license_duration_days']
-                expires_at = datetime.now() + timedelta(days=days)
-                real_days = days
+                expires_at = datetime.now() + timedelta(days=days_val)
 
-            # 3. Выдаем группу (UPSERT)
+            # 3. Выдаем группу (Создаем новую запись или обновляем старую)
+            # Мы не используем ON CONFLICT, так как история выдач может быть полезна (не удаляем старые записи)
             await conn.execute("""
                 INSERT INTO user_groups (user_uid, group_id, granted_at, expires_at, is_active)
                 VALUES ($1, $2, NOW(), $3, TRUE)
-                ON CONFLICT (user_uid, group_id) 
-                DO UPDATE SET expires_at = $3, is_active = TRUE, granted_at = NOW()
             """, user_uid, group_id, expires_at)
-
-            # 4. СИНХРОНИЗАЦИЯ С ЛИЦЕНЗИЕЙ
-            if group['default_license_type']:
-                lic = await conn.fetchrow("SELECT expires, license_key FROM licenses WHERE user_uid=$1", user_uid)
-                today_date = datetime.utcnow().date()
-                
-                if is_forever or real_days > 10000:
-                    new_lic_expires = today_date + timedelta(days=36500)
-                else:
-                    if lic and lic['expires'] and lic['expires'] > today_date:
-                        new_lic_expires = lic['expires'] + timedelta(days=real_days)
-                    else:
-                        new_lic_expires = today_date + timedelta(days=real_days)
-
-                u_row = await conn.fetchrow("SELECT username FROM users WHERE uid=$1", user_uid)
-                target_lic_type = group['default_license_type']
-                
-                if not lic:
-                    await conn.execute("""
-                        INSERT INTO licenses (user_uid, user_name, status, expires, created_at, duration_days, license_key)
-                        VALUES ($1, $2, 'active', $3, NOW(), $4, $5)
-                    """, user_uid, u_row['username'], new_lic_expires, real_days, target_lic_type)
-                else:
-                    await conn.execute("""
-                        UPDATE licenses SET status='active', expires=$1, license_key=$2 
-                        WHERE user_uid=$3
-                    """, new_lic_expires, target_lic_type, user_uid)
+            
+            # ВАЖНО: Код синхронизации с licenses УДАЛЕН, так как таблицы licenses больше нет.
 
     return RedirectResponse(url=f"/admin/users/edit/{user_uid}", status_code=302)
 
@@ -842,6 +809,7 @@ async def admin_revoke_group_post(
     _=Depends(ui_guard)
 ):
     async with app.state.pool.acquire() as conn:
+        # Просто деактивируем группу
         await conn.execute("""
             UPDATE user_groups SET is_active = FALSE 
             WHERE user_uid=$1 AND group_id=$2
@@ -849,59 +817,58 @@ async def admin_revoke_group_post(
         
     return RedirectResponse(url=f"/admin/users/edit/{user_uid}", status_code=302)
 
-# --- УПРАВЛЕНИЕ ТОКЕНАМИ АКТИВАЦИИ ---
+# --- УПРАВЛЕНИЕ КЛЮЧАМИ (Вместо старых токенов) ---
+
 @app.get("/admin/tokens", response_class=HTMLResponse)
-async def admin_tokens_list(request: Request, q: Optional[str] = None, _=Depends(ui_guard)):
+async def admin_tokens_list(request: Request, _=Depends(ui_guard)):
+    """Отображение ключей доступа"""
     async with app.state.pool.acquire() as conn:
-        query = """
-            SELECT t.id, t.token, t.duration_days, t.status, t.used_at, u.username as used_by
-            FROM activation_tokens t
-            LEFT JOIN users u ON t.used_by_uid = u.uid
-        """
-        if q:
-            rows = await conn.fetch(
-                f"{query} WHERE t.token ILIKE $1 OR u.username ILIKE $1 ORDER BY t.id DESC", 
-                f"%{q}%"
-            )
-        else:
-            rows = await conn.fetch(f"{query} ORDER BY t.id DESC")
-            
-    return templates.TemplateResponse("tokens.html", {"request": request, "rows": rows, "q": q or ""})
+        # Загружаем ключи и имена групп
+        keys = await conn.fetch("""
+            SELECT k.id, k.key_code, k.duration_days, k.is_used, k.created_at, g.name as group_name
+            FROM group_keys k
+            LEFT JOIN groups g ON k.group_id = g.id
+            ORDER BY k.created_at DESC LIMIT 100
+        """)
+        groups = await conn.fetch("SELECT id, name FROM groups ORDER BY access_level")
+        
+    # Используем шаблон tokens.html (нужно будет его адаптировать под поля group_keys)
+    return templates.TemplateResponse("tokens.html", {"request": request, "rows": keys, "groups": groups, "q": ""})
 
 @app.post("/admin/tokens/create")
-async def admin_create_tokens(
+async def admin_create_keys(
     request: Request,
+    group_id: int = Form(...),
     days: int = Form(...),
     count: int = Form(1),
-    prefix: str = Form(""),
     _=Depends(ui_guard)
 ):
-    if count < 1 or count > 100:
-        return Response("Количество должно быть от 1 до 100", status_code=400)
+    if count < 1 or count > 50:
+        return Response("Количество от 1 до 50", status_code=400)
+        
     import secrets
     async with app.state.pool.acquire() as conn:
-        async with conn.transaction():
-            for _ in range(count):
-                random_part = secrets.token_hex(8).upper()
-                token = f"{prefix}{random_part}" if prefix else random_part
-                await conn.execute(
-                    "INSERT INTO activation_tokens (token, duration_days, status) VALUES ($1, $2, 'unused')",
-                    token, days
-                )
+        for _ in range(count):
+            # Генерируем ключ формата XXXX-YYYY-ZZZZ
+            code = f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}".upper()
+            await conn.execute("""
+                INSERT INTO group_keys (key_code, group_id, duration_days) 
+                VALUES ($1, $2, $3)
+            """, code, group_id, days)
+            
     return RedirectResponse(url="/admin/tokens", status_code=302)
 
 @app.get("/admin/tokens/delete/{id}")
-async def admin_delete_token(request: Request, id: int, _=Depends(ui_guard)):
+async def admin_delete_key(request: Request, id: int, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        await conn.execute("DELETE FROM activation_tokens WHERE id=$1", id)
+        await conn.execute("DELETE FROM group_keys WHERE id=$1", id)
     return RedirectResponse(url="/admin/tokens", status_code=302)
 
 @app.post("/admin/tokens/delete_used")
-async def admin_delete_used_tokens(request: Request, _=Depends(ui_guard)):
+async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
-        await conn.execute("DELETE FROM activation_tokens WHERE status='used'")
+        await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
-
 
 
 
