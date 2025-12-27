@@ -789,9 +789,14 @@ async def admin_assign_group_post(
             # 3. Выдаем группу (Создаем новую запись или обновляем старую)
             # Мы не используем ON CONFLICT, так как история выдач может быть полезна (не удаляем старые записи)
             await conn.execute("""
-                INSERT INTO user_groups (user_uid, group_id, granted_at, expires_at, is_active)
-                VALUES ($1, $2, NOW(), $3, TRUE)
-            """, user_uid, group_id, expires_at)
+                INSERT INTO user_groups (user_uid, group_id, expires_at, is_active)
+                VALUES ($1, $2, $3, TRUE)
+                ON CONFLICT (user_uid, group_id) 
+                DO UPDATE SET 
+                    expires_at = EXCLUDED.expires_at, 
+                    is_active = TRUE,
+                    granted_at = NOW()
+            """, user_uid, group_id, expires_date)
             
             # ВАЖНО: Код синхронизации с licenses УДАЛЕН, так как таблицы licenses больше нет.
 
@@ -866,6 +871,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
