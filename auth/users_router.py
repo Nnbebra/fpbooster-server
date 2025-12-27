@@ -236,10 +236,12 @@ async def activate_license(request: Request, license_key: str = Form(...)):
         async with request.app.state.pool.acquire() as conn:
             async with conn.transaction():
                 # 2. Ищем ключ в таблице group_keys
+                # Сразу получаем имя группы для красивого вывода в истории
                 key_data = await conn.fetchrow("""
-                    SELECT id, group_id, duration_days 
-                    FROM group_keys 
-                    WHERE key_code = $1 AND is_used = FALSE
+                    SELECT k.id, k.group_id, k.duration_days, g.name as group_name
+                    FROM group_keys k
+                    JOIN groups g ON k.group_id = g.id
+                    WHERE k.key_code = $1 AND k.is_used = FALSE
                 """, key_value)
 
                 if not key_data:
@@ -253,9 +255,10 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                 key_id = key_data['id']
                 group_id = key_data['group_id']
                 duration = key_data['duration_days']
+                group_name = key_data['group_name']
                 user_uid = user['uid']
                 
-                # 3. Проверяем текущую подписку на эту группу
+                # 3. Проверяем текущую подписку на ЭТУ конкретную группу
                 existing = await conn.fetchrow("""
                     SELECT id, expires_at FROM user_groups 
                     WHERE user_uid = $1 AND group_id = $2
@@ -264,7 +267,9 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                 now = datetime.now()
                 
                 if existing:
-                    # Продлеваем: если старая еще действует — добавляем к ней, если нет — от текущего момента
+                    # ЛОГИКА СУММИРОВАНИЯ:
+                    # Если старая подписка еще действует — добавляем к ней.
+                    # Если истекла — начинаем отсчет от "сейчас".
                     current_expires = existing['expires_at']
                     start_point = current_expires if current_expires > now else now
                     new_expires = start_point + timedelta(days=duration)
@@ -289,11 +294,11 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                     WHERE id = $2
                 """, user_uid, key_id)
 
-                # 5. Записываем в историю покупок/активаций
+                # 5. Записываем в историю покупок
                 await conn.execute("""
                     INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
                     VALUES ($1, $2, 0, 'KEY', 'key_activation', $3, NOW())
-                """, user_uid, f"activation_group_{group_id}_{duration}d", key_value)
+                """, user_uid, f"Активация: {group_name} ({duration} дн.)", key_value)
 
                 return templates.TemplateResponse("activation_result.html", {
                     "request": request, 
@@ -304,7 +309,7 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                 })
 
     except Exception as e:
-        print(f"Activation error: {e}") # Для отладки
+        print(f"Activation error: {e}")
         return templates.TemplateResponse("activation_result.html", {
             "request": request, 
             "user": user, 
@@ -429,6 +434,7 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
 
