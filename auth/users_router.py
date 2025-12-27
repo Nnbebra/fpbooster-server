@@ -296,50 +296,74 @@ async def api_login_launcher(request: Request, login_data: LauncherLoginModel):
             "uid": str(user["uid"])
         }
 
+# auth/users_router.py
+
 @router.get("/api/me_launcher")
 async def get_api_profile_launcher(request: Request, user=Depends(get_current_user)):
+    """
+    Эндпоинт специально для C# Лаунчера.
+    Возвращает профиль + список доступных продуктов на основе ГРУППЫ.
+    """
     try:
-        async with request.app.state.pool.acquire() as conn:
-            # 1. Получаем имя группы
-            group_row = await conn.fetchrow("""
-                SELECT g.name FROM user_groups ug
+        pool = request.app.state.pool
+        async with pool.acquire() as conn:
+            # 1. Ищем самую "сильную" активную группу пользователя
+            # Сортируем по access_level DESC (3 = Alpha, 2 = Plus, 1 = Basic)
+            # Берем только ту, у которой срок действия еще не истек
+            active_group = await conn.fetchrow("""
+                SELECT g.name, g.slug, g.access_level, ug.expires_at 
+                FROM user_groups ug
                 JOIN groups g ON ug.group_id = g.id
-                WHERE ug.user_uid = $1 AND ug.is_active = TRUE LIMIT 1
+                WHERE ug.user_uid = $1 
+                  AND ug.is_active = TRUE 
+                  AND ug.expires_at > NOW()
+                ORDER BY g.access_level DESC 
+                LIMIT 1
             """, user["uid"])
-            
-            # 2. Получаем лицензию
-            lic_row = await conn.fetchrow("""
-                SELECT expires FROM licenses 
-                WHERE user_uid=$1 AND status='active' 
-                ORDER BY expires DESC LIMIT 1
-            """, user["uid"])
-        
-            # Обработка данных
-            g_name = group_row['name'] if group_row else "User"
-            
-            expires_str = "Нет лицензии"
-            if lic_row and lic_row['expires']:
-                expires_str = lic_row['expires'].strftime("%d.%m.%Y")
-            elif lic_row: # Лицензия есть, но expires=Null (навсегда)
-                expires_str = "Навсегда"
 
-            # 3. Список продуктов (заглушка, чтобы лаунчер не падал)
-            # В будущем тут можно сделать SELECT из таблицы products
-            products = [] 
+            # 2. Определяем данные для ответа
+            if not active_group:
+                group_name = "User"
+                expires_str = "Нет активной подписки"
+                user_access_level = 0 # Уровень доступа обычного юзера
+            else:
+                group_name = active_group['name']
+                user_access_level = active_group['access_level']
+                # Форматируем дату красиво для C#
+                expires_str = active_group['expires_at'].strftime("%d.%m.%Y %H:%M")
 
-            # Формируем JSON строго под C# модель UserProfileResponse
-            response_data = {
+            # 3. Получаем список продуктов, доступных для этого уровня
+            # Если access_level юзера >= required_access_level продукта, он его видит.
+            products_rows = await conn.fetch("""
+                SELECT id, name, description, image_url, download_url, version 
+                FROM products 
+                WHERE is_available = TRUE 
+                  AND required_access_level <= $1
+                ORDER BY id ASC
+            """, user_access_level)
+
+            products = []
+            for p in products_rows:
+                products.append({
+                    "id": p['id'],
+                    "name": p['name'],
+                    "description": p['description'],
+                    "image_url": p['image_url'],
+                    "download_url": p['download_url'],
+                    "version": p['version']
+                })
+
+            # 4. Возвращаем JSON, который ждет наш C# ApiClient
+            return {
                 "uid": str(user["uid"]),
-                "username": str(user["username"]),
-                "group_name": str(g_name),
-                "expires": str(expires_str),
+                "username": user["username"],
+                "group_name": group_name, # Лаунчер покрасит это поле сам
+                "expires": expires_str,
                 "available_products": products
             }
-            
-            return JSONResponse(content=response_data)
-            
+
     except Exception as e:
-        print(f"API ERROR: {e}")
+        print(f"Launcher Error: {e}") # Логируем в консоль сервера
         return JSONResponse({"detail": str(e)}, status_code=500)
 
 
@@ -489,6 +513,7 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
 
