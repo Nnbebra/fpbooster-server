@@ -85,7 +85,7 @@
                                     <span class="text-success fw-bold">Навсегда</span>
                                 {% else %}
                                     {{ ug.expires_at.strftime('%d.%m.%Y') if ug.expires_at else 'Вечно' }}
-                                    {% if ug.expires_at < now %}
+                                    {% if ug.expires_at and ug.expires_at < now %}
                                         <span class="text-danger small">(Истекла)</span>
                                     {% endif %}
                                 {% endif %}
@@ -206,5 +206,6 @@
     });
 </script>
 {% endblock %}
+
 
 
