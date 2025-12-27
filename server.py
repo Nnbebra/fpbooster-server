@@ -39,7 +39,7 @@ async def get_current_user_raw(app, request: Request):
 
 
 async def current_user(request: Request):
-    return await get_current_user_raw(request.app, request)
+    return await get_current_user(request)
 
 app = FastAPI(title="FPBooster License Server", version="1.6.0")
 templates = Jinja2Templates(directory="templates")
@@ -871,6 +871,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
