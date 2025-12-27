@@ -3,29 +3,30 @@
 {% block content %}
 
 <style>
-    /* Высшие привилегии (Фиолетовые) */
+    /* Цвета для групп */
     .bg-purple { background-color: #6f42c1 !important; color: white; }
     .bg-indigo { background-color: #6610f2 !important; color: white; }
-    
-    /* Персонал (Розовые/Оранжевые/Циан) */
     .bg-pink   { background-color: #d63384 !important; color: white; }
     .bg-orange { background-color: #fd7e14 !important; color: white; }
     .bg-cyan   { background-color: #0dcaf0 !important; color: black; }
-    
-    /* Лицензии (Лазурный) - остальные берем из Bootstrap (primary, success) */
     .bg-azure  { background-color: #0d6efd !important; color: white; }
+    .bg-primary { background-color: #0d6efd !important; color: white; }
+    .bg-success { background-color: #198754 !important; color: white; }
+    .bg-secondary { background-color: #6c757d !important; color: white; }
 </style>
 
-<h2 class="mb-4 text-white">Управление пользователем: <span class="text-purple">{{ row.username }}</span></h2>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-white">Пользователь: <span class="text-purple">{{ row.username }}</span></h2>
+    <a href="/admin/users" class="btn btn-outline-light btn-sm">Назад к списку</a>
+</div>
 
 <div class="row">
-    <div class="col-md-6">
-        
+    <div class="col-md-5">
         <div class="card-dark mb-4">
             <h4 class="mb-3 text-white">Основные настройки</h4>
             <form method="post" action="/admin/users/edit/{{ row.uid }}">
                 <div class="mb-3">
-                  <label class="form-label text-muted">Email (Login)</label>
+                  <label class="form-label text-muted">Email</label>
                   <input type="text" class="form-control bg-dark text-white border-secondary" value="{{ row.email }}" readonly disabled>
                 </div>
                 
@@ -39,129 +40,116 @@
                 
                 <div class="mb-3">
                     <label class="form-label text-warning">Смена пароля</label>
-                    <input type="text" class="form-control bg-dark text-white border-secondary" name="new_password" placeholder="Новый пароль (если нужно сменить)">
+                    <input type="text" class="form-control bg-dark text-white border-secondary" name="new_password" placeholder="Новый пароль...">
                 </div>
 
-                <button type="submit" class="btn btn-purple w-100">Сохранить изменения</button>
+                <button type="submit" class="btn btn-purple w-100">Сохранить настройки</button>
             </form>
         </div>
-
-        <div class="card-dark mb-4 border border-info">
-            <h4 class="mb-3 text-info">Группа пользователя</h4>
-            
-            {% if user_groups %}
-            <table class="table table-dark table-sm table-bordered border-secondary mb-3">
-                <thead>
-                    <tr>
-                        <th>Группа</th>
-                        <th>Истекает</th>
-                        <th>Действие</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for g in user_groups %}
-                    {% set badge_color = group_colors.get(g.slug, 'secondary') %}
-                    <tr>
-                        <td>
-                            <strong class="text-white">{{ g.name }}</strong> 
-                            <span class="badge bg-{{ badge_color }} ms-1" style="font-size: 0.75em; padding: 5px 8px;">
-                                {{ g.slug }}
-                            </span>
-                        </td>
-                        <td>
-                            {% if g.expires_at %}
-                                {{ g.expires_at.strftime('%Y-%m-%d') }}
-                            {% else %}
-                                <span class="badge bg-success">Навсегда</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            <form action="/admin/users/revoke_group" method="POST" onsubmit="return confirm('Снять группу {{ g.name }}?');">
-                                <input type="hidden" name="user_uid" value="{{ row.uid }}">
-                                <input type="hidden" name="group_id" value="{{ g.id }}">
-                                <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">X</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-                <div class="alert alert-secondary py-2 small">У пользователя нет активной группы (Basic User).</div>
-            {% endif %}
-
-            <form action="/admin/users/assign_group" method="POST" class="row g-2 align-items-end border-top border-secondary pt-3">
-                <input type="hidden" name="user_uid" value="{{ row.uid }}">
-                
-                <div class="col-12">
-                    <label class="form-label text-muted small mb-1">Сменить группу на:</label>
-                    <select class="form-select form-select-sm bg-dark text-white border-secondary" name="group_id" id="groupSelect" required onchange="checkGroupType()">
-                        {% for group in all_groups %}
-                        <option value="{{ group.id }}" data-slug="{{ group.slug }}" data-days="{{ group.license_duration_days }}">
-                            {{ group.name }} ({{ group.slug }})
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                
-                <div class="col-6" id="daysContainer">
-                    <input type="number" name="duration_days" id="daysInput" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="Дней (опц.)">
-                </div>
-
-                <div class="col-6">
-                    <div class="form-check pt-1">
-                        <input class="form-check-input" type="checkbox" name="is_forever" id="isForever" value="true" onchange="toggleDaysInput()">
-                        <label class="form-check-label text-white small" for="isForever">Навсегда</label>
-                    </div>
-                </div>
-
-                <div class="col-12 mt-2">
-                    <button type="submit" class="btn btn-outline-info btn-sm w-100">Выдать / Сменить</button>
-                </div>
-            </form>
+        
+        <div class="text-center mt-2">
+             <a href="/admin/users/delete/{{ row.uid }}" class="text-danger small" onclick="return confirm('Удалить пользователя и все его данные?')">Удалить пользователя навсегда</a>
         </div>
     </div>
 
-    <div class="col-md-6">
+    <div class="col-md-7">
         
-        <div class="card-dark mb-4">
-            <h4 class="mb-3 text-white">Лицензия (Launcher)</h4>
-            {% if lic %}
-                <div class="alert {% if lic.status == 'active' %}alert-success{% else %}alert-danger{% endif %} py-2">
-                    <div class="d-flex justify-content-between">
-                        <span><strong>Ключ:</strong> {{ lic.license_key }}</span>
-                        <span class="badge bg-dark">{{ lic.status|upper }}</span>
-                    </div>
-                    <div class="small mt-1">
-                        Истекает: <strong>{{ lic.expires }}</strong>
-                    </div>
-                    <div class="small mt-1">
-                        HWID: {{ lic.hwid or "Не привязан" }}
-                        {% if lic.hwid %}
-                        <a href="/admin/licenses/reset_hwid/{{ lic.license_key }}" class="text-danger ms-2" style="text-decoration: underline;">Сбросить</a>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="text-end">
-                    <a href="/admin/licenses/edit/{{ lic.license_key }}" class="btn btn-outline-secondary btn-sm">Редактировать вручную</a>
-                </div>
+        <div class="card-dark mb-4 border border-info">
+            <h4 class="mb-3 text-info">Подписки (Группы)</h4>
+            <p class="text-muted small">Наличие активной группы дает доступ к соответствующим продуктам в Лаунчере.</p>
+            
+            {% if user_groups %}
+            <div class="table-responsive">
+                <table class="table table-dark table-sm table-bordered border-secondary mb-3 align-middle">
+                    <thead>
+                        <tr>
+                            <th>Группа</th>
+                            <th>Истекает</th>
+                            <th class="text-center">Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ug in user_groups %}
+                        {% set badge_color = group_colors.get(ug.slug, 'secondary') %}
+                        <tr>
+                            <td>
+                                <span class="badge bg-{{ badge_color }} fs-6">
+                                    {{ ug.name }}
+                                </span>
+                                {% if not ug.is_active %}
+                                    <span class="badge bg-danger ms-1">Отключена</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if ug.expires_at.year > 2090 %}
+                                    <span class="text-success fw-bold">Навсегда</span>
+                                {% else %}
+                                    {{ ug.expires_at.strftime('%d.%m.%Y') }}
+                                    {% if ug.expires_at < now %}
+                                        <span class="text-danger small">(Истекла)</span>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <form action="/admin/users/revoke_group" method="POST" onsubmit="return confirm('Отключить группу {{ ug.name }}?');">
+                                    <input type="hidden" name="user_uid" value="{{ row.uid }}">
+                                    <input type="hidden" name="group_id" value="{{ ug.id }}">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" title="Снять группу">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             {% else %}
-                <p class="text-muted small">У пользователя нет активной лицензии для лаунчера.</p>
-                <a href="/admin/licenses/new" class="btn btn-outline-success btn-sm w-100">Создать вручную</a>
+                <div class="alert alert-secondary py-2 small mb-3">У пользователя нет активных подписок.</div>
             {% endif %}
+
+            <form action="/admin/users/assign_group" method="POST" class="bg-dark p-3 rounded border border-secondary">
+                <h6 class="text-white mb-2">Выдать / Продлить группу</h6>
+                <input type="hidden" name="user_uid" value="{{ row.uid }}">
+                
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label text-muted small mb-0">Группа</label>
+                        <select class="form-select form-select-sm bg-dark text-white border-secondary" name="group_id" id="groupSelect" required onchange="checkGroupType()">
+                            {% for group in all_groups %}
+                            <option value="{{ group.id }}" data-slug="{{ group.slug }}">
+                                {{ group.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-3" id="daysContainer">
+                        <label class="form-label text-muted small mb-0">Дней</label>
+                        <input type="number" name="duration_days" id="daysInput" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="30" value="30">
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="is_forever" id="isForever" value="true" onchange="toggleDaysInput()">
+                            <label class="form-check-label text-white small" for="isForever">Навсегда</label>
+                        </div>
+                        <button type="submit" class="btn btn-success btn-sm w-100">Выдать</button>
+                    </div>
+                </div>
+            </form>
         </div>
 
         <div class="card-dark">
             <h4 class="mb-3 text-white">История покупок</h4>
             {% if purchases %}
-                <div class="table-responsive">
-                    <table class="table table-dark table-sm table-hover" style="font-size: 0.85rem;">
+                <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
+                    <table class="table table-dark table-sm table-hover mb-0" style="font-size: 0.85rem;">
                         <thead>
                             <tr>
                                 <th>Дата</th>
                                 <th>Товар</th>
                                 <th>Сумма</th>
-                                <th>Метод</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -169,20 +157,15 @@
                             <tr>
                                 <td>{{ p.created_at.strftime("%d.%m.%Y") }}</td>
                                 <td>{{ p.plan }}</td>
-                                <td class="text-success fw-bold">{{ p.amount }} {{ p.currency }}</td>
-                                <td>{{ p.source }}</td>
+                                <td class="text-success">{{ p.amount }} {{ p.currency }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             {% else %}
-                <p class="text-muted text-center py-3">Покупок не найдено.</p>
+                <p class="text-muted text-center py-2 small">История пуста.</p>
             {% endif %}
-        </div>
-        
-        <div class="mt-4 text-end">
-             <a href="/admin/users/delete/{{ row.uid }}" class="btn btn-danger btn-sm" onclick="return confirm('Удалить пользователя и все его данные?')">Удалить пользователя</a>
         </div>
     </div>
 </div>
@@ -194,28 +177,27 @@
         const slug = selectedOption.getAttribute('data-slug');
         const isForeverCheckbox = document.getElementById('isForever');
         
-        // Группы, которые по умолчанию вечные (здесь тоже можно использовать слаги)
+        // Группы персонала обычно выдаются навсегда
         const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media'];
         
         if (foreverGroups.includes(slug)) {
             isForeverCheckbox.checked = true;
-            toggleDaysInput();
         } else {
-            // isForeverCheckbox.checked = false; // Опционально: сбрасывать галочку
-            toggleDaysInput();
+            isForeverCheckbox.checked = false;
         }
+        toggleDaysInput();
     }
 
     function toggleDaysInput() {
         const isForever = document.getElementById('isForever').checked;
         const daysContainer = document.getElementById('daysContainer');
-        const daysInput = document.getElementById('daysInput');
         
         if (isForever) {
-            daysContainer.style.display = 'none';
-            daysInput.value = ''; 
+            daysContainer.style.opacity = '0.3';
+            daysContainer.style.pointerEvents = 'none';
         } else {
-            daysContainer.style.display = 'block';
+            daysContainer.style.opacity = '1';
+            daysContainer.style.pointerEvents = 'auto';
         }
     }
 
