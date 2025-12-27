@@ -525,12 +525,22 @@ async def download_product(
             if has_access == 0:
                  return JSONResponse({"error": f"NO_ACCESS: Required Level {required_level}"}, status_code=403)
 
-            # 3. === HWID (Логика привязки) ===
-            # Если в заголовках пришел HWID, можно его залогировать или обновить у юзера
+            # 3. === HWID (Логика привязки и проверки) ===
             if x_hwid:
-                # В таблице 'users' у тебя есть поле 'uid', можно добавить колонку 'last_hwid'
-                # await conn.execute("UPDATE users SET last_login_hwid=$1 WHERE uid=$2", x_hwid, user_uid)
-                pass
+                current_hwid = user_row.get('hwid')
+                
+                if not current_hwid:
+                    # Если у пользователя HWID еще не привязан — привязываем первый присланный
+                    await conn.execute("UPDATE users SET hwid = $1 WHERE uid = $2", x_hwid, user_uid)
+                    print(f"DEBUG: Bound new HWID {x_hwid} to user {user_row['username']}")
+                
+                elif current_hwid != x_hwid:
+                    # Если HWID в базе есть, но он другой — запрещаем доступ
+                    # (Либо закомментируй это, если хочешь разрешить вход с разных ПК)
+                    return JSONResponse({
+                        "error": "HWID_MISMATCH", 
+                        "message": "Этот аккаунт привязан к другому устройству. Сбросьте HWID в кабинете."
+                    }, status_code=403)
 
             # 4. === ОТДАЧА ФАЙЛА ===
             filename = prod['exe_name'] 
@@ -880,6 +890,7 @@ async def admin_reset_hwid(request: Request, uid: uuid.UUID, _=Depends(admin_gua
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE users SET hwid = NULL WHERE uid = $1", uid)
     return RedirectResponse(url=f"/admin/users/edit/{uid}", status_code=302)
+
 
 
 
