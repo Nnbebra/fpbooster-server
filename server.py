@@ -754,51 +754,53 @@ async def edit_user(
 
 # --- НОВЫЕ ОБРАБОТЧИКИ ДЛЯ ГРУПП ---
 
-@app.post("/admin/users/assign_group")
+@app.post("/admin/users/assign_group")  # Или @app.post, если все в одном файле
 async def admin_assign_group_post(
     request: Request,
     user_uid: str = Form(...),
     group_id: int = Form(...),
     duration_days: Optional[str] = Form(None),
     is_forever: bool = Form(False),
-    _=Depends(ui_guard)
+    _=Depends(admin_guard_ui) # Или ui_guard, как у тебя было
 ):
-    from datetime import datetime, timedelta
-    
-    # Обработка пустой строки дней
-    days_val = 30 # Дефолт
+    # Обработка количества дней
+    days_val = 30 # Дефолтное значение
     if duration_days and duration_days.strip():
         try:
             days_val = int(duration_days)
         except ValueError:
             pass 
 
-    async with app.state.pool.acquire() as conn:
+    # Преобразуем UID из строки в UUID объект (для корректной работы с Postgres)
+    try:
+        uid_obj = uuid.UUID(user_uid)
+    except ValueError:
+        return RedirectResponse(url=f"/admin/users", status_code=302)
+
+    async with request.app.state.pool.acquire() as conn:
         async with conn.transaction(): 
             # 1. СБРОС ВСЕХ ТЕКУЩИХ АКТИВНЫХ ГРУПП (Правило: 1 пользователь = 1 группа)
-            await conn.execute("UPDATE user_groups SET is_active=FALSE WHERE user_uid=$1", user_uid)
+            await conn.execute("UPDATE user_groups SET is_active=FALSE WHERE user_uid=$1", uid_obj)
 
             # 2. Считаем дату окончания
             if is_forever:
-                # Ставим дату очень далеко (например, 100 лет)
+                # Ставим дату очень далеко (+100 лет)
                 expires_at = datetime.now() + timedelta(days=36500)
             else:
                 expires_at = datetime.now() + timedelta(days=days_val)
 
-            # 3. Выдаем группу (Создаем новую запись или обновляем старую)
-            # Мы не используем ON CONFLICT, так как история выдач может быть полезна (не удаляем старые записи)
+            # 3. Выдаем группу
+            # Используем ON CONFLICT, чтобы обновить запись, если такая связка user+group уже была
             await conn.execute("""
-                INSERT INTO user_groups (user_uid, group_id, expires_at, is_active)
-                VALUES ($1, $2, $3, TRUE)
+                INSERT INTO user_groups (user_uid, group_id, expires_at, is_active, granted_at)
+                VALUES ($1, $2, $3, TRUE, NOW())
                 ON CONFLICT (user_uid, group_id) 
                 DO UPDATE SET 
                     expires_at = EXCLUDED.expires_at, 
                     is_active = TRUE,
                     granted_at = NOW()
-            """, user_uid, group_id, expires_date)
+            """, uid_obj, group_id, expires_at) # ИСПРАВЛЕНО: expires_at вместо expires_date
             
-            # ВАЖНО: Код синхронизации с licenses УДАЛЕН, так как таблицы licenses больше нет.
-
     return RedirectResponse(url=f"/admin/users/edit/{user_uid}", status_code=302)
 
 
@@ -877,6 +879,7 @@ async def admin_reset_hwid(request: Request, uid: uuid.UUID, _=Depends(admin_gua
     async with app.state.pool.acquire() as conn:
         await conn.execute("UPDATE users SET hwid = NULL WHERE uid = $1", uid)
     return RedirectResponse(url=f"/admin/users/edit/{uid}", status_code=302)
+
 
 
 
