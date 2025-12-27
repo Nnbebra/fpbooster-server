@@ -271,12 +271,13 @@ async def activate_license(request: Request, license_key: str = Form(...)):
                     """, user['uid'], group_id, new_expires)
 
                 # 3. Гасим ключ
-                await conn.execute("""
+                await conn.execute(
+                    """
                     UPDATE group_keys 
-                    SET is_used = TRUE, activated_by = $1,
+                    SET is_used = TRUE, activated_by = $1
                     WHERE id = $2
-                """, user['uid'], key_data['id'])
-
+                    """, user_uid, key_id
+                )
                 # 4. Лог
                 await conn.execute("""
                     INSERT INTO purchases (user_uid, plan, amount, currency, source, token_code, created_at) 
@@ -406,6 +407,7 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
 
 
