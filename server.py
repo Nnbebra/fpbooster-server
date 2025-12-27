@@ -431,11 +431,13 @@ async def activate_license(request: Request, token: Optional[str] = Form(None), 
                     """, user['uid'], group_id, new_expires)
 
                 # 4. Помечаем ключ как использованный
-                await conn.execute("""
+                await conn.execute(
+                    """
                     UPDATE group_keys 
-                    SET is_used = TRUE, activated_by = $1 
+                    SET is_used = TRUE, activated_by = $1
                     WHERE id = $2
-                """, user['uid'], key_data['id'])
+                    """, user_uid, key_id
+                )
 
                 # 5. Логируем покупку (для истории)
                 await conn.execute("""
@@ -864,6 +866,7 @@ async def admin_delete_used_keys(request: Request, _=Depends(ui_guard)):
     async with app.state.pool.acquire() as conn:
         await conn.execute("DELETE FROM group_keys WHERE is_used=TRUE")
     return RedirectResponse(url="/admin/tokens", status_code=302)
+
 
 
 
