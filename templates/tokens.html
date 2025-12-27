@@ -1,244 +1,107 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="mb-4 d-flex justify-content-between align-items-center">
-    <h2 class="text-white"><i class="fas fa-ticket-alt text-purple"></i> Токены пополнения</h2>
+    <h2 class="text-white"><i class="fas fa-key text-info"></i> Ключи доступа</h2>
     
     <div class="d-flex gap-2">
-        <button id="btnCopySelected" class="btn btn-outline-info btn-sm d-none" onclick="copySelectedTokens()">
-            <i class="far fa-copy"></i> Скопировать (<span id="selectedCount">0</span>)
+        <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#createKeysModal">
+            <i class="fas fa-plus-circle"></i> Создать ключи
         </button>
 
-        <form method="post" action="/admin/tokens/delete_used" onsubmit="return confirm('Удалить все использованные токены? Это очистит историю.')">
-            <button class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-broom"></i> Очистить использованные
+        <form method="post" action="/admin/tokens/delete_used" onsubmit="return confirm('Удалить использованные ключи?')">
+            <button class="btn btn-outline-secondary">
+                <i class="fas fa-trash-alt"></i> Очистить старые
             </button>
         </form>
     </div>
 </div>
 
-<div class="row h-100">
-    <div class="col-md-4 mb-4">
-        <div class="card-dark h-100 sticky-top" style="top: 80px; z-index: 1;">
-            <h4 class="text-white mb-3"><i class="fas fa-plus-circle"></i> Генератор</h4>
-            <form method="post" action="/admin/tokens/create">
-                <div class="mb-3">
-                    <label class="form-label text-muted">Срок действия</label>
-                    <select class="form-select bg-dark text-white border-secondary" name="days">
-                        <option value="1">1 день</option>
-                        <option value="3">3 дня</option>
-                        <option value="7">7 дней</option>
-                        <option value="30" selected>30 дней (Месяц)</option>
-                        <option value="90">90 дней</option>
-                        <option value="365">365 дней</option>
-                    </select>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label text-muted">Количество</label>
-                    <input type="number" class="form-control bg-dark text-white border-secondary" name="count" value="1" min="1" max="50">
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label text-muted">Префикс</label>
-                    <input type="text" class="form-control bg-dark text-white border-secondary" name="prefix" placeholder="Например: KEY-">
-                </div>
-
-                <button type="submit" class="btn btn-purple w-100">
-                    <i class="fas fa-magic"></i> Создать
-                </button>
-            </form>
-        </div>
-    </div>
-
-    <div class="col-md-8">
-        <div class="card-dark mb-3">
-            <form method="get" action="/admin/tokens" class="d-flex gap-2">
-                <input type="text" class="form-control bg-dark text-white border-secondary" name="q" placeholder="🔍 Поиск токена или юзера..." value="{{ q }}">
-                <button type="submit" class="btn btn-outline-light">Найти</button>
-            </form>
-        </div>
-
-        <div class="card-dark p-0 overflow-hidden" style="height: 650px; display: flex; flex-direction: column;">
-            <div class="table-responsive flex-grow-1" style="overflow-y: auto;">
-                <table class="table table-dark table-hover mb-0 align-middle" id="tokensTable">
-                    <thead class="sticky-top" style="background-color: #2c2c2c; z-index: 2;">
-                        <tr>
-                            <th style="width: 40px;" class="text-center">
-                                <input type="checkbox" class="form-check-input bg-dark border-secondary" id="selectAll" onchange="toggleSelectAll()">
-                            </th>
-                            <th style="cursor: pointer;" onclick="sortTable(1)">Токен <i class="fas fa-sort text-muted small"></i></th>
-                            <th style="cursor: pointer;" onclick="sortTable(2, true)">Дни <i class="fas fa-sort text-muted small"></i></th>
-                            <th style="cursor: pointer;" onclick="sortTable(3)">Статус <i class="fas fa-sort text-muted small"></i></th>
-                            <th>Кем использован</th>
-                            <th class="text-end"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in rows %}
-                        <tr>
-                            <td class="text-center">
-                                {% if row.status == 'unused' %}
-                                    <input type="checkbox" class="form-check-input token-checkbox bg-dark border-secondary" value="{{ row.token }}" onchange="updateCopyButton()">
-                                {% endif %}
-                            </td>
-                            
-                            <td>
-                                <div class="d-flex align-items-center gap-2">
-                                    <code class="text-info user-select-all">{{ row.token }}</code>
-                                    <button class="btn btn-sm btn-link text-muted p-0" onclick="navigator.clipboard.writeText('{{ row.token }}')" title="Скопировать">
-                                        <i class="far fa-copy"></i>
-                                    </button>
-                                </div>
-                            </td>
-
-                            <td data-value="{{ row.duration_days }}">
-                                <span class="badge bg-secondary">+{{ row.duration_days }} дн.</span>
-                            </td>
-
-                            <td>
-                                {% if row.status == 'unused' %}
-                                    <span class="text-success small"><i class="fas fa-check-circle"></i> Активен</span>
-                                {% else %}
-                                    <span class="text-muted small">Использован</span>
-                                {% endif %}
-                            </td>
-
-                            <td>
-                                {% if row.used_by %}
-                                    <span class="text-warning">{{ row.used_by }}</span>
-                                    {% if row.used_at %}
-                                        <div class="small text-muted" style="font-size: 0.75rem;">{{ row.used_at.strftime("%d.%m") }}</div>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-
-                            <td class="text-end">
-                                <a href="/admin/tokens/delete/{{ row.id }}" class="text-danger opacity-50 hover-opacity-100" onclick="return confirm('Удалить?')" title="Удалить">
-                                    <i class="fas fa-times"></i>
-                                </a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+<div class="modal fade" id="createKeysModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content card-dark border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title text-white">Генерация ключей</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="/admin/tokens/create" method="post">
+          <div class="modal-body">
+            <div class="mb-3">
+                <label class="form-label text-muted">Группа доступа</label>
+                <select class="form-select bg-dark text-white border-secondary" name="group_id" required>
+                    {% for g in groups %}
+                        <option value="{{ g.id }}">{{ g.name }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text text-muted">Какую группу получит пользователь при активации.</div>
             </div>
-        </div>
+            <div class="row">
+                <div class="col-6 mb-3">
+                    <label class="form-label text-muted">Дней</label>
+                    <input type="number" class="form-control bg-dark text-white border-secondary" name="days" value="30" required>
+                </div>
+                <div class="col-6 mb-3">
+                    <label class="form-label text-muted">Количество</label>
+                    <input type="number" class="form-control bg-dark text-white border-secondary" name="count" value="1" max="50" required>
+                </div>
+            </div>
+          </div>
+          <div class="modal-footer border-secondary">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="submit" class="btn btn-info">Сгенерировать</button>
+          </div>
+      </form>
     </div>
+  </div>
 </div>
 
-<script>
-    // --- ЛОГИКА ВЫДЕЛЕНИЯ ---
-    function toggleSelectAll() {
-        const mainCheck = document.getElementById('selectAll');
-        const checkboxes = document.querySelectorAll('.token-checkbox');
-        checkboxes.forEach(cb => cb.checked = mainCheck.checked);
-        updateCopyButton();
-    }
-
-    function updateCopyButton() {
-        const checked = document.querySelectorAll('.token-checkbox:checked');
-        const btn = document.getElementById('btnCopySelected');
-        const countSpan = document.getElementById('selectedCount');
-        
-        if (checked.length > 0) {
-            btn.classList.remove('d-none');
-            countSpan.innerText = checked.length;
-        } else {
-            btn.classList.add('d-none');
-        }
-    }
-
-    function copySelectedTokens() {
-        const checked = document.querySelectorAll('.token-checkbox:checked');
-        let textToCopy = "";
-        checked.forEach(cb => {
-            textToCopy += cb.value + "\n";
-        });
-
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            const btn = document.getElementById('btnCopySelected');
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> Скопировано!';
-            btn.classList.replace('btn-outline-info', 'btn-success');
-            
-            setTimeout(() => {
-                btn.innerHTML = originalHtml;
-                btn.classList.replace('btn-success', 'btn-outline-info');
-            }, 2000);
-        });
-    }
-
-    // --- ЛОГИКА СОРТИРОВКИ ---
-    function sortTable(n, isNumber = false) {
-        var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-        table = document.getElementById("tokensTable");
-        switching = true;
-        dir = "asc"; 
-        
-        while (switching) {
-            switching = false;
-            rows = table.rows;
-            
-            // Пропускаем заголовок (i=1)
-            for (i = 1; i < (rows.length - 1); i++) {
-                shouldSwitch = false;
-                x = rows[i].getElementsByTagName("TD")[n];
-                y = rows[i + 1].getElementsByTagName("TD")[n];
-                
-                // Получаем значения (если есть data-value, берем его)
-                let xVal = x.getAttribute('data-value') || x.textContent.trim();
-                let yVal = y.getAttribute('data-value') || y.textContent.trim();
-
-                if (isNumber) {
-                    xVal = parseInt(xVal);
-                    yVal = parseInt(yVal);
-                } else {
-                    xVal = xVal.toLowerCase();
-                    yVal = yVal.toLowerCase();
-                }
-
-                if (dir == "asc") {
-                    if (xVal > yVal) { shouldSwitch = true; break; }
-                } else if (dir == "desc") {
-                    if (xVal < yVal) { shouldSwitch = true; break; }
-                }
-            }
-            
-            if (shouldSwitch) {
-                rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-                switching = true;
-                switchcount ++;      
-            } else {
-                if (switchcount == 0 && dir == "asc") {
-                    dir = "desc";
-                    switching = true;
-                }
-            }
-        }
-    }
-</script>
-
-<style>
-    /* Стиль для скроллбара внутри таблицы */
-    .table-responsive::-webkit-scrollbar {
-        width: 8px;
-    }
-    .table-responsive::-webkit-scrollbar-track {
-        background: #1e1e1e; 
-    }
-    .table-responsive::-webkit-scrollbar-thumb {
-        background: #444; 
-        border-radius: 4px;
-    }
-    .table-responsive::-webkit-scrollbar-thumb:hover {
-        background: #555; 
-    }
-    /* Фиксация заголовка */
-    thead.sticky-top th {
-        background-color: #252525 !important; /* Чуть светлее фона карточки */
-        border-bottom: 2px solid #444;
-    }
-</style>
+<div class="card-dark p-0 overflow-hidden">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th class="text-muted ps-3">Ключ</th>
+          <th class="text-muted">Группа</th>
+          <th class="text-muted">Срок</th>
+          <th class="text-muted">Статус</th>
+          <th class="text-muted text-end pe-3">Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="ps-3">
+              <code class="text-warning user-select-all fs-6">{{ row.key_code }}</code>
+          </td>
+          <td>
+              <span class="badge bg-secondary">{{ row.group_name }}</span>
+          </td>
+          <td>{{ row.duration_days }} дн.</td>
+          <td>
+              {% if row.is_used %}
+                <span class="badge bg-danger">Использован</span>
+                <div class="small text-muted mt-1">Дата создания: {{ row.created_at.strftime('%d.%m') }}</div>
+              {% else %}
+                <span class="badge bg-success">Новый</span>
+                <div class="small text-muted mt-1">{{ row.created_at.strftime('%d.%m %H:%M') }}</div>
+              {% endif %}
+          </td>
+          <td class="text-end pe-3">
+             {% if not row.is_used %}
+            <a href="/admin/tokens/delete/{{ row.id }}" class="btn btn-sm btn-outline-danger" title="Удалить">
+              <i class="fas fa-trash"></i>
+            </a>
+            {% else %}
+             <i class="fas fa-check text-muted"></i>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="5" class="text-center py-4 text-muted">Ключей пока нет. Сгенерируйте новые.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}
