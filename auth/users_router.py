@@ -99,7 +99,15 @@ async def register_submit(
     resp = RedirectResponse(url="/cabinet", status_code=302)
     
     # КУКИ УСТАНАВЛИВАЮТСЯ ЗДЕСЬ
-    resp.set_cookie("user_auth", token, path="/", httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
+    resp.set_cookie(
+    "user_auth", 
+    token, 
+    path="/", 
+    httponly=True, 
+    samesite="lax", 
+    secure=False,  # <--- ВАЖНО: False для работы без HTTPS
+    max_age=30*24*3600
+)
     return resp
 
 
@@ -123,7 +131,15 @@ async def user_login(request: Request, email: str = Form(...), password: str = F
     resp = RedirectResponse(url="/cabinet", status_code=302)
     
     # КУКИ УСТАНАВЛИВАЮТСЯ ЗДЕСЬ
-    resp.set_cookie("user_auth", token, path="/", httponly=True, samesite="lax", secure=False, max_age=30*24*3600)
+    resp.set_cookie(
+    "user_auth", 
+    token, 
+    path="/", 
+    httponly=True, 
+    samesite="lax", 
+    secure=False,  # <--- ВАЖНО: False для работы без HTTPS
+    max_age=30*24*3600
+)
     return resp
 
 
@@ -388,4 +404,5 @@ async def get_my_profile(request: Request, user=Depends(get_current_user)):
         "expires": expires_str,
         "available_products": allowed_products
     }
+
 
