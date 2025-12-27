@@ -18,7 +18,9 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="text-white">Пользователь: <span class="text-purple">{{ row.username }}</span></h2>
-    <a href="/admin/users" class="btn btn-outline-light btn-sm">Назад к списку</a>
+    <a href="/admin/users" class="btn btn-outline-light btn-sm">
+        <i class="fas fa-arrow-left"></i> Назад к списку
+    </a>
 </div>
 
 <div class="row">
@@ -27,12 +29,12 @@
             <h4 class="mb-3 text-white">Основные настройки</h4>
             <form method="post" action="/admin/users/edit/{{ row.uid }}">
                 <div class="mb-3">
-                  <label class="form-label text-muted">UID</label>
+                  <label class="form-label text-muted small">UID</label>
                   <input type="text" class="form-control bg-dark text-muted border-secondary" value="{{ row.uid }}" readonly disabled style="font-size: 0.8rem;">
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label text-muted">Email</label>
+                  <label class="form-label text-muted small">Email</label>
                   <input type="text" class="form-control bg-dark text-white border-secondary" value="{{ row.email }}" readonly disabled>
                 </div>
                 
@@ -45,16 +47,20 @@
                 <hr class="border-secondary">
                 
                 <div class="mb-3">
-                    <label class="form-label text-warning">Смена пароля</label>
-                    <input type="text" class="form-control bg-dark text-white border-secondary" name="new_password" placeholder="Новый пароль...">
+                    <label class="form-label text-warning small">Сменить пароль</label>
+                    <input type="text" class="form-control bg-dark text-white border-secondary" name="new_password" placeholder="Введите новый пароль...">
                 </div>
 
-                <button type="submit" class="btn btn-purple w-100">Сохранить настройки</button>
+                <button type="submit" class="btn btn-purple w-100">
+                    <i class="fas fa-save"></i> Сохранить настройки
+                </button>
             </form>
         </div>
         
         <div class="text-center mt-2">
-             <a href="/admin/users/delete/{{ row.uid }}" class="text-danger small" onclick="return confirm('Удалить пользователя навсегда?')">Удалить пользователя</a>
+             <a href="/admin/users/delete/{{ row.uid }}" class="text-danger small" onclick="return confirm('Вы уверены? Это действие удалит пользователя и все его подписки навсегда.')">
+                <i class="fas fa-user-slash"></i> Удалить пользователя
+             </a>
         </div>
     </div>
 
@@ -66,7 +72,7 @@
             <div class="table-responsive">
                 <table class="table table-dark table-sm table-bordered border-secondary mb-3 align-middle">
                     <thead>
-                        <tr>
+                        <tr class="text-muted small">
                             <th>Группа</th>
                             <th>Истекает</th>
                             <th class="text-center">Действие</th>
@@ -85,7 +91,7 @@
                                 {% else %}
                                     {{ ug.expires_at.strftime('%d.%m.%Y') if ug.expires_at else 'Вечно' }}
                                     {% if ug.expires_at and ug.expires_at < now %}
-                                        <span class="text-danger small">(Истекла)</span>
+                                        <span class="text-danger small ms-1">(Истекла)</span>
                                     {% endif %}
                                 {% endif %}
                             </td>
@@ -93,8 +99,8 @@
                                 <form action="/admin/users/revoke_group" method="post" style="display:inline;" onsubmit="return confirm('Удалить привязку к группе {{ ug.name }}?');">
                                     <input type="hidden" name="user_uid" value="{{ row.uid }}">
                                     <input type="hidden" name="group_id" value="{{ ug.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
-                                        <i class="fas fa-trash-alt"></i>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" title="Отозвать группу">
+                                        <i class="fas fa-times"></i>
                                     </button>
                                 </form>
                             </td>
@@ -104,36 +110,38 @@
                 </table>
             </div>
             {% else %}
-                <div class="alert alert-secondary py-2 small mb-3">Нет активных групп.</div>
+                <div class="alert alert-secondary py-2 small mb-3 text-center">Нет активных подписок.</div>
             {% endif %}
 
-            <form action="/admin/users/assign_group" method="POST" class="bg-dark p-3 rounded border border-secondary">
-                <h6 class="text-white mb-2">Выдать новую группу</h6>
+            <form action="/admin/users/assign_group" method="POST" class="bg-dark p-3 rounded border border-secondary shadow-sm">
+                <h6 class="text-white mb-3">Выдать новую группу / продлить существующую</h6>
                 <input type="hidden" name="user_uid" value="{{ row.uid }}">
                 
                 <div class="row g-2 align-items-end">
                     <div class="col-md-5">
-                        <label class="form-label text-muted small mb-0">Выберите группу</label>
+                        <label class="form-label text-muted small mb-1">Выберите группу</label>
                         <select name="group_id" class="form-select form-select-sm bg-dark text-white border-secondary" id="groupSelect" required onchange="checkGroupType()">
                             {% for g in all_groups %}
                                 <option value="{{ g.id }}" data-slug="{{ g.slug }}">
-                                    {{ g.name }} (Lvl: {{ g.access_level }})
+                                    {{ g.name }} (Доступ: {{ g.access_level }})
                                 </option>
                             {% endfor %}
                         </select>
                     </div>
                     
                     <div class="col-md-3" id="daysContainer">
-                        <label class="form-label text-muted small mb-0">Дней</label>
-                        <input type="number" name="duration_days" id="daysInput" class="form-control form-control-sm bg-dark text-white border-secondary" value="30">
+                        <label class="form-label text-muted small mb-1">Длительность (дней)</label>
+                        <input type="number" name="duration_days" id="daysInput" class="form-control form-control-sm bg-dark text-white border-secondary" value="30" min="1">
                     </div>
 
                     <div class="col-md-4">
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="is_forever" id="isForever" value="true" onchange="toggleDaysInput()">
-                            <label class="form-check-label text-white small" for="isForever">Навсегда</label>
+                            <label class="form-check-label text-white small" for="isForever">Выдать навсегда</label>
                         </div>
-                        <button type="submit" class="btn btn-success btn-sm w-100">Добавить / Обновить</button>
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="fas fa-plus-circle"></i> Применить
+                        </button>
                     </div>
                 </div>
             </form>
@@ -144,26 +152,26 @@
             {% if purchases %}
                 <div class="table-responsive" style="max-height: 250px; overflow-y: auto;">
                     <table class="table table-dark table-sm table-hover mb-0" style="font-size: 0.85rem;">
-                        <thead>
-                            <tr>
+                        <thead class="sticky-top bg-dark">
+                            <tr class="text-muted">
                                 <th>Дата</th>
-                                <th>Товар / Действие</th>
+                                <th>Товар / План</th>
                                 <th>Сумма</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for p in purchases %}
                             <tr>
-                                <td>{{ p.created_at.strftime("%d.%m.%Y") }}</td>
+                                <td>{{ p.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
                                 <td>{{ p.plan }}</td>
-                                <td class="text-success">{{ p.amount }} {{ p.currency }}</td>
+                                <td class="text-success fw-bold">{{ p.amount }} {{ p.currency }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             {% else %}
-                <p class="text-muted text-center py-2 small">История пуста.</p>
+                <p class="text-muted text-center py-3 mb-0">Транзакций не найдено.</p>
             {% endif %}
         </div>
     </div>
@@ -178,6 +186,7 @@
         const slug = selectedOption.getAttribute('data-slug');
         const isForeverCheckbox = document.getElementById('isForever');
         
+        // Группы персонала, которые обычно выдаются навсегда
         const foreverGroups = ['tech-admin', 'admin', 'senior-staff', 'staff', 'media', 'moderator'];
         
         if (foreverGroups.includes(slug)) {
@@ -195,13 +204,17 @@
         
         if (isForever) {
             daysContainer.style.opacity = '0.3';
+            daysContainer.style.pointerEvents = 'none';
             daysInput.disabled = true; 
         } else {
             daysContainer.style.opacity = '1';
+            daysContainer.style.pointerEvents = 'auto';
             daysInput.disabled = false;
         }
     }
 
-    document.addEventListener('DOMContentLoaded', checkGroupType);
+    document.addEventListener('DOMContentLoaded', () => {
+        checkGroupType();
+    });
 </script>
 {% endblock %}
