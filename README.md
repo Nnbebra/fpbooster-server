@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/Node.js-v16%2B-green.svg)](https://nodejs.org/)
-[![DonationAlerts](https://img.shields.io/badge/DonationAlerts-Support_Project-orange?style=for-the-badge&logo=donationalerts)](https://www.donationalerts.com/r/software2315782635) --- Поддержка кодера деньгами, буду ооочень рад 🥰
+[![DonationAlerts](https://img.shields.io/badge/DonationAlerts-Support_Project-orange?style=for-the-badge&logo=donationalerts)]([https://www.donationalerts.com/r/software2315782635](https://dalink.to/software2315782635)) --- Поддержка кодера деньгами, буду ооочень рад 🥰
 
 **FPBooster Server** — это высокопроизводительное серверное решение, разработанное для обеспечения работы экосистемы FPBooster. Проект направлен на оптимизацию передачи данных и управление пользовательскими конфигурациями в реальном времени.
 
