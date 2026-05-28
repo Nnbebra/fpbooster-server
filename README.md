@@ -1,50 +1,31 @@
 # FPBooster Server 🚀
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/Node.js-v16%2B-green.svg)](https://nodejs.org/)
-[![DonationAlerts](https://img.shields.io/badge/DonationAlerts-Support_Project-orange?style=for-the-badge&logo=donationalerts)](https://dalink.to/software2315782635)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-green.svg)](https://python.org/)
+[![Ko-fi](https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/wexblood)
 
-**FPBooster Server** — это высокопроизводительное серверное решение, разработанное для обеспечения работы экосистемы FPBooster. Проект направлен на оптимизацию передачи данных и управление пользовательскими конфигурациями в реальном времени.
+**FPBooster Server** is a high‑performance backend solution for the FPBooster ecosystem. It handles real‑time data optimization, user configuration management, and secure API delivery. The project is developed and maintained as open‑source software.
 
-## 🛠 Технологический стек
-- **Runtime:** Node.js / Express
-- **Protocol:** HTTP/HTTPS & WebSockets
-- **Architecture:** RESTful API
+## 🛠 Technology Stack
 
-## 📋 Основные возможности
-- ⚡ **High Availability:** Оптимизированный код для минимальной задержки (latency).
-- 🔐 **Secure Connection:** Поддержка защищенных протоколов передачи данных.
-- 📊 **Monitoring:** Встроенные инструменты для отслеживания состояния сервера.
+- **Runtime:** Python 3.10+
+- **Framework:** FastAPI / Flask (custom routing)
+- **Database:** SQLite / PostgreSQL (via `db/` module)
+- **Protocols:** HTTP/HTTPS, WebSockets
+- **Architecture:** RESTful API + async workers
 
-## 🚀 Установка и развертывание
+## 📋 Core Features
+
+- ⚡ **Low‑latency data processing** – optimized algorithms for real‑time config pushes  
+- 🔐 **Secure authentication** – JWT + crypto utilities (`utils_crypto.py`)  
+- 📊 **Built‑in monitoring** – server health and metrics endpoints  
+- 🔄 **Auto‑restocking system** – plugins like `AutoRestock.py` for license/resource management  
+- 👥 **Creator & group management** – multi‑user roles and referrals  
+
+## 🚀 Deployment
 
 ```bash
-# Клонирование репозитория
 git clone https://github.com/Nnbebra/fpbooster-server.git
-
-# Переход в директорию
 cd fpbooster-server
-
-# Установка зависимостей
-npm install
-
-# Запуск в режиме продакшн
-npm start
-❤️ Поддержка разработки (Support)
-Развитие проекта FPBooster и содержание серверных мощностей осуществляется за счет личных средств и добровольных пожертвований пользователей. Если вам помогла моя разработка, вы можете поддержать проект.
-
-Все средства идут на:
-
-Аренду высокопроизводительных хостинг-нод.
-
-Исследование новых алгоритмов оптимизации.
-
-Поддержку инфраструктуры проекта.
-
-👉 Поддержать через DAlink (DonationAlerts)
-
-⚖️ Лицензия
-Данное программное обеспечение распространяется под лицензией MIT.
-
-📩 Контакты
-По всем вопросам и предложениям создавайте Issue.
+pip install -r requirements.txt
+python server.py
